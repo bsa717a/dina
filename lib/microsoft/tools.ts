@@ -1,5 +1,6 @@
 import { getMicrosoftConfig } from "@/lib/microsoft/config";
 import { GraphError, graphRequest, userPath } from "@/lib/microsoft/graph";
+import { partitionMailByTriage } from "@/lib/microsoft/mail-triage";
 
 function ok(data: unknown) {
   return JSON.stringify({ ok: true, data }, null, 0);
@@ -34,17 +35,31 @@ function encodePath(path: string) {
     .join("/");
 }
 
+function stripHtml(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#58;/gi, ":")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ─── Mail ────────────────────────────────────────────────────────────────────
 
 type GraphMessage = {
   id: string;
   subject?: string;
-  from?: { emailAddress?: { address?: string; name?: string } };
+  from?: { emailAddress?: { name?: string; address?: string } };
   receivedDateTime?: string;
   isRead?: boolean;
   bodyPreview?: string;
   hasAttachments?: boolean;
   importance?: string;
+  inferenceClassification?: string;
 };
 
 async function fetchMessagesPage(args: {
@@ -58,7 +73,7 @@ async function fetchMessagesPage(args: {
   const maxItems = Math.min(Math.max(args.maxItems ?? pageSize, 1), 500);
   const maxPages = Math.min(Math.max(args.maxPages ?? 10, 1), 20);
   const select =
-    "id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments,importance";
+    "id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments,importance,inferenceClassification";
   const params = new URLSearchParams({
     $top: String(pageSize),
     $select: select,
@@ -332,24 +347,70 @@ async function getEmails(args: { messageIds: string[] }) {
   return ok({ count: emails.length, emails, errors });
 }
 
+async function markMessageIdsRead(messageIds: string[]) {
+  let success = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const id of messageIds.slice(0, 200)) {
+    try {
+      await graphRequest(userPath(`/messages/${encodeURIComponent(id)}`), {
+        method: "PATCH",
+        body: { isRead: true },
+      });
+      success += 1;
+    } catch (error) {
+      failed += 1;
+      errors.push(
+        `${id}: ${error instanceof Error ? error.message : "failed"}`,
+      );
+    }
+  }
+  return { success, failed, errors };
+}
+
 /** One-shot inbox briefing with bodies — preferred for digests/summaries. */
 async function briefInbox(args: {
   unreadOnly?: boolean;
   top?: number;
   search?: string;
+  autoClearNoise?: boolean;
 }) {
   const top = Math.min(Math.max(args.top ?? 8, 1), 12);
+  const autoClearNoise = args.autoClearNoise ?? true;
+  // Over-fetch headers so noise can be cleared without starving real mail.
+  const headerBudget = Math.min(Math.max(top * 3, 24), 50);
   const page = await fetchMessagesPage({
     unreadOnly: args.unreadOnly ?? true,
     search: args.search,
-    top,
-    maxItems: top,
+    top: headerBudget,
+    maxItems: headerBudget,
     maxPages: 1,
   });
 
+  const { noise, maybeReal } = partitionMailByTriage(
+    page.messages.map((message) => ({
+      id: message.id,
+      subject: message.subject,
+      fromAddress: message.from?.emailAddress?.address,
+      fromName: message.from?.emailAddress?.name,
+      bodyPreview: message.bodyPreview,
+      inferenceClassification: message.inferenceClassification,
+      message,
+    })),
+  );
+
+  let cleared = { success: 0, failed: 0, errors: [] as string[] };
+  if (autoClearNoise && noise.length) {
+    cleared = await markMessageIdsRead(
+      noise.map((item) => item.id).filter((id): id is string => Boolean(id)),
+    );
+  }
+
+  const toRead = maybeReal.slice(0, top);
   const emails = [];
-  const errors: string[] = [];
-  for (const message of page.messages) {
+  const errors: string[] = [...cleared.errors];
+  for (const item of toRead) {
+    const message = item.message;
     try {
       emails.push(summarizeEmailPayload(await fetchEmailById(message.id)));
     } catch (error) {
@@ -372,11 +433,21 @@ async function briefInbox(args: {
 
   return ok({
     count: emails.length,
-    hasMore: page.hasMore,
+    hasMore: page.hasMore || maybeReal.length > top,
     emails,
+    autoCleared: noise.map((item) => ({
+      id: item.id,
+      subject: item.subject || "(no subject)",
+      from: item.fromAddress || item.fromName || null,
+      reason: item.triage.reason,
+      markedRead: autoClearNoise,
+    })),
+    autoClearedCount: noise.length,
+    autoClearedMarkedRead: cleared.success,
+    skippedUnreadReal: Math.max(0, maybeReal.length - top),
     errors,
     guidance:
-      "Brief Derek from textBody only. Do not include Links sections, tracking URLs, SendGrid click wrappers, or Outlook/OWA links.",
+      "Brief Derek from textBody only for emails[]. Mention autoCleared marketing/spam only briefly (count + a few subjects). Do not include Links sections, tracking URLs, SendGrid click wrappers, or Outlook/OWA links. Patterns in autoCleared are good unsubscribe candidates later.",
   });
 }
 
@@ -389,21 +460,9 @@ async function markEmailRead(args: { messageId: string; isRead?: boolean }) {
 }
 
 async function markEmailsRead(args: { messageIds: string[] }) {
-  let success = 0;
-  let failed = 0;
-  const errors: string[] = [];
-  for (const id of args.messageIds.slice(0, 200)) {
-    try {
-      await graphRequest(userPath(`/messages/${encodeURIComponent(id)}`), {
-        method: "PATCH",
-        body: { isRead: true },
-      });
-      success += 1;
-    } catch (error) {
-      failed += 1;
-      errors.push(error instanceof Error ? error.message : "failed");
-    }
-  }
+  const { success, failed, errors } = await markMessageIdsRead(
+    args.messageIds || [],
+  );
   return ok({ success, failed, errors: errors.slice(0, 5) });
 }
 
@@ -634,7 +693,7 @@ async function listCalendarEvents(args: {
   end?: string;
   top?: number;
 }) {
-  const top = Math.min(Math.max(args.top ?? 20, 1), 50);
+  const top = Math.min(Math.max(args.top ?? 50, 1), 100);
   const start = args.start || new Date().toISOString();
   const end =
     args.end ||
@@ -645,12 +704,56 @@ async function listCalendarEvents(args: {
     $top: String(top),
     $orderby: "start/dateTime",
     $select:
-      "id,subject,start,end,location,organizer,isAllDay,webLink,bodyPreview,attendees,showAs",
+      "id,subject,start,end,location,organizer,isAllDay,webLink,bodyPreview,attendees,showAs,responseStatus",
   });
-  const data = await graphRequest<{ value: unknown[] }>(
-    userPath(`/calendarView?${params}`),
-  );
-  return ok({ count: data.value?.length ?? 0, events: data.value ?? [] });
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      subject?: string;
+      start?: { dateTime?: string; timeZone?: string };
+      end?: { dateTime?: string; timeZone?: string };
+      location?: { displayName?: string };
+      organizer?: { emailAddress?: { name?: string; address?: string } };
+      isAllDay?: boolean;
+      showAs?: string;
+      responseStatus?: { response?: string };
+      bodyPreview?: string;
+      webLink?: string;
+    }>;
+  }>(userPath(`/calendarView?${params}`));
+
+  const items = (data.value || []).map((event) => {
+    const tz = event.start?.timeZone || "America/Denver";
+    const startDt = event.start?.dateTime || "";
+    const endDt = event.end?.dateTime || "";
+    return {
+      id: event.id,
+      subject: event.subject,
+      start: event.start,
+      end: event.end,
+      when: startDt
+        ? `${startDt.slice(0, 16).replace("T", " ")}${endDt ? ` – ${endDt.slice(11, 16)}` : ""} (${tz})`
+        : null,
+      location: event.location?.displayName || null,
+      organizer:
+        event.organizer?.emailAddress?.name ||
+        event.organizer?.emailAddress?.address ||
+        null,
+      organizerEmail: event.organizer?.emailAddress?.address || null,
+      responseStatus: event.responseStatus?.response || null,
+      showAs: event.showAs || null,
+      isAllDay: Boolean(event.isAllDay),
+      bodyPreview: event.bodyPreview || null,
+      webLink: event.webLink || null,
+    };
+  });
+
+  return ok({
+    count: items.length,
+    timeZone: "America/Denver",
+    note: "Times are America/Denver wall-clock unless noted. Call this tool for any calendar question — do not guess from memory.",
+    items,
+  });
 }
 
 async function getCalendarEvent(args: { eventId: string }) {
@@ -793,41 +896,376 @@ async function createSharePointNote(args: {
   return ok({ filename: data.name || filename, webUrl: data.webUrl });
 }
 
-async function listSharePointFolder(args: { folder?: string; top?: number }) {
+async function resolveSharePointDrive() {
   const config = requireConfig();
-  const folder = args.folder || config.sharePointDefaultFolder;
-  const top = Math.min(Math.max(args.top ?? 25, 1), 50);
-  const site = await graphRequest<{ id?: string }>(
-    `https://graph.microsoft.com/v1.0/sites/${config.sharePointSite}`,
-  );
+  const site = await graphRequest<{
+    id?: string;
+    displayName?: string;
+    webUrl?: string;
+  }>(`https://graph.microsoft.com/v1.0/sites/${config.sharePointSite}`);
   if (!site.id) throw new Error("Could not resolve SharePoint site.");
-  const drives = await graphRequest<{ value?: Array<{ id: string }> }>(
-    `https://graph.microsoft.com/v1.0/sites/${site.id}/drives`,
+  const drives = await graphRequest<{
+    value?: Array<{ id: string; name?: string }>;
+  }>(`https://graph.microsoft.com/v1.0/sites/${site.id}/drives`);
+  const drive = drives.value?.[0];
+  if (!drive?.id) throw new Error("Could not find SharePoint document library.");
+  return {
+    siteId: site.id,
+    siteName: site.displayName || config.sharePointSite,
+    siteUrl: site.webUrl || null,
+    driveId: drive.id,
+    driveName: drive.name || "Documents",
+    defaultFolder: config.sharePointDefaultFolder,
+  };
+}
+
+async function listSharePointFolder(args: { folder?: string; top?: number }) {
+  const top = Math.min(Math.max(args.top ?? 25, 1), 50);
+  const ctx = await resolveSharePointDrive();
+  // Empty string / "." means library root.
+  const requested =
+    args.folder === undefined || args.folder === null
+      ? ctx.defaultFolder
+      : args.folder.trim();
+  const folder = requested === "." ? "" : requested;
+
+  const listUrl = folder
+    ? `https://graph.microsoft.com/v1.0/drives/${ctx.driveId}/root:/${encodePath(folder)}:/children?$top=${top}&$select=id,name,size,webUrl,lastModifiedDateTime,folder,file`
+    : `https://graph.microsoft.com/v1.0/drives/${ctx.driveId}/root/children?$top=${top}&$select=id,name,size,webUrl,lastModifiedDateTime,folder,file`;
+
+  try {
+    const data = await graphRequest<{
+      value?: Array<{
+        id?: string;
+        name?: string;
+        size?: number;
+        webUrl?: string;
+        lastModifiedDateTime?: string;
+        folder?: unknown;
+        file?: unknown;
+      }>;
+    }>(listUrl);
+    const items = (data.value || []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      kind: item.folder ? "folder" : "file",
+      size: item.size ?? null,
+      webUrl: item.webUrl ?? null,
+      lastModifiedDateTime: item.lastModifiedDateTime ?? null,
+    }));
+    return ok({
+      site: ctx.siteName,
+      siteUrl: ctx.siteUrl,
+      library: ctx.driveName,
+      folder: folder || "(root)",
+      count: items.length,
+      items,
+    });
+  } catch (error) {
+    // Folder missing — return root listing so Dina can still navigate.
+    const root = await graphRequest<{
+      value?: Array<{ name?: string; folder?: unknown; webUrl?: string }>;
+    }>(
+      `https://graph.microsoft.com/v1.0/drives/${ctx.driveId}/root/children?$top=${top}&$select=name,folder,webUrl`,
+    );
+    const available = (root.value || []).map((item) => ({
+      name: item.name,
+      kind: item.folder ? "folder" : "file",
+      webUrl: item.webUrl ?? null,
+    }));
+    return ok({
+      site: ctx.siteName,
+      siteUrl: ctx.siteUrl,
+      library: ctx.driveName,
+      folder: folder || "(root)",
+      count: 0,
+      items: [],
+      warning:
+        error instanceof Error
+          ? `Folder not found (${error.message}). Showing library root instead.`
+          : "Folder not found. Showing library root instead.",
+      rootItems: available,
+    });
+  }
+}
+
+async function resolveSharePointSite() {
+  const config = requireConfig();
+  const site = await graphRequest<{
+    id?: string;
+    displayName?: string;
+    webUrl?: string;
+  }>(`https://graph.microsoft.com/v1.0/sites/${config.sharePointSite}`);
+  if (!site.id) throw new Error("Could not resolve SharePoint site.");
+  return {
+    siteId: site.id,
+    siteName: site.displayName || config.sharePointSite,
+    siteUrl: site.webUrl || null,
+  };
+}
+
+async function listSharePointLists(args: { top?: number }) {
+  const top = Math.min(Math.max(args.top ?? 50, 1), 100);
+  const site = await resolveSharePointSite();
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      name?: string;
+      displayName?: string;
+      webUrl?: string;
+      list?: { template?: string };
+    }>;
+  }>(
+    `https://graph.microsoft.com/v1.0/sites/${site.siteId}/lists?$select=id,name,displayName,webUrl,list&$top=${top}`,
   );
-  const driveId = drives.value?.[0]?.id;
-  if (!driveId) throw new Error("Could not find SharePoint document library.");
-  const data = await graphRequest<{ value: unknown[] }>(
-    `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodePath(folder)}:/children?$top=${top}`,
+
+  const lists = (data.value || []).map((list) => ({
+    id: list.id,
+    name: list.name,
+    displayName: list.displayName || list.name,
+    webUrl: list.webUrl || null,
+    template: list.list?.template || null,
+    kind:
+      list.list?.template === "documentLibrary"
+        ? "documentLibrary"
+        : list.list?.template === "genericList" ||
+            list.list?.template === "contacts"
+          ? "list"
+          : list.list?.template || "list",
+  }));
+
+  return ok({
+    site: site.siteName,
+    siteUrl: site.siteUrl,
+    count: lists.length,
+    note: "SharePoint lists (including custom lists like Network Info) are separate from document library folders. Use get_sharepoint_list_items with listName or listId.",
+    lists,
+  });
+}
+
+async function getSharePointListItems(args: {
+  listName?: string;
+  listId?: string;
+  search?: string;
+  top?: number;
+}) {
+  const top = Math.min(Math.max(args.top ?? 50, 1), 100);
+  const site = await resolveSharePointSite();
+
+  let listId = args.listId?.trim();
+  let listMeta: {
+    id?: string;
+    name?: string;
+    displayName?: string;
+    webUrl?: string;
+  } | null = null;
+
+  if (!listId) {
+    const wanted = (args.listName || "").trim();
+    if (!wanted) {
+      // Help the model recover when forced without args.
+      const listed = await listSharePointLists({ top: 50 });
+      return listed;
+    }
+    const listed = await graphRequest<{
+      value?: Array<{
+        id?: string;
+        name?: string;
+        displayName?: string;
+        webUrl?: string;
+      }>;
+    }>(
+      `https://graph.microsoft.com/v1.0/sites/${site.siteId}/lists?$select=id,name,displayName,webUrl&$top=100`,
+    );
+    const match = (listed.value || []).find((list) => {
+      const display = (list.displayName || "").toLowerCase();
+      const name = (list.name || "").toLowerCase();
+      const q = wanted.toLowerCase();
+      return display === q || name === q || display.includes(q) || name.includes(q);
+    });
+    if (!match?.id) {
+      const available = (listed.value || []).map(
+        (list) => list.displayName || list.name,
+      );
+      throw new Error(
+        `SharePoint list not found: ${wanted}. Available: ${available.join(", ")}`,
+      );
+    }
+    listId = match.id;
+    listMeta = match;
+  } else {
+    listMeta = await graphRequest<{
+      id?: string;
+      name?: string;
+      displayName?: string;
+      webUrl?: string;
+    }>(
+      `https://graph.microsoft.com/v1.0/sites/${site.siteId}/lists/${encodeURIComponent(listId)}?$select=id,name,displayName,webUrl`,
+    );
+  }
+
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      webUrl?: string;
+      fields?: Record<string, unknown>;
+    }>;
+  }>(
+    `https://graph.microsoft.com/v1.0/sites/${site.siteId}/lists/${encodeURIComponent(listId)}/items?$expand=fields&$top=${top}`,
   );
-  return ok({ folder, items: data.value ?? [] });
+
+  const search = args.search?.trim().toLowerCase();
+  let items = (data.value || []).map((item) => {
+    const fields = item.fields || {};
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (key.startsWith("@odata")) continue;
+      if (typeof value === "string" && /<|>/.test(value)) {
+        cleaned[key] = stripHtml(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+    return {
+      id: item.id,
+      webUrl: item.webUrl || null,
+      title:
+        typeof cleaned.Title === "string"
+          ? cleaned.Title
+          : typeof cleaned.title === "string"
+            ? cleaned.title
+            : null,
+      fields: cleaned,
+    };
+  });
+
+  if (search) {
+    items = items.filter((item) =>
+      JSON.stringify(item.fields).toLowerCase().includes(search),
+    );
+  }
+
+  return ok({
+    site: site.siteName,
+    listId,
+    listName: listMeta?.displayName || listMeta?.name || args.listName || listId,
+    listUrl: listMeta?.webUrl || null,
+    count: items.length,
+    items,
+  });
 }
 
 // ─── Planner ─────────────────────────────────────────────────────────────────
 
 async function listPlannerPlans(args: { top?: number }) {
   const top = Math.min(Math.max(args.top ?? 25, 1), 50);
-  const data = await graphRequest<{ value: unknown[] }>(
-    userPath(`/planner/plans?$top=${top}`),
+  // App-only: /users/{id}/planner/plans often 403s. Discover via group membership.
+  const groups = await graphRequest<{
+    value?: Array<{ id?: string; displayName?: string }>;
+  }>(
+    userPath(
+      "/memberOf/microsoft.graph.group?$select=id,displayName&$top=50",
+    ),
   );
-  return ok({ plans: data.value ?? [] });
+
+  const plans: Array<{
+    id: string;
+    title: string;
+    ownerGroupId: string;
+    ownerGroupName: string;
+  }> = [];
+
+  for (const group of groups.value || []) {
+    if (!group.id) continue;
+    try {
+      const data = await graphRequest<{
+        value?: Array<{ id?: string; title?: string }>;
+      }>(
+        `https://graph.microsoft.com/v1.0/groups/${encodeURIComponent(group.id)}/planner/plans`,
+      );
+      for (const plan of data.value || []) {
+        if (!plan.id) continue;
+        plans.push({
+          id: plan.id,
+          title: plan.title || "(untitled plan)",
+          ownerGroupId: group.id,
+          ownerGroupName: group.displayName || group.id,
+        });
+      }
+    } catch {
+      // Group may not have Planner enabled — skip.
+    }
+    if (plans.length >= top) break;
+  }
+
+  return ok({
+    count: plans.length,
+    note: "Plans discovered via Derek's Microsoft 365 groups (app-only compatible).",
+    plans: plans.slice(0, top),
+  });
 }
 
 async function listPlannerTasks(args: { planId: string; top?: number }) {
   const top = Math.min(Math.max(args.top ?? 50, 1), 100);
-  const data = await graphRequest<{ value: unknown[] }>(
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      title?: string;
+      percentComplete?: number;
+      dueDateTime?: string;
+      bucketId?: string;
+      createdDateTime?: string;
+      completedDateTime?: string | null;
+      "@odata.etag"?: string;
+    }>;
+  }>(
     `https://graph.microsoft.com/v1.0/planner/plans/${encodeURIComponent(args.planId)}/tasks?$top=${top}`,
   );
-  return ok({ tasks: data.value ?? [] });
+  const tasks = (data.value || []).map((task) => ({
+    id: task.id,
+    title: task.title,
+    percentComplete: task.percentComplete ?? 0,
+    dueDateTime: task.dueDateTime ?? null,
+    bucketId: task.bucketId ?? null,
+    completed: (task.percentComplete ?? 0) >= 100,
+    etag: task["@odata.etag"] ?? null,
+  }));
+  return ok({
+    planId: args.planId,
+    count: tasks.length,
+    openCount: tasks.filter((t) => !t.completed).length,
+    tasks,
+  });
+}
+
+async function listMyPlannerTasks(args: { top?: number }) {
+  const top = Math.min(Math.max(args.top ?? 50, 1), 100);
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      title?: string;
+      planId?: string;
+      percentComplete?: number;
+      dueDateTime?: string;
+      bucketId?: string;
+      "@odata.etag"?: string;
+    }>;
+  }>(userPath(`/planner/tasks?$top=${top}`));
+  const tasks = (data.value || []).map((task) => ({
+    id: task.id,
+    title: task.title,
+    planId: task.planId,
+    percentComplete: task.percentComplete ?? 0,
+    dueDateTime: task.dueDateTime ?? null,
+    bucketId: task.bucketId ?? null,
+    completed: (task.percentComplete ?? 0) >= 100,
+    etag: task["@odata.etag"] ?? null,
+  }));
+  return ok({
+    count: tasks.length,
+    note: "Tasks assigned to Derek. For full plan boards, call list_planner_plans then list_planner_tasks.",
+    tasks,
+  });
 }
 
 async function listPlannerBuckets(args: { planId: string }) {
@@ -975,7 +1413,12 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
   get_emails: (args) => getEmails(args as { messageIds: string[] }).catch(fail),
   brief_inbox: (args) =>
     briefInbox(
-      args as { unreadOnly?: boolean; top?: number; search?: string },
+      args as {
+        unreadOnly?: boolean;
+        top?: number;
+        search?: string;
+        autoClearNoise?: boolean;
+      },
     ).catch(fail),
   mark_email_read: (args) =>
     markEmailRead(args as { messageId: string; isRead?: boolean }).catch(fail),
@@ -1089,10 +1532,23 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
     ).catch(fail),
   list_sharepoint_folder: (args) =>
     listSharePointFolder(args as { folder?: string; top?: number }).catch(fail),
+  list_sharepoint_lists: (args) =>
+    listSharePointLists(args as { top?: number }).catch(fail),
+  get_sharepoint_list_items: (args) =>
+    getSharePointListItems(
+      args as {
+        listName?: string;
+        listId?: string;
+        search?: string;
+        top?: number;
+      },
+    ).catch(fail),
   list_planner_plans: (args) =>
     listPlannerPlans(args as { top?: number }).catch(fail),
   list_planner_tasks: (args) =>
     listPlannerTasks(args as { planId: string; top?: number }).catch(fail),
+  list_my_planner_tasks: (args) =>
+    listMyPlannerTasks(args as { top?: number }).catch(fail),
   list_planner_buckets: (args) =>
     listPlannerBuckets(args as { planId: string }).catch(fail),
   create_planner_task: (args) =>
