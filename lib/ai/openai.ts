@@ -31,9 +31,15 @@ import {
 } from "@/lib/writing/tools";
 import { getStarToolDefinitions } from "@/lib/stars/tool-definitions";
 import { executeStarTool, listStarToolNames } from "@/lib/stars/tools";
+import { getMorningRitualToolDefinitions } from "@/lib/morning-ritual/tool-definitions";
+import {
+  executeMorningRitualTool,
+  listMorningRitualToolNames,
+} from "@/lib/morning-ritual/tools";
 import {
   friendlyToolStatus,
   isCalendarQuestion,
+  isMorningBriefRequest,
   isPlannerQuestion,
   isSharePointListQuestion,
   isSharePointQuestion,
@@ -190,6 +196,7 @@ function buildInstructions(
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
     "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
+    "Morning Ritual tool enabled: generate_morning_brief. When Derek asks for morning brief / morning ritual, call it and present the returned markdown. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
   );
   parts.push(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,
@@ -226,6 +233,9 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
   }
   if (listStarToolNames().includes(name)) {
     return executeStarTool(name, argsJson);
+  }
+  if (listMorningRitualToolNames().includes(name)) {
+    return executeMorningRitualTool(name, argsJson);
   }
   if (listProjectTaskToolNames().includes(name)) {
     return executeProjectTaskTool(name, argsJson);
@@ -269,6 +279,7 @@ export class OpenAIProvider implements ModelProvider {
     const starTools = getStarToolDefinitions();
     const projectTaskTools = getProjectTaskToolDefinitions();
     const writingTools = getWritingToolDefinitions();
+    const morningRitualTools = getMorningRitualToolDefinitions();
     const tools = [
       ...msTools,
       ...ghTools,
@@ -276,6 +287,7 @@ export class OpenAIProvider implements ModelProvider {
       ...starTools,
       ...projectTaskTools,
       ...writingTools,
+      ...morningRitualTools,
     ];
     const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
     const instructions = buildInstructions(
@@ -309,6 +321,7 @@ export class OpenAIProvider implements ModelProvider {
         Boolean(msTools.length) &&
         isWordDocumentRequest(lastUserText) &&
         !forceSharePointList;
+      const forceMorningBrief = isMorningBriefRequest(lastUserText);
       let stallNudgeUsed = false;
 
       for (let round = 0; round < maxRounds; round += 1) {
@@ -319,24 +332,28 @@ export class OpenAIProvider implements ModelProvider {
           status: round === 0 ? "thinking" : "working",
           detail:
             round === 0
-              ? forceWordDoc
-                ? "Preparing Word document…"
-                : "Dina is thinking…"
+              ? forceMorningBrief
+                ? "Preparing morning brief…"
+                : forceWordDoc
+                  ? "Preparing Word document…"
+                  : "Dina is thinking…"
               : "Working…",
         };
 
         const forcedToolName =
-          forceCalendar && round === 0
-            ? "list_calendar_events"
-            : forcePlanner && round === 0
-              ? "list_planner_plans"
-              : forceSharePointList && round === 0
-                ? "get_sharepoint_list_items"
-                : forceSharePoint && round === 0
-                  ? "list_sharepoint_folder"
-                  : forceWordDoc && stallNudgeUsed
-                    ? "create_word_document"
-                    : null;
+          forceMorningBrief && round === 0
+            ? "generate_morning_brief"
+            : forceCalendar && round === 0
+              ? "list_calendar_events"
+              : forcePlanner && round === 0
+                ? "list_planner_plans"
+                : forceSharePointList && round === 0
+                  ? "get_sharepoint_list_items"
+                  : forceSharePoint && round === 0
+                    ? "list_sharepoint_folder"
+                    : forceWordDoc && stallNudgeUsed
+                      ? "create_word_document"
+                      : null;
 
         // Word/doc asks must use tools (memory + create_word_document), not filler chat.
         const requireAnyTool =

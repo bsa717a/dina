@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   friendlyToolStatus,
+  isMorningBriefRequest,
   isSharePointListQuestion,
   isWordDocumentRequest,
   looksLikeStallingFiller,
@@ -29,6 +30,11 @@ describe("tool routing helpers", () => {
     );
     expect(isWordDocumentRequest("update EQ Temple Lesson.docx")).toBe(true);
     expect(isWordDocumentRequest("what's on my calendar today")).toBe(false);
+  });
+
+  it("detects Morning Ritual requests", () => {
+    expect(isMorningBriefRequest("Morning brief")).toBe(true);
+    expect(isMorningBriefRequest("daily briefing win")).toBe(false);
   });
 
   it("maps tool names to friendly status labels", () => {

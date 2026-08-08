@@ -23,7 +23,8 @@ import { loadProviderAttachments } from "@/lib/uploads/storage";
 import { kindFromMime } from "@/lib/uploads/validation";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+/** Morning Ritual (CFM week plan + web markets + compose) can exceed 2 minutes. */
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   content: z.string().max(50_000).default(""),
