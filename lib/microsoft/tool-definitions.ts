@@ -183,6 +183,24 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       },
       required: ["to", "subject", "body"],
     }),
+    fn(
+      "create_email_draft",
+      "Create a new Outlook draft (does not send). Prefer this before send_email.",
+      {
+        properties: {
+          to: {
+            oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          },
+          subject: { type: "string" },
+          body: { type: "string" },
+          contentType: { type: "string", enum: ["Text", "HTML"] },
+          cc: {
+            oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          },
+        },
+        required: ["to", "subject", "body"],
+      },
+    ),
     fn("create_reply_draft", "Create a reply draft for an Outlook message.", {
       properties: {
         messageId: { type: "string" },
@@ -190,6 +208,22 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       },
       required: ["messageId"],
     }),
+    fn("list_mail_attachments", "List attachments on an Outlook message.", {
+      properties: { messageId: { type: "string" } },
+      required: ["messageId"],
+    }),
+    fn(
+      "get_mail_attachment",
+      "Download one Outlook attachment (small text inline, otherwise base64 capped).",
+      {
+        properties: {
+          messageId: { type: "string" },
+          attachmentId: { type: "string" },
+          maxBytes: { type: "number" },
+        },
+        required: ["messageId", "attachmentId"],
+      },
+    ),
     fn("list_mail_folders", "List top-level Outlook mail folders and unread counts.", {
       properties: {},
     }),
@@ -270,33 +304,245 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       properties: { eventId: { type: "string" } },
       required: ["eventId"],
     }),
+    fn(
+      "respond_calendar_event",
+      "Accept, decline, or tentatively accept a calendar invitation. Confirm with Derek first.",
+      {
+        properties: {
+          eventId: { type: "string" },
+          response: {
+            type: "string",
+            enum: ["accept", "decline", "tentativelyAccept"],
+          },
+          comment: { type: "string" },
+          sendResponse: {
+            type: "boolean",
+            description: "Whether to notify the organizer. Default true.",
+          },
+        },
+        required: ["eventId", "response"],
+      },
+    ),
     fn("list_contacts", "List or search Outlook contacts.", {
       properties: {
         top: { type: "number" },
         search: { type: "string" },
       },
     }),
-    fn("list_onedrive_children", "List files/folders in OneDrive path (root if omitted).", {
+    fn("list_onedrive_children", "List files/folders in Derek's OneDrive path (root if omitted).", {
       properties: {
-        path: { type: "string" },
+        path: {
+          type: "string",
+          description: "Folder path under OneDrive root, e.g. 'Documents/Projects'. Omit for root.",
+        },
         top: { type: "number" },
       },
     }),
-    fn("search_onedrive", "Search Derek's OneDrive.", {
+    fn("search_onedrive", "Search Derek's OneDrive by name/content keywords.", {
       properties: {
         query: { type: "string" },
         top: { type: "number" },
       },
       required: ["query"],
     }),
-    fn("create_sharepoint_note", "Create a text note in the configured SharePoint library/folder.", {
+    fn("get_onedrive_item", "Get metadata for a OneDrive file or folder by path.", {
       properties: {
-        title: { type: "string" },
-        content: { type: "string" },
-        folder: { type: "string" },
+        path: {
+          type: "string",
+          description: "Path under OneDrive root, e.g. 'Documents/notes.txt'.",
+        },
       },
-      required: ["title", "content"],
+      required: ["path"],
     }),
+    fn(
+      "get_onedrive_file_content",
+      "Read a OneDrive file. Returns UTF-8 text for text-like files; small binaries as base64; large/Office files return metadata + webUrl.",
+      {
+        properties: {
+          path: { type: "string" },
+          maxBytes: {
+            type: "number",
+            description: "Max bytes to inline (default 200000, max 1000000).",
+          },
+        },
+        required: ["path"],
+      },
+    ),
+    fn("create_onedrive_folder", "Create a folder in Derek's OneDrive (full path).", {
+      properties: {
+        path: {
+          type: "string",
+          description: "Folder path to create, e.g. 'Documents/Dina/Notes'.",
+        },
+        conflictBehavior: {
+          type: "string",
+          description: "fail | replace | rename. Default fail.",
+        },
+      },
+      required: ["path"],
+    }),
+    fn(
+      "write_onedrive_file",
+      "Create/overwrite a text or binary file on OneDrive. FORBIDDEN for .docx/.xlsx/.pptx — those require create_word_document / create_excel_workbook / create_powerpoint_presentation.",
+      {
+        properties: {
+          path: {
+            type: "string",
+            description: "File path under OneDrive root, e.g. 'notes.txt'. Not for Office extensions.",
+          },
+          content: {
+            type: "string",
+            description: "File body. UTF-8 text by default, or base64 when encoding=base64.",
+          },
+          contentType: {
+            type: "string",
+            description: "MIME type. Defaults to text/plain; charset=utf-8.",
+          },
+          encoding: {
+            type: "string",
+            description: "utf-8 (default) or base64 for binary uploads.",
+          },
+          conflictBehavior: {
+            type: "string",
+            description: "fail | replace | rename. Default replace.",
+          },
+        },
+        required: ["path", "content"],
+      },
+    ),
+    fn(
+      "delete_onedrive_item",
+      "Delete a OneDrive file or folder by path. Irreversible — confirm with Derek first.",
+      {
+        properties: {
+          path: { type: "string" },
+        },
+        required: ["path"],
+      },
+    ),
+    fn(
+      "move_onedrive_item",
+      "Move and/or rename a OneDrive file or folder.",
+      {
+        properties: {
+          path: { type: "string", description: "Current path." },
+          newPath: {
+            type: "string",
+            description:
+              "Destination path. If newName omitted, last segment is the new name.",
+          },
+          newName: { type: "string", description: "Optional new filename/folder name." },
+        },
+        required: ["path"],
+      },
+    ),
+    fn("copy_onedrive_item", "Copy a OneDrive file or folder to a new path.", {
+      properties: {
+        path: { type: "string", description: "Source path." },
+        newPath: { type: "string", description: "Destination path including filename." },
+      },
+      required: ["path", "newPath"],
+    }),
+    fn(
+      "create_word_document",
+      "REQUIRED for Word docs / .docx on Derek's OneDrive. Creates a real .docx. Never use create_sharepoint_note or write_onedrive_file for Word.",
+      {
+        properties: {
+          path: {
+            type: "string",
+            description: "OneDrive path under My files. Prefer root filename e.g. 'EQ Temple Lesson.docx'. Defaults to <title>.docx at My files root.",
+          },
+          title: { type: "string" },
+          paragraphs: { type: "array", items: { type: "string" } },
+          blocks: {
+            type: "array",
+            description: "Optional richer blocks: {type:'paragraph'|'heading', text, level?}",
+            items: { type: "object" },
+          },
+          conflictBehavior: { type: "string", description: "fail | replace | rename" },
+        },
+      },
+    ),
+    fn(
+      "create_excel_workbook",
+      "REQUIRED for Excel / .xlsx on Derek's OneDrive. Never use create_sharepoint_note or write_onedrive_file for Excel.",
+      {
+        properties: {
+          path: { type: "string" },
+          title: { type: "string" },
+          sheets: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                rows: {
+                  type: "array",
+                  items: { type: "array", items: {} },
+                },
+              },
+            },
+          },
+          conflictBehavior: { type: "string" },
+        },
+        required: ["sheets"],
+      },
+    ),
+    fn(
+      "create_powerpoint_presentation",
+      "REQUIRED for PowerPoint / .pptx on Derek's OneDrive. Never use create_sharepoint_note or write_onedrive_file for PowerPoint.",
+      {
+        properties: {
+          path: { type: "string" },
+          title: { type: "string" },
+          slides: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                bullets: { type: "array", items: { type: "string" } },
+                notes: { type: "string" },
+              },
+            },
+          },
+          conflictBehavior: { type: "string" },
+        },
+        required: ["slides"],
+      },
+    ),
+    fn("read_word_document", "Extract text from a Word (.docx) file on OneDrive.", {
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    }),
+    fn("read_excel_workbook", "Read rows from an Excel (.xlsx) workbook on OneDrive.", {
+      properties: {
+        path: { type: "string" },
+        maxRowsPerSheet: { type: "number" },
+        maxSheets: { type: "number" },
+      },
+      required: ["path"],
+    }),
+    fn(
+      "read_powerpoint_presentation",
+      "Extract slide text from a PowerPoint (.pptx) on OneDrive.",
+      {
+        properties: { path: { type: "string" } },
+        required: ["path"],
+      },
+    ),
+    fn(
+      "create_sharepoint_note",
+      "Create a plain .txt note in the configured SharePoint library only. NOT for Word/Excel/PowerPoint and NOT for OneDrive — use create_word_document / create_excel_workbook / create_powerpoint_presentation / write_onedrive_file instead.",
+      {
+        properties: {
+          title: { type: "string" },
+          content: { type: "string" },
+          folder: { type: "string" },
+        },
+        required: ["title", "content"],
+      },
+    ),
     fn(
       "list_sharepoint_folder",
       "List files/folders in the 4SL Tech Projects SharePoint document library. Use for documents only — not for SharePoint Lists like Network Info.",
@@ -313,14 +559,14 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "list_sharepoint_lists",
-      "List SharePoint lists on the 4SL Tech Projects site (e.g. Network Info, 4SL Contacts). Use this for lists, not document folders.",
+      "List SharePoint Lists on the 4SL Tech Projects site (e.g. Network Info, 4SL Contacts). ONLY when Derek explicitly says SharePoint list or names one of those lists. Never use for remembered/chat-built lists — those go to Memory (remember/search_memory).",
       {
         properties: { top: { type: "number" } },
       },
     ),
     fn(
       "get_sharepoint_list_items",
-      "Get items from a SharePoint list by listName (e.g. 'Network Info') or listId. Optional search filters rows client-side.",
+      "Get rows from a SharePoint List by listName (e.g. 'Network Info') or listId. ONLY for explicit SharePoint List requests — not for Memory lists, lesson outlines, or 'remember this for later'.",
       {
         properties: {
           listName: { type: "string" },
@@ -380,6 +626,39 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       },
       required: ["taskId", "etag"],
     }),
+    fn("get_planner_task", "Get a Planner task plus description/checklist details.", {
+      properties: { taskId: { type: "string" } },
+      required: ["taskId"],
+    }),
+    fn("delete_planner_task", "Delete a Planner task. Requires etag. Confirm with Derek first.", {
+      properties: {
+        taskId: { type: "string" },
+        etag: { type: "string" },
+      },
+      required: ["taskId", "etag"],
+    }),
+    fn(
+      "set_planner_task_details",
+      "Set Planner task description and/or replace checklist. Requires detailsEtag from get_planner_task.",
+      {
+        properties: {
+          taskId: { type: "string" },
+          detailsEtag: { type: "string" },
+          description: { type: "string" },
+          checklist: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                isChecked: { type: "boolean" },
+              },
+            },
+          },
+        },
+        required: ["taskId", "detailsEtag"],
+      },
+    ),
     fn("list_todo_lists", "List Microsoft To Do lists.", { properties: {} }),
     fn("list_todo_tasks", "List incomplete tasks in a To Do list.", {
       properties: {
@@ -405,13 +684,34 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       properties: { teamId: { type: "string" } },
       required: ["teamId"],
     }),
-    fn("send_channel_message", "Send a message to a Teams channel.", {
+    fn(
+      "list_channel_messages",
+      "List recent messages in a Teams channel (not 1:1 chats — those need delegated auth).",
+      {
+        properties: {
+          teamId: { type: "string" },
+          channelId: { type: "string" },
+          top: { type: "number" },
+        },
+        required: ["teamId", "channelId"],
+      },
+    ),
+    fn("send_channel_message", "Send a message to a Teams channel. Confirm with Derek first.", {
       properties: {
         teamId: { type: "string" },
         channelId: { type: "string" },
         message: { type: "string" },
       },
       required: ["teamId", "channelId", "message"],
+    }),
+    fn("reply_channel_message", "Reply in a Teams channel thread. Confirm with Derek first.", {
+      properties: {
+        teamId: { type: "string" },
+        channelId: { type: "string" },
+        messageId: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["teamId", "channelId", "messageId", "message"],
     }),
   ];
 }

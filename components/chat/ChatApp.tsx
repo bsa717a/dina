@@ -60,6 +60,7 @@ export function ChatApp() {
   const [attentionHighlight, setAttentionHighlight] = useState<string | null>(
     null,
   );
+  const [starBusyId, setStarBusyId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const dragDepthRef = useRef(0);
@@ -133,8 +134,9 @@ export function ChatApp() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load conversation");
       setMessages(
-        (data.messages || []).map((m: ChatMessage) => ({
+        (data.messages || []).map((m: ChatMessage & { starredAt?: string | null }) => ({
           ...m,
+          starred: Boolean(m.starred ?? m.starredAt),
           createdAt:
             typeof m.createdAt === "string"
               ? m.createdAt
@@ -145,6 +147,51 @@ export function ChatApp() {
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
   }, [router]);
+
+  const handleToggleStar = useCallback(
+    async (message: ChatMessage) => {
+      if (!message.id || message.pending) return;
+      setStarBusyId(message.id);
+      setError(null);
+      try {
+        const res = await fetch(`/api/messages/${encodeURIComponent(message.id)}/star`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ starred: !message.starred }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          count?: number;
+          cap?: number;
+        };
+        if (!res.ok || !data.ok) {
+          throw new Error(
+            data.error ||
+              (res.status === 409
+                ? "Star limit reached. Unstar something first."
+                : "Could not update star."),
+          );
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  starred: !message.starred,
+                  starredAt: !message.starred ? new Date().toISOString() : null,
+                }
+              : m,
+          ),
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not update star.");
+      } finally {
+        setStarBusyId(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -253,7 +300,8 @@ export function ChatApp() {
           if (event.type === "status") {
             setThinking(true);
             if (event.detail) setThinkingLabel(event.detail);
-            else if (event.status === "tool") setThinkingLabel("Using Microsoft 365…");
+            else if (event.status === "tool") setThinkingLabel("Working…");
+            else if (event.status === "working") setThinkingLabel("Working…");
             else setThinkingLabel("Dina is thinking…");
           }
 
@@ -381,6 +429,8 @@ export function ChatApp() {
         messages={messages}
         thinking={thinking}
         thinkingLabel={thinkingLabel}
+        onToggleStar={handleToggleStar}
+        starBusyId={starBusyId}
       />
       <Composer ref={composerRef} disabled={thinking} onSend={handleSend} />
     </div>

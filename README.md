@@ -68,14 +68,15 @@ Dina reuses the same **app-only client credentials** pattern as `/Users/derekfow
 
 When configured, chat can call tools for:
 
-- Outlook mail (list/read/mark/send/reply draft/folders)
-- Calendar (list/create/update/delete)
+- Outlook mail (list/read/mark/send/drafts/attachments/folders/rules)
+- Calendar (list/create/update/delete/accept-decline)
 - Contacts
-- OneDrive (list/search)
+- OneDrive (list/search/read/write/folder create/move/copy/delete)
+- Office docs on OneDrive (create/read Word, Excel, PowerPoint)
 - SharePoint notes + folder listing
-- Planner (plans/buckets/tasks)
+- Planner (plans/buckets/tasks/details/delete)
 - Microsoft To Do
-- Teams (joined teams / channels / channel messages — best effort; needs app permissions)
+- Teams channels (list/read/send/reply — not 1:1 chats under app-only auth)
 
 Put secrets only in `.env`. If the client secret previously lived in Python source, rotate it in Entra when you can.
 
@@ -91,7 +92,7 @@ Grant **application** permissions with admin consent as needed:
 - `Sites.ReadWrite.All`
 - `Tasks.ReadWrite.All` (Planner)
 - `Group.Read.All` (often required for Planner plan discovery)
-- `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Send` (Teams; may still be limited for app-only)
+- `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`, `ChannelMessage.Send` (Teams channels; 1:1 chats need delegated auth)
 - `User.Read.All` (resolve user profile for health check)
 
 If a tool fails with 403, Dina will surface the Graph error — add the missing permission and re-consent.
