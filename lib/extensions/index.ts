@@ -3,6 +3,8 @@
  * Microsoft 365 is implemented via lib/microsoft/* and registered through ToolRegistry.
  */
 
+import { isGitHubConfigured } from "@/lib/github/config";
+import { listGitHubToolNames } from "@/lib/github/tools";
 import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { listMicrosoftToolNames } from "@/lib/microsoft/tools";
 
@@ -34,7 +36,10 @@ export const extensions = {
   reminders: null as ReminderProvider | null,
   tools: {
     listTools() {
-      return isMicrosoftConfigured() ? listMicrosoftToolNames() : [];
+      return [
+        ...(isMicrosoftConfigured() ? listMicrosoftToolNames() : []),
+        ...(isGitHubConfigured() ? listGitHubToolNames() : []),
+      ];
     },
   } satisfies ToolRegistry,
 };

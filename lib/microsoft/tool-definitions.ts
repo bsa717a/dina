@@ -42,7 +42,7 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "brief_inbox",
-      "PREFERRED for inbox digests/summaries. Lists recent/unread mail and returns cleaned textBody for each message in one call. Always use this instead of list_inbox_messages when Derek asks what his email says or wants a summary.",
+      "PREFERRED for inbox digests/summaries. Triages unread by header/preview first: high-confidence marketing/spam is auto-marked read (autoCleared) without fetching bodies; only likely-real mail returns cleaned textBody. Always use this instead of list_inbox_messages when Derek asks what his email says or wants a summary.",
       {
         properties: {
           unreadOnly: {
@@ -51,9 +51,15 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
           },
           top: {
             type: "number",
-            description: "How many emails to fully read (1-12). Default 8.",
+            description:
+              "How many likely-real emails to fully read (1-12). Default 8. Noise is cleared separately and does not count against this.",
           },
           search: { type: "string" },
+          autoClearNoise: {
+            type: "boolean",
+            description:
+              "If true (default), mark high-confidence marketing/spam read after header triage.",
+          },
         },
       },
     ),
@@ -224,7 +230,7 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
         required: ["displayName"],
       },
     ),
-    fn("list_calendar_events", "List calendar events in a date range (defaults to next 7 days).", {
+    fn("list_calendar_events", "List Outlook calendar events in a date range (defaults to next 7 days). Times are America/Denver. Always use this for calendar questions — do not guess.", {
       properties: {
         start: { type: "string", description: "ISO start datetime" },
         end: { type: "string", description: "ISO end datetime" },
@@ -291,22 +297,60 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       },
       required: ["title", "content"],
     }),
-    fn("list_sharepoint_folder", "List files in a SharePoint folder.", {
-      properties: {
-        folder: { type: "string" },
-        top: { type: "number" },
+    fn(
+      "list_sharepoint_folder",
+      "List files/folders in the 4SL Tech Projects SharePoint document library. Use for documents only — not for SharePoint Lists like Network Info.",
+      {
+        properties: {
+          folder: {
+            type: "string",
+            description:
+              "Folder path under Documents, e.g. 'Dev Docs' or 'Systems'. Use '.' for root.",
+          },
+          top: { type: "number" },
+        },
       },
-    }),
-    fn("list_planner_plans", "List Microsoft Planner plans available to Derek.", {
-      properties: { top: { type: "number" } },
-    }),
-    fn("list_planner_tasks", "List tasks in a Planner plan.", {
+    ),
+    fn(
+      "list_sharepoint_lists",
+      "List SharePoint lists on the 4SL Tech Projects site (e.g. Network Info, 4SL Contacts). Use this for lists, not document folders.",
+      {
+        properties: { top: { type: "number" } },
+      },
+    ),
+    fn(
+      "get_sharepoint_list_items",
+      "Get items from a SharePoint list by listName (e.g. 'Network Info') or listId. Optional search filters rows client-side.",
+      {
+        properties: {
+          listName: { type: "string" },
+          listId: { type: "string" },
+          search: { type: "string" },
+          top: { type: "number" },
+        },
+      },
+    ),
+    fn(
+      "list_planner_plans",
+      "List Microsoft Planner plans from Derek's M365 groups (e.g. 4SL Tech Projects). Call this first for any Planner question.",
+      {
+        properties: { top: { type: "number" } },
+      },
+    ),
+    fn("list_planner_tasks", "List tasks in a Planner plan (use planId from list_planner_plans).", {
       properties: {
         planId: { type: "string" },
         top: { type: "number" },
       },
       required: ["planId"],
     }),
+    fn(
+      "list_my_planner_tasks",
+      "List Planner tasks assigned specifically to Derek (may be a subset of plan boards).",
+      {
+        properties: { top: { type: "number" } },
+      },
+    ),
     fn("list_planner_buckets", "List buckets in a Planner plan.", {
       properties: { planId: { type: "string" } },
       required: ["planId"],

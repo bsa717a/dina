@@ -1,0 +1,52 @@
+import { markAttentionSourceHandled } from "@/lib/attention/mark-handled";
+import {
+  listOpenAttentionItems,
+  recordAttentionAction,
+  updateAttentionItemStatus,
+} from "@/lib/attention/store";
+import type { AttentionActionType } from "@/lib/attention/types";
+
+type CloseableItem = {
+  id: string;
+  source: string;
+  sourceId: string;
+  subject: string | null;
+  summary: string;
+  rawJson: string | null;
+};
+
+export async function closeAttentionItem(
+  item: CloseableItem,
+  status: "resolved" | "dismissed" | "sent",
+  action: Extract<
+    AttentionActionType,
+    "accepted_recommendation" | "dismissed_unimportant" | "sent_draft"
+  >,
+  details?: Record<string, unknown>,
+) {
+  const marked = await markAttentionSourceHandled(item);
+  await updateAttentionItemStatus(item.id, status, {
+    draftSubject:
+      typeof details?.subject === "string" ? details.subject : undefined,
+    draftBody: typeof details?.body === "string" ? details.body : undefined,
+  });
+  await recordAttentionAction({
+    attentionItemId: item.id,
+    action,
+    details: { ...details, markedRead: marked },
+  });
+  return marked;
+}
+
+/** Resolve every open attention card (Done for all). */
+export async function markAllAttentionDone() {
+  const items = await listOpenAttentionItems();
+  let resolved = 0;
+  for (const item of items) {
+    await closeAttentionItem(item, "resolved", "accepted_recommendation", {
+      bulk: true,
+    });
+    resolved += 1;
+  }
+  return { resolved };
+}

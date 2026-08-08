@@ -28,7 +28,7 @@ export function getOpenAIApiKey(): string | undefined {
 }
 
 export function getOpenAIModel(): string {
-  return process.env.OPENAI_MODEL || "gpt-4o";
+  return process.env.OPENAI_MODEL || "gpt-4.1-mini";
 }
 
 export function getVapidConfig() {
@@ -40,3 +40,12 @@ export function getVapidConfig() {
 }
 
 export { getMicrosoftConfig, isMicrosoftConfigured } from "@/lib/microsoft/config";
+
+export function getAttentionScanSecret(): string | undefined {
+  return process.env.ATTENTION_SCAN_SECRET?.trim() || undefined;
+}
+
+/** Default calendar/mail wall-clock timezone for Graph Prefer header. */
+export function getDefaultTimeZone(): string {
+  return process.env.DEFAULT_TIMEZONE?.trim() || "America/Denver";
+}

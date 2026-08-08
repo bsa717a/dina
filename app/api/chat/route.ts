@@ -10,6 +10,15 @@ import {
 } from "@/lib/db/conversations";
 import { jsonError, unauthorized } from "@/lib/http";
 import { logger } from "@/lib/logger";
+import {
+  formatMemoriesForPrompt,
+  retrieveRelevantMemories,
+} from "@/lib/memory/retrieve";
+import { seedDerekProfileMemories } from "@/lib/memory/seed-derek-profile";
+import { seedDerekProjectMemories } from "@/lib/memory/seed-derek-projects";
+import { seedDinaMemoryRuleMemories } from "@/lib/memory/seed-dina-memory-rules";
+import { seedDinaOperatingManualMemories } from "@/lib/memory/seed-dina-operating-manual";
+import { seedDinaProjectTasks } from "@/lib/project-tasks/seed-dina-tasks";
 import { loadProviderAttachments } from "@/lib/uploads/storage";
 import { kindFromMime } from "@/lib/uploads/validation";
 
@@ -44,6 +53,15 @@ export async function POST(request: NextRequest) {
     return jsonError("Message or attachment is required.");
   }
 
+  // Ensure foundational document memories + recovered project tasks exist (idempotent).
+  await Promise.all([
+    seedDerekProfileMemories().catch(() => undefined),
+    seedDerekProjectMemories().catch(() => undefined),
+    seedDinaMemoryRuleMemories().catch(() => undefined),
+    seedDinaOperatingManualMemories().catch(() => undefined),
+    seedDinaProjectTasks().catch(() => undefined),
+  ]);
+
   const conversation = await getOrCreateDefaultConversation();
   const providerAttachments = await loadProviderAttachments(parsed.data.attachmentIds);
 
@@ -70,6 +88,12 @@ export async function POST(request: NextRequest) {
         let fullText = "";
         let responseId: string | undefined;
 
+        const relevant = await retrieveRelevantMemories(
+          content || "derek preferences projects people",
+          { limit: 12 },
+        );
+        const memoryBlock = formatMemoriesForPrompt(relevant);
+
         const messages = history.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
@@ -89,6 +113,7 @@ export async function POST(request: NextRequest) {
         for await (const event of provider.streamChat({
           messages,
           signal: request.signal,
+          memoryBlock,
         })) {
           if (event.type === "status") {
             send({

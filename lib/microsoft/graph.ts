@@ -1,3 +1,4 @@
+import { getDefaultTimeZone } from "@/lib/env";
 import { getMicrosoftConfig } from "@/lib/microsoft/config";
 import { logger } from "@/lib/logger";
 
@@ -93,8 +94,11 @@ export async function graphRequest<T = unknown>(
 ): Promise<T> {
   const token = await getGraphToken();
   const method = options.method || "GET";
+  const timeZone = getDefaultTimeZone();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
+    // Return calendar/mail wall times in Derek's timezone (not raw UTC).
+    Prefer: `outlook.timezone="${timeZone}"`,
     ...(options.headers || {}),
   };
 

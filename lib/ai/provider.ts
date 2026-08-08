@@ -28,6 +28,8 @@ export interface ModelProvider {
   streamChat(input: {
     messages: ProviderMessage[];
     signal?: AbortSignal;
+    /** Structured memory block injected into runtime instructions. */
+    memoryBlock?: string;
   }): AsyncIterable<StreamEvent>;
 }
 
