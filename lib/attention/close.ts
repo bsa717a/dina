@@ -5,6 +5,7 @@ import {
   updateAttentionItemStatus,
 } from "@/lib/attention/store";
 import type { AttentionActionType } from "@/lib/attention/types";
+import { scheduleLearnFromAttentionAction } from "@/lib/learning/distill";
 
 type CloseableItem = {
   id: string;
@@ -31,6 +32,11 @@ export async function closeAttentionItem(
     draftBody: typeof details?.body === "string" ? details.body : undefined,
   });
   await recordAttentionAction({
+    attentionItemId: item.id,
+    action,
+    details: { ...details, markedRead: marked },
+  });
+  scheduleLearnFromAttentionAction({
     attentionItemId: item.id,
     action,
     details: { ...details, markedRead: marked },

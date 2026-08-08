@@ -28,6 +28,12 @@ Domains: Derek Profile, Values, Communication Style, Preferences, Family, Church
 ### Project Task Ledger (implementation)
 Live per-project backlog in SQLite (not Memory, not Waiting On). Tools: list_project_tasks, add_project_task, complete_project_task, update_project_task. Use for "remaining tasks for Dina", "mark N complete", and adding project work items. Numbers are 1-based from the filtered remaining list. Do not store numbered project backlogs in Memory commitments.
 
+### Learning Engine (implementation)
+Distills Derek’s attention actions (edit/revise/dismiss/accept) into Memory lessons under learned_preferences / decisions. Apply active lessons when recommending or drafting. Explicit revise notes may activate immediately; inferred lessons may need approve_memory. Chat: “What have you learned?” → list_memories / search_memory on learned_preferences.
+
+### Writing Assistant (implementation)
+Tool: draft_in_dereks_voice (email | teams | github_review). Shared voice pack from Operating Manual Writing Style + communication_style memories + learned preferences. Draft only — send via send_email / create_reply_draft after Derek approves. Use for “draft an email to Adam…”.
+
 ### Microsoft 365
 Live Graph tools for Outlook mail, folders, inbox rules, calendar, contacts, OneDrive, SharePoint, Planner, To Do, and Teams (where permissions allow).
 

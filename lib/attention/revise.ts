@@ -8,6 +8,11 @@ import {
 } from "@/lib/ai/openai-errors";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { prisma } from "@/lib/db/client";
+import {
+  formatLessonsForPrompt,
+  listActiveLessons,
+} from "@/lib/learning/lessons";
+import { getVoiceInstructionsForPrompt } from "@/lib/writing/voice";
 import { logger } from "@/lib/logger";
 
 const reviseSchema = z.object({
@@ -78,6 +83,10 @@ export async function reviseAttentionDraft(input: {
 
   const client = new OpenAI({ apiKey, timeout: 60_000 });
   const model = getOpenAIModel();
+  const [lessonsBlock, voiceBlock] = await Promise.all([
+    listActiveLessons().then(formatLessonsForPrompt),
+    getVoiceInstructionsForPrompt(),
+  ]);
 
   try {
     const response = await client.responses.create({
@@ -89,9 +98,11 @@ export async function reviseAttentionDraft(input: {
           role: "system",
           content: `You help Derek refine Attention Engine drafts and recommendations.
 He may have edited a draft or left notes about what he wants changed.
-Improve the draft in Derek's professional voice. Keep it concise and actionable.
+Improve the draft using the voice pack below. Keep it concise and actionable.
 If this is a GitHub review note (not an email), write a short review/decision note — not an email greeting.
-Return JSON only with: draftSubject, draftBody, whyItMatters, recommendedAction, summary.`,
+Return JSON only with: draftSubject, draftBody, whyItMatters, recommendedAction, summary.
+
+${voiceBlock}${lessonsBlock ? `\n\n${lessonsBlock}` : ""}`,
         },
         {
           role: "user",

@@ -15,11 +15,20 @@ import { getMemoryToolDefinitions } from "@/lib/memory/tool-definitions";
 import { executeMemoryTool, listMemoryToolNames } from "@/lib/memory/tools";
 import { getMicrosoftToolDefinitions } from "@/lib/microsoft/tool-definitions";
 import { executeMicrosoftTool, listMicrosoftToolNames } from "@/lib/microsoft/tools";
+import {
+  formatLessonsForPrompt,
+  listActiveLessons,
+} from "@/lib/learning/lessons";
 import { getProjectTaskToolDefinitions } from "@/lib/project-tasks/tool-definitions";
 import {
   executeProjectTaskTool,
   listProjectTaskToolNames,
 } from "@/lib/project-tasks/tools";
+import { getWritingToolDefinitions } from "@/lib/writing/tool-definitions";
+import {
+  executeWritingTool,
+  listWritingToolNames,
+} from "@/lib/writing/tools";
 
 type EasyInputMessage = OpenAI.Responses.ResponseInputItem;
 
@@ -170,10 +179,14 @@ function buildInstructions(
   msCount: number,
   ghCount: number,
   memoryBlock: string,
+  lessonsBlock: string,
 ) {
   const parts = [getDinaSystemPrompt()];
   if (memoryBlock) {
     parts.push("", memoryBlock);
+  }
+  if (lessonsBlock) {
+    parts.push("", lessonsBlock);
   }
   parts.push("", "SESSION RUNTIME:");
   parts.push(
@@ -185,6 +198,8 @@ function buildInstructions(
     "Project task tools are enabled (list_project_tasks, add_project_task, complete_project_task, update_project_task).",
     "For per-project backlogs ('remaining tasks for Dina', 'mark 6 complete', 'add a Dina task'), ALWAYS use project task tools — never Memory commitments and never invent a list from chat history.",
     "Waiting On Engine tracks external waits (on Derek / others); ProjectTask is the live backlog of work items on a named project.",
+    "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
+    "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
   );
   parts.push(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,
@@ -222,6 +237,9 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
   if (listProjectTaskToolNames().includes(name)) {
     return executeProjectTaskTool(name, argsJson);
   }
+  if (listWritingToolNames().includes(name)) {
+    return executeWritingTool(name, argsJson);
+  }
   if (listGitHubToolNames().includes(name)) {
     return executeGitHubTool(name, argsJson);
   }
@@ -256,11 +274,20 @@ export class OpenAIProvider implements ModelProvider {
     const ghTools = getGitHubToolDefinitions();
     const memoryTools = getMemoryToolDefinitions();
     const projectTaskTools = getProjectTaskToolDefinitions();
-    const tools = [...msTools, ...ghTools, ...memoryTools, ...projectTaskTools];
+    const writingTools = getWritingToolDefinitions();
+    const tools = [
+      ...msTools,
+      ...ghTools,
+      ...memoryTools,
+      ...projectTaskTools,
+      ...writingTools,
+    ];
+    const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
     const instructions = buildInstructions(
       msTools.length,
       ghTools.length,
       input.memoryBlock || "",
+      lessonsBlock,
     );
 
     try {
