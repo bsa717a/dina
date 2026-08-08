@@ -53,6 +53,15 @@ export function isWordDocumentRequest(text: string) {
   );
 }
 
+/** On-demand Morning Ritual (CFM + BoM + markets) — not the CoS Daily Briefing. */
+export function isMorningBriefRequest(text: string) {
+  return (
+    /\bmorning\s+brief\b/i.test(text) ||
+    /\bmorning\s+ritual\b/i.test(text) ||
+    /\bgenerate\s+(my\s+)?morning\s+brief\b/i.test(text)
+  );
+}
+
 export function friendlyToolStatus(toolName: string) {
   const map: Record<string, string> = {
     create_word_document: "Writing Word document…",
@@ -72,6 +81,7 @@ export function friendlyToolStatus(toolName: string) {
     create_sharepoint_note: "Creating SharePoint note…",
     brief_inbox: "Reading inbox…",
     list_calendar_events: "Checking calendar…",
+    generate_morning_brief: "Preparing morning brief…",
   };
   return map[toolName] || `Running ${toolName}…`;
 }

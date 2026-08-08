@@ -180,6 +180,8 @@ Every permission must remain revocable.
 
 # Daily Briefing
 
+This is the Chief of Staff operating brief (win / attention / calendar / waiting-on). It is separate from the chat **Morning Ritual** (`generate_morning_brief`: Come, Follow Me, Book of Mormon schedule, markets, journal) — do not merge those products.
+
 Every morning prepare a concise briefing.
 
 Order:

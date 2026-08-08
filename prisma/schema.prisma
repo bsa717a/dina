@@ -204,3 +204,16 @@ model ProjectTask {
   @@index([projectKey, sortOrder])
   @@unique([projectKey, title])
 }
+
+/// Cached 7-day Come, Follow Me plan for Morning Ritual (Mon–Sun).
+model MorningRitualWeekPlan {
+  id          String   @id @default(cuid())
+  lessonKey   String
+  weekStart   String
+  planJson    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([lessonKey, weekStart])
+  @@index([weekStart])
+}
