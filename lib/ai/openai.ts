@@ -29,6 +29,17 @@ import {
   executeWritingTool,
   listWritingToolNames,
 } from "@/lib/writing/tools";
+import { getStarToolDefinitions } from "@/lib/stars/tool-definitions";
+import { executeStarTool, listStarToolNames } from "@/lib/stars/tools";
+import {
+  friendlyToolStatus,
+  isCalendarQuestion,
+  isPlannerQuestion,
+  isSharePointListQuestion,
+  isSharePointQuestion,
+  isWordDocumentRequest,
+  looksLikeStallingFiller,
+} from "@/lib/ai/tool-routing";
 
 type EasyInputMessage = OpenAI.Responses.ResponseInputItem;
 
@@ -53,32 +64,6 @@ function looksLikeFalseMsUnavailable(content: string) {
   );
 }
 
-function isCalendarQuestion(text: string) {
-  return /\b(calendar|schedule|agenda|what'?s on|what is on|meetings?\b.*\b(today|tomorrow)|am i free)\b/i.test(
-    text,
-  );
-}
-
-function isPlannerQuestion(text: string) {
-  return /\bplanner\b|\bplan board\b|\bbuckets?\b.*\btasks?\b|\btasks?\b.*\bplanner\b/i.test(
-    text,
-  );
-}
-
-function isSharePointQuestion(text: string) {
-  return /\bshare\s*point\b|\bsharepoint\b|\b4sl tech projects\b|\bdev docs\b/i.test(
-    text,
-  );
-}
-
-function isSharePointListQuestion(text: string) {
-  return (
-    /\b(share\s*point\s+)?list\b/i.test(text) ||
-    /\bnetwork info\b/i.test(text) ||
-    /\b4sl contacts\b/i.test(text)
-  );
-}
-
 function denverNowLabel() {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: getDefaultTimeZone(),
@@ -92,10 +77,13 @@ function denverNowLabel() {
   }).format(new Date());
 }
 
+/** How many prior chat turns to send the model. Too small and collaborative lists/docs get lost. */
+const CHAT_HISTORY_WINDOW = 80;
+
 function buildInput(messages: ProviderMessage[]): EasyInputMessage[] {
   const input: EasyInputMessage[] = [];
-  // Keep recent context only so outdated refusals/bad digests don't dominate.
-  const recent = messages.slice(-16);
+  // Keep recent context; filter junk digests so they don't dominate.
+  const recent = messages.slice(-CHAT_HISTORY_WINDOW);
 
   for (const message of recent) {
     if (message.role === "system") continue;
@@ -200,6 +188,8 @@ function buildInstructions(
     "Waiting On Engine tracks external waits (on Derek / others); ProjectTask is the live backlog of work items on a named project.",
     "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
+    "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
+    "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
   );
   parts.push(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,
@@ -233,6 +223,9 @@ function buildInstructions(
 async function executeTool(name: string, argsJson: string): Promise<string> {
   if (listMemoryToolNames().includes(name)) {
     return executeMemoryTool(name, argsJson);
+  }
+  if (listStarToolNames().includes(name)) {
+    return executeStarTool(name, argsJson);
   }
   if (listProjectTaskToolNames().includes(name)) {
     return executeProjectTaskTool(name, argsJson);
@@ -273,12 +266,14 @@ export class OpenAIProvider implements ModelProvider {
     const msTools = getMicrosoftToolDefinitions();
     const ghTools = getGitHubToolDefinitions();
     const memoryTools = getMemoryToolDefinitions();
+    const starTools = getStarToolDefinitions();
     const projectTaskTools = getProjectTaskToolDefinitions();
     const writingTools = getWritingToolDefinitions();
     const tools = [
       ...msTools,
       ...ghTools,
       ...memoryTools,
+      ...starTools,
       ...projectTaskTools,
       ...writingTools,
     ];
@@ -310,6 +305,11 @@ export class OpenAIProvider implements ModelProvider {
         Boolean(msTools.length) &&
         !forceSharePointList &&
         isSharePointQuestion(lastUserText);
+      const forceWordDoc =
+        Boolean(msTools.length) &&
+        isWordDocumentRequest(lastUserText) &&
+        !forceSharePointList;
+      let stallNudgeUsed = false;
 
       for (let round = 0; round < maxRounds; round += 1) {
         if (input.signal?.aborted) break;
@@ -317,7 +317,12 @@ export class OpenAIProvider implements ModelProvider {
         yield {
           type: "status",
           status: round === 0 ? "thinking" : "working",
-          detail: round === 0 ? undefined : "Using tools…",
+          detail:
+            round === 0
+              ? forceWordDoc
+                ? "Preparing Word document…"
+                : "Dina is thinking…"
+              : "Working…",
         };
 
         const forcedToolName =
@@ -326,11 +331,16 @@ export class OpenAIProvider implements ModelProvider {
             : forcePlanner && round === 0
               ? "list_planner_plans"
               : forceSharePointList && round === 0
-                ? // Prefer items lookup; model should pass listName from the user message.
-                  "get_sharepoint_list_items"
+                ? "get_sharepoint_list_items"
                 : forceSharePoint && round === 0
                   ? "list_sharepoint_folder"
-                  : null;
+                  : forceWordDoc && stallNudgeUsed
+                    ? "create_word_document"
+                    : null;
+
+        // Word/doc asks must use tools (memory + create_word_document), not filler chat.
+        const requireAnyTool =
+          stallNudgeUsed || (forceWordDoc && round === 0 && !forcedToolName);
 
         const toolChoice =
           !tools.length
@@ -340,7 +350,9 @@ export class OpenAIProvider implements ModelProvider {
                   type: "function" as const,
                   name: forcedToolName,
                 }
-              : ("auto" as const);
+              : requireAnyTool
+                ? ("required" as const)
+                : ("auto" as const);
 
         const stream = await client.responses.create(
           {
@@ -418,6 +430,34 @@ export class OpenAIProvider implements ModelProvider {
 
         if (!functionCalls.length) {
           finalText = text || completed.output_text || "";
+          // Model said “please hold…” / “I’ll prepare…” without calling tools — nudge and continue.
+          if (
+            !stallNudgeUsed &&
+            tools.length &&
+            round < maxRounds - 1 &&
+            looksLikeStallingFiller(finalText)
+          ) {
+            stallNudgeUsed = true;
+            logger.info("stall_filler_nudge", {
+              preview: finalText.slice(0, 160),
+            });
+            yield {
+              type: "status",
+              status: "working",
+              detail: forceWordDoc
+                ? "Still working — writing the document…"
+                : "Still working — calling tools…",
+            };
+            previousResponseId = completed.id;
+            nextInput = [
+              {
+                role: "user",
+                content:
+                  "Stop saying please hold / one moment. You ended the turn without calling tools. Call the required tools NOW and finish the work in this turn. If Derek asked for a Word document, call create_word_document with the FULL content (from memory/chat) and conflictBehavior=replace. Do not reply with filler.",
+              },
+            ];
+            continue;
+          }
           if (finalText) yield { type: "delta", text: finalText };
           break;
         }
@@ -427,7 +467,7 @@ export class OpenAIProvider implements ModelProvider {
           yield {
             type: "status",
             status: "tool",
-            detail: `Running ${call.name}…`,
+            detail: friendlyToolStatus(call.name),
           };
           logger.info("tool_call", { tool: call.name });
           let output = await executeTool(call.name, call.arguments || "{}");

@@ -141,6 +141,46 @@ export async function graphRequest<T = unknown>(
   return data as T;
 }
 
+/** Fetch raw drive item content (text or binary). */
+export async function graphRequestContent(
+  url: string,
+  options: { maxBytes?: number } = {},
+): Promise<{
+  contentType: string | null;
+  bytes: Uint8Array;
+  truncated: boolean;
+}> {
+  const token = await getGraphToken();
+  const maxBytes = Math.min(Math.max(options.maxBytes ?? 512_000, 1), 2_000_000);
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Graph content request failed (${response.status})`;
+    try {
+      const data = JSON.parse(text) as { error?: { message?: string } };
+      if (data.error?.message) message = data.error.message;
+    } catch {
+      /* keep default */
+    }
+    throw new GraphError(message, response.status, text.slice(0, 800));
+  }
+
+  const contentType = response.headers.get("content-type");
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  if (buffer.byteLength <= maxBytes) {
+    return { contentType, bytes: buffer, truncated: false };
+  }
+  return {
+    contentType,
+    bytes: buffer.slice(0, maxBytes),
+    truncated: true,
+  };
+}
+
 export async function checkMicrosoftGraph(): Promise<{
   ok: boolean;
   configured: boolean;

@@ -1,6 +1,24 @@
 import { getMicrosoftConfig } from "@/lib/microsoft/config";
-import { GraphError, graphRequest, userPath } from "@/lib/microsoft/graph";
+import {
+  GraphError,
+  getGraphToken,
+  graphRequest,
+  graphRequestContent,
+  userPath,
+} from "@/lib/microsoft/graph";
 import { partitionMailByTriage } from "@/lib/microsoft/mail-triage";
+import {
+  buildExcelWorkbook,
+  buildPowerPointPresentation,
+  buildWordDocument,
+  extractExcelSheets,
+  extractPowerPointText,
+  extractWordText,
+  resolveOfficeUploadPath,
+  type ExcelSheetInput,
+  type PowerPointSlideInput,
+  type WordBlock,
+} from "@/lib/microsoft/office";
 
 function ok(data: unknown) {
   return JSON.stringify({ ok: true, data }, null, 0);
@@ -618,6 +636,118 @@ async function createReplyDraft(args: { messageId: string; comment?: string }) {
   return ok(data);
 }
 
+async function createEmailDraft(args: {
+  to: string | string[];
+  subject: string;
+  body: string;
+  contentType?: "Text" | "HTML";
+  cc?: string | string[];
+}) {
+  const toList = (Array.isArray(args.to) ? args.to : [args.to]).filter(Boolean);
+  const ccList = (Array.isArray(args.cc) ? args.cc : args.cc ? [args.cc] : []).filter(
+    Boolean,
+  );
+  if (!toList.length) throw new Error("At least one recipient is required.");
+  const data = await graphRequest<{
+    id?: string;
+    subject?: string;
+    webLink?: string;
+  }>(userPath("/messages"), {
+    method: "POST",
+    body: {
+      subject: args.subject,
+      body: {
+        contentType: args.contentType || "Text",
+        content: args.body,
+      },
+      toRecipients: toList.map((address) => ({ emailAddress: { address } })),
+      ccRecipients: ccList.map((address) => ({ emailAddress: { address } })),
+    },
+  });
+  return ok({
+    drafted: true,
+    id: data.id || null,
+    subject: data.subject || args.subject,
+    webLink: data.webLink || null,
+    to: toList,
+    note: "Draft saved in Outlook. Not sent — use send_email only after Derek approves.",
+  });
+}
+
+async function listMailAttachments(args: { messageId: string }) {
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      name?: string;
+      contentType?: string;
+      size?: number;
+      isInline?: boolean;
+      "@odata.type"?: string;
+    }>;
+  }>(
+    userPath(
+      `/messages/${encodeURIComponent(args.messageId)}/attachments?$select=id,name,contentType,size,isInline`,
+    ),
+  );
+  const attachments = (data.value || []).map((a) => ({
+    id: a.id || null,
+    name: a.name || null,
+    contentType: a.contentType || null,
+    size: a.size ?? null,
+    isInline: Boolean(a.isInline),
+  }));
+  return ok({ messageId: args.messageId, count: attachments.length, attachments });
+}
+
+async function getMailAttachment(args: {
+  messageId: string;
+  attachmentId: string;
+  maxBytes?: number;
+}) {
+  const maxBytes = Math.min(Math.max(args.maxBytes ?? 200_000, 1), 1_000_000);
+  const data = await graphRequest<{
+    id?: string;
+    name?: string;
+    contentType?: string;
+    size?: number;
+    contentBytes?: string;
+    isInline?: boolean;
+  }>(
+    userPath(
+      `/messages/${encodeURIComponent(args.messageId)}/attachments/${encodeURIComponent(args.attachmentId)}`,
+    ),
+  );
+  const size = data.size ?? 0;
+  if (!data.contentBytes) {
+    return ok({
+      id: data.id || args.attachmentId,
+      name: data.name || null,
+      contentType: data.contentType || null,
+      size,
+      note: "Attachment has no inline contentBytes (may be reference/large).",
+    });
+  }
+  const raw = Buffer.from(data.contentBytes, "base64");
+  const truncated = raw.byteLength > maxBytes;
+  const slice = truncated ? raw.subarray(0, maxBytes) : raw;
+  const contentType = (data.contentType || "").toLowerCase();
+  const asText =
+    contentType.startsWith("text/") ||
+    contentType.includes("json") ||
+    /\.(txt|md|csv|json|log)$/i.test(data.name || "");
+
+  return ok({
+    id: data.id || args.attachmentId,
+    name: data.name || null,
+    contentType: data.contentType || null,
+    size,
+    truncated,
+    encoding: asText ? "utf-8" : "base64",
+    text: asText ? slice.toString("utf8") : null,
+    base64: asText ? null : slice.toString("base64"),
+  });
+}
+
 async function listMailFolders() {
   const data = await graphRequest<{ value: unknown[] }>(
     userPath("/mailFolders?$top=50&$select=id,displayName,totalItemCount,unreadItemCount,childFolderCount"),
@@ -794,6 +924,34 @@ async function createCalendarEvent(args: {
   return ok(data);
 }
 
+async function respondCalendarEvent(args: {
+  eventId: string;
+  response: "accept" | "decline" | "tentativelyAccept";
+  comment?: string;
+  sendResponse?: boolean;
+}) {
+  const action = args.response;
+  if (!["accept", "decline", "tentativelyAccept"].includes(action)) {
+    throw new Error("response must be accept, decline, or tentativelyAccept.");
+  }
+  await graphRequest(
+    userPath(`/events/${encodeURIComponent(args.eventId)}/${action}`),
+    {
+      method: "POST",
+      body: {
+        comment: args.comment || "",
+        sendResponse: args.sendResponse ?? true,
+      },
+    },
+  );
+  return ok({
+    eventId: args.eventId,
+    response: action,
+    sendResponse: args.sendResponse ?? true,
+    note: "Confirm with Derek before accepting/declining meetings.",
+  });
+}
+
 async function updateCalendarEvent(args: {
   eventId: string;
   subject?: string;
@@ -843,24 +1001,573 @@ async function listContacts(args: { top?: number; search?: string }) {
 
 // ─── OneDrive / Files ────────────────────────────────────────────────────────
 
+const ONEDRIVE_ITEM_SELECT =
+  "id,name,size,webUrl,lastModifiedDateTime,createdDateTime,folder,file,parentReference";
+
+type OneDriveConflictBehavior = "fail" | "replace" | "rename";
+
+function normalizeOneDrivePath(path?: string | null) {
+  return (path || "").trim().replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function oneDriveItemUrl(path: string, suffix = "") {
+  const normalized = normalizeOneDrivePath(path);
+  if (!normalized) throw new Error("OneDrive path is required.");
+  const base = userPath(`/drive/root:/${encodePath(normalized)}:`);
+  return suffix ? `${base}${suffix.startsWith("/") || suffix.startsWith("?") ? "" : "/"}${suffix}` : base;
+}
+
+function oneDriveChildrenUrl(path: string | undefined, query = "") {
+  const normalized = normalizeOneDrivePath(path);
+  const base = normalized
+    ? userPath(`/drive/root:/${encodePath(normalized)}:/children`)
+    : userPath("/drive/root/children");
+  return query ? `${base}?${query}` : base;
+}
+
+function summarizeOneDriveItem(item: {
+  id?: string;
+  name?: string;
+  size?: number;
+  webUrl?: string;
+  lastModifiedDateTime?: string;
+  createdDateTime?: string;
+  folder?: { childCount?: number } | null;
+  file?: { mimeType?: string } | null;
+  parentReference?: { path?: string } | null;
+}) {
+  const parentPath = item.parentReference?.path?.replace(/^\/drive\/root:?/, "") || "";
+  const fullPath = [parentPath.replace(/^\//, ""), item.name || ""]
+    .filter(Boolean)
+    .join("/");
+  return {
+    id: item.id || null,
+    name: item.name || null,
+    path: fullPath || null,
+    size: item.size ?? null,
+    webUrl: item.webUrl || null,
+    lastModifiedDateTime: item.lastModifiedDateTime || null,
+    createdDateTime: item.createdDateTime || null,
+    isFolder: Boolean(item.folder),
+    childCount: item.folder?.childCount ?? null,
+    mimeType: item.file?.mimeType || null,
+  };
+}
+
+function looksLikeTextContent(contentType: string | null, path: string) {
+  const lowerPath = path.toLowerCase();
+  if (
+    /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|html?|css|js|ts|tsx|jsx|py|rb|go|rs|java|c|cpp|h|yml|yaml|toml|ini|env|log|sh|zsh|bash|sql|rtf)$/.test(
+      lowerPath,
+    )
+  ) {
+    return true;
+  }
+  if (!contentType) return false;
+  const ct = contentType.toLowerCase();
+  return (
+    ct.startsWith("text/") ||
+    ct.includes("json") ||
+    ct.includes("xml") ||
+    ct.includes("javascript") ||
+    ct.includes("csv")
+  );
+}
+
+function decodeUtf8(bytes: Uint8Array) {
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
 async function listOneDriveChildren(args: { path?: string; top?: number }) {
   const top = Math.min(Math.max(args.top ?? 25, 1), 50);
-  const path = args.path?.trim();
-  const url = path
-    ? userPath(`/drive/root:/${encodePath(path)}:/children?$top=${top}`)
-    : userPath(`/drive/root/children?$top=${top}`);
-  const data = await graphRequest<{ value: unknown[] }>(url);
-  return ok({ items: data.value ?? [] });
+  const query = `$top=${top}&$select=${ONEDRIVE_ITEM_SELECT}&$orderby=name`;
+  const data = await graphRequest<{ value: unknown[] }>(
+    oneDriveChildrenUrl(args.path, query),
+  );
+  const items = (data.value ?? []).map((item) =>
+    summarizeOneDriveItem(item as Parameters<typeof summarizeOneDriveItem>[0]),
+  );
+  return ok({ path: normalizeOneDrivePath(args.path) || "/", items });
 }
 
 async function searchOneDrive(args: { query: string; top?: number }) {
   const top = Math.min(Math.max(args.top ?? 20, 1), 50);
+  const q = args.query.replace(/'/g, "");
   const data = await graphRequest<{ value: unknown[] }>(
     userPath(
-      `/drive/root/search(q='${encodeURIComponent(args.query.replace(/'/g, ""))}')?$top=${top}`,
+      `/drive/root/search(q='${encodeURIComponent(q)}')?$top=${top}&$select=${ONEDRIVE_ITEM_SELECT}`,
     ),
   );
-  return ok({ items: data.value ?? [] });
+  const items = (data.value ?? []).map((item) =>
+    summarizeOneDriveItem(item as Parameters<typeof summarizeOneDriveItem>[0]),
+  );
+  return ok({ query: args.query, items });
+}
+
+async function getOneDriveItem(args: { path: string }) {
+  const path = normalizeOneDrivePath(args.path);
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(path)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  return ok({ item: summarizeOneDriveItem(data) });
+}
+
+async function getOneDriveFileContent(args: {
+  path: string;
+  maxBytes?: number;
+}) {
+  const path = normalizeOneDrivePath(args.path);
+  const meta = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(path)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  if (meta.folder) {
+    throw new Error("Path is a folder. Use list_onedrive_children instead.");
+  }
+
+  const maxBytes = Math.min(Math.max(args.maxBytes ?? 200_000, 1), 1_000_000);
+  const content = await graphRequestContent(oneDriveItemUrl(path, "content"), {
+    maxBytes,
+  });
+  const summary = summarizeOneDriveItem(meta);
+  const asText = looksLikeTextContent(content.contentType, path);
+
+  if (asText) {
+    return ok({
+      item: summary,
+      contentType: content.contentType,
+      encoding: "utf-8",
+      truncated: content.truncated,
+      byteLength: content.bytes.byteLength,
+      text: decodeUtf8(content.bytes),
+    });
+  }
+
+  // Small binaries only — large Office files stay as metadata + link.
+  if (content.bytes.byteLength <= 48_000 && !content.truncated) {
+    return ok({
+      item: summary,
+      contentType: content.contentType,
+      encoding: "base64",
+      truncated: false,
+      byteLength: content.bytes.byteLength,
+      base64: Buffer.from(content.bytes).toString("base64"),
+      note: "Binary content returned as base64. Prefer webUrl for Office docs.",
+    });
+  }
+
+  return ok({
+    item: summary,
+    contentType: content.contentType || summary.mimeType,
+    encoding: null,
+    truncated: false,
+    byteLength: summary.size,
+    text: null,
+    note: "File is binary or too large to inline. Use item.webUrl or download externally.",
+  });
+}
+
+async function createOneDriveFolder(args: {
+  path: string;
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const fullPath = normalizeOneDrivePath(args.path);
+  if (!fullPath) throw new Error("Folder path is required.");
+  const parts = fullPath.split("/").filter(Boolean);
+  const name = parts[parts.length - 1];
+  const parent = parts.slice(0, -1).join("/");
+  const conflictBehavior = args.conflictBehavior || "fail";
+
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    oneDriveChildrenUrl(parent || undefined, ""),
+    {
+      method: "POST",
+      body: {
+        name,
+        folder: {},
+        "@microsoft.graph.conflictBehavior": conflictBehavior,
+      },
+    },
+  );
+  return ok({ item: summarizeOneDriveItem(data) });
+}
+
+async function writeOneDriveFile(args: {
+  path: string;
+  content: string;
+  contentType?: string;
+  encoding?: "utf-8" | "base64";
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const path = normalizeOneDrivePath(args.path);
+  if (!path) throw new Error("File path is required.");
+  if (typeof args.content !== "string") {
+    throw new Error("content must be a string.");
+  }
+
+  // Plain-text PUT corrupts Office Open XML packages — Word/Excel/PPT cannot open them.
+  if (/\.(docx|xlsx|pptx)$/i.test(path)) {
+    throw new Error(
+      "Refusing to write plain content to an Office file (.docx/.xlsx/.pptx). " +
+        "Use create_word_document, create_excel_workbook, or create_powerpoint_presentation " +
+        "(with conflictBehavior=replace) to update Office files.",
+    );
+  }
+
+  const conflictBehavior = args.conflictBehavior || "replace";
+  const encoding = args.encoding || "utf-8";
+  const contentType =
+    args.contentType?.trim() ||
+    (encoding === "base64"
+      ? "application/octet-stream"
+      : "text/plain; charset=utf-8");
+  const rawBody: BodyInit =
+    encoding === "base64" ? Buffer.from(args.content, "base64") : args.content;
+
+  const uploadUrl = `${oneDriveItemUrl(path, "content")}?@microsoft.graph.conflictBehavior=${encodeURIComponent(conflictBehavior)}`;
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    uploadUrl,
+    {
+      method: "PUT",
+      rawBody,
+      contentType,
+    },
+  );
+  return ok({ item: summarizeOneDriveItem(data), conflictBehavior });
+}
+
+async function deleteOneDriveItem(args: { path: string }) {
+  const path = normalizeOneDrivePath(args.path);
+  await graphRequest(oneDriveItemUrl(path), { method: "DELETE" });
+  return ok({ deleted: true, path });
+}
+
+async function moveOneDriveItem(args: {
+  path: string;
+  newPath?: string;
+  newName?: string;
+}) {
+  const path = normalizeOneDrivePath(args.path);
+  const body: {
+    name?: string;
+    parentReference?: { path?: string; id?: string };
+  } = {};
+
+  if (args.newName?.trim()) {
+    body.name = args.newName.trim();
+  }
+
+  if (args.newPath?.trim()) {
+    const destination = normalizeOneDrivePath(args.newPath);
+    const parts = destination.split("/").filter(Boolean);
+    const movingToRootFile = parts.length === 1 && !args.newName?.trim();
+    const destName = args.newName?.trim() || parts[parts.length - 1];
+    const destParent = args.newName?.trim()
+      ? destination
+      : parts.slice(0, -1).join("/");
+
+    if (!args.newName?.trim() || movingToRootFile) body.name = destName;
+
+    if (!destParent) {
+      // Graph accepts root by id more reliably than path "/drive/root".
+      body.parentReference = { id: "root" };
+    } else {
+      body.parentReference = { path: `/drive/root:/${destParent}` };
+    }
+  }
+
+  if (!body.name && !body.parentReference) {
+    throw new Error("Provide newPath and/or newName.");
+  }
+
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    oneDriveItemUrl(path),
+    { method: "PATCH", body },
+  );
+  return ok({ item: summarizeOneDriveItem(data) });
+}
+
+async function copyOneDriveItem(args: {
+  path: string;
+  newPath: string;
+}) {
+  const path = normalizeOneDrivePath(args.path);
+  const destination = normalizeOneDrivePath(args.newPath);
+  if (!destination) throw new Error("newPath is required.");
+  const parts = destination.split("/").filter(Boolean);
+  const name = parts[parts.length - 1];
+  const parent = parts.slice(0, -1).join("/");
+
+  // Copy is async in Graph (202 + Location). Poll briefly for completion.
+  const token = await getGraphToken();
+  const response = await fetch(oneDriveItemUrl(path, "copy"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      parentReference: {
+        path: parent ? `/drive/root:/${parent}` : "/drive/root",
+      },
+    }),
+  });
+
+  if (response.status !== 202 && !response.ok) {
+    const text = await response.text();
+    throw new GraphError(
+      `OneDrive copy failed (${response.status})`,
+      response.status,
+      text.slice(0, 800),
+    );
+  }
+
+  const monitor = response.headers.get("location");
+  if (!monitor) {
+    return ok({
+      queued: true,
+      path,
+      newPath: destination,
+      note: "Copy accepted; no monitor URL returned.",
+    });
+  }
+
+  for (let i = 0; i < 10; i++) {
+    const statusRes = await fetch(monitor, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const statusText = await statusRes.text();
+    let statusJson: {
+      status?: string;
+      resourceId?: string;
+      percentageComplete?: number;
+    } = {};
+    try {
+      statusJson = JSON.parse(statusText) as typeof statusJson;
+    } catch {
+      /* ignore */
+    }
+    if (statusJson.status === "completed" || statusJson.status === "failed") {
+      if (statusJson.status === "failed") {
+        throw new Error(`OneDrive copy failed for ${path} → ${destination}`);
+      }
+      if (statusJson.resourceId) {
+        const item = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+          userPath(`/drive/items/${encodeURIComponent(statusJson.resourceId)}?$select=${ONEDRIVE_ITEM_SELECT}`),
+        );
+        return ok({ item: summarizeOneDriveItem(item), copiedFrom: path });
+      }
+      return ok({ completed: true, path, newPath: destination });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  return ok({
+    queued: true,
+    path,
+    newPath: destination,
+    monitorUrl: monitor,
+    note: "Copy still in progress.",
+  });
+}
+
+async function uploadOneDriveBuffer(input: {
+  path: string;
+  buffer: Buffer;
+  contentType: string;
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const path = normalizeOneDrivePath(input.path);
+  const conflictBehavior = input.conflictBehavior || "replace";
+  const uploadUrl = `${oneDriveItemUrl(path, "content")}?@microsoft.graph.conflictBehavior=${encodeURIComponent(conflictBehavior)}`;
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    uploadUrl,
+    {
+      method: "PUT",
+      rawBody: new Uint8Array(input.buffer),
+      contentType: input.contentType,
+    },
+  );
+  return summarizeOneDriveItem(data);
+}
+
+async function downloadOneDriveBuffer(path: string, maxBytes = 2_000_000) {
+  const normalized = normalizeOneDrivePath(path);
+  const content = await graphRequestContent(oneDriveItemUrl(normalized, "content"), {
+    maxBytes,
+  });
+  if (content.truncated) {
+    throw new Error(
+      `File exceeds ${maxBytes} bytes and cannot be processed inline. Open item.webUrl instead.`,
+    );
+  }
+  return Buffer.from(content.bytes);
+}
+
+async function oneDriveOpenLink(itemId: string | null | undefined) {
+  if (!itemId) return null;
+  try {
+    const link = await graphRequest<{ link?: { webUrl?: string } }>(
+      userPath(`/drive/items/${encodeURIComponent(itemId)}/createLink`),
+      {
+        method: "POST",
+        body: { type: "view", scope: "organization" },
+      },
+    );
+    return link.link?.webUrl || null;
+  } catch {
+    return null;
+  }
+}
+
+function oneDriveLocationHint(path: string) {
+  const normalized = normalizeOneDrivePath(path);
+  if (!normalized.includes("/")) {
+    return `OneDrive My files (root) → ${normalized}`;
+  }
+  return `OneDrive My files → ${normalized.replace(/\//g, " → ")}`;
+}
+
+async function officeCreateResult(input: {
+  item: ReturnType<typeof summarizeOneDriveItem>;
+  path: string;
+  kind: "word" | "excel" | "powerpoint";
+  extra?: Record<string, unknown>;
+}) {
+  const openUrl = (await oneDriveOpenLink(input.item.id)) || input.item.webUrl;
+  return ok({
+    item: input.item,
+    path: input.path,
+    kind: input.kind,
+    openUrl,
+    location: oneDriveLocationHint(input.path),
+    note: "File is on work OneDrive (derek@4studentlives.com). openUrl is the best link to open it.",
+    ...input.extra,
+  });
+}
+
+async function createWordDocument(args: {
+  path?: string;
+  title?: string;
+  paragraphs?: string[];
+  blocks?: WordBlock[];
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const filename = `${(args.title || "Document").slice(0, 60)}.docx`;
+  const path = resolveOfficeUploadPath(args.path, filename, ".docx");
+  const buffer = await buildWordDocument({
+    title: args.title,
+    paragraphs: args.paragraphs,
+    blocks: args.blocks,
+  });
+  const item = await uploadOneDriveBuffer({
+    path,
+    buffer,
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    conflictBehavior: args.conflictBehavior,
+  });
+  return officeCreateResult({ item, path, kind: "word" });
+}
+
+async function createExcelWorkbook(args: {
+  path?: string;
+  title?: string;
+  sheets: ExcelSheetInput[];
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const filename = `${(args.title || "Workbook").slice(0, 60)}.xlsx`;
+  const path = resolveOfficeUploadPath(args.path, filename, ".xlsx");
+  const buffer = await buildExcelWorkbook(args.sheets || []);
+  const item = await uploadOneDriveBuffer({
+    path,
+    buffer,
+    contentType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    conflictBehavior: args.conflictBehavior,
+  });
+  return officeCreateResult({
+    item,
+    path,
+    kind: "excel",
+    extra: { sheetCount: (args.sheets || []).length },
+  });
+}
+
+async function createPowerPointPresentation(args: {
+  path?: string;
+  title?: string;
+  slides: PowerPointSlideInput[];
+  conflictBehavior?: OneDriveConflictBehavior;
+}) {
+  const filename = `${(args.title || "Presentation").slice(0, 60)}.pptx`;
+  const path = resolveOfficeUploadPath(args.path, filename, ".pptx");
+  const buffer = await buildPowerPointPresentation({
+    title: args.title,
+    slides: args.slides || [],
+  });
+  const item = await uploadOneDriveBuffer({
+    path,
+    buffer,
+    contentType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    conflictBehavior: args.conflictBehavior,
+  });
+  return officeCreateResult({
+    item,
+    path,
+    kind: "powerpoint",
+    extra: { slideCount: (args.slides || []).length },
+  });
+}
+
+async function readWordDocument(args: { path: string }) {
+  const path = normalizeOneDrivePath(args.path);
+  const buffer = await downloadOneDriveBuffer(path);
+  const text = await extractWordText(buffer);
+  const meta = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(path)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  return ok({
+    item: summarizeOneDriveItem(meta),
+    text,
+    charCount: text.length,
+  });
+}
+
+async function readExcelWorkbook(args: {
+  path: string;
+  maxRowsPerSheet?: number;
+  maxSheets?: number;
+}) {
+  const path = normalizeOneDrivePath(args.path);
+  const buffer = await downloadOneDriveBuffer(path);
+  const sheets = await extractExcelSheets(buffer, {
+    maxRowsPerSheet: args.maxRowsPerSheet,
+    maxSheets: args.maxSheets,
+  });
+  const meta = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(path)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  return ok({
+    item: summarizeOneDriveItem(meta),
+    sheets,
+    sheetCount: sheets.length,
+  });
+}
+
+async function readPowerPointPresentation(args: { path: string }) {
+  const path = normalizeOneDrivePath(args.path);
+  const buffer = await downloadOneDriveBuffer(path);
+  const slides = extractPowerPointText(buffer);
+  const meta = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(path)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  return ok({
+    item: summarizeOneDriveItem(meta),
+    slides,
+    slideCount: slides.length,
+  });
 }
 
 // ─── SharePoint ──────────────────────────────────────────────────────────────
@@ -1328,6 +2035,116 @@ async function updatePlannerTask(args: {
   return ok(data);
 }
 
+async function getPlannerTask(args: { taskId: string }) {
+  const task = await graphRequest<{
+    id?: string;
+    title?: string;
+    planId?: string;
+    bucketId?: string;
+    percentComplete?: number;
+    dueDateTime?: string | null;
+    "@odata.etag"?: string;
+  }>(
+    `https://graph.microsoft.com/v1.0/planner/tasks/${encodeURIComponent(args.taskId)}`,
+  );
+
+  let details: {
+    description?: string | null;
+    checklist?: Array<{ id: string; title: string; isChecked: boolean }>;
+    detailsEtag?: string | null;
+  } = { description: null, checklist: [], detailsEtag: null };
+
+  try {
+    const detail = await graphRequest<{
+      description?: string;
+      checklist?: Record<
+        string,
+        { title?: string; isChecked?: boolean; orderHint?: string }
+      >;
+      "@odata.etag"?: string;
+    }>(
+      `https://graph.microsoft.com/v1.0/planner/tasks/${encodeURIComponent(args.taskId)}/details`,
+    );
+    const checklist = Object.entries(detail.checklist || {}).map(([id, item]) => ({
+      id,
+      title: item.title || "",
+      isChecked: Boolean(item.isChecked),
+    }));
+    details = {
+      description: detail.description || null,
+      checklist,
+      detailsEtag: detail["@odata.etag"] || null,
+    };
+  } catch {
+    /* details endpoint may 404 for some tasks */
+  }
+
+  return ok({
+    task: {
+      id: task.id,
+      title: task.title,
+      planId: task.planId,
+      bucketId: task.bucketId ?? null,
+      percentComplete: task.percentComplete ?? 0,
+      dueDateTime: task.dueDateTime ?? null,
+      etag: task["@odata.etag"] ?? null,
+    },
+    details,
+  });
+}
+
+async function deletePlannerTask(args: { taskId: string; etag: string }) {
+  await graphRequest(
+    `https://graph.microsoft.com/v1.0/planner/tasks/${encodeURIComponent(args.taskId)}`,
+    {
+      method: "DELETE",
+      headers: { "If-Match": args.etag },
+    },
+  );
+  return ok({ deleted: true, taskId: args.taskId });
+}
+
+async function setPlannerTaskDetails(args: {
+  taskId: string;
+  detailsEtag: string;
+  description?: string;
+  checklist?: Array<{ title: string; isChecked?: boolean }>;
+}) {
+  const body: Record<string, unknown> = {};
+  if (args.description !== undefined) body.description = args.description;
+  if (args.checklist) {
+    const checklist: Record<
+      string,
+      {
+        "@odata.type": string;
+        title: string;
+        isChecked: boolean;
+        orderHint: string;
+      }
+    > = {};
+    args.checklist.forEach((item, index) => {
+      const id = crypto.randomUUID();
+      checklist[id] = {
+        "@odata.type": "#microsoft.graph.plannerChecklistItem",
+        title: item.title,
+        isChecked: Boolean(item.isChecked),
+        orderHint: String(Date.now() + index),
+      };
+    });
+    body.checklist = checklist;
+  }
+
+  const data = await graphRequest(
+    `https://graph.microsoft.com/v1.0/planner/tasks/${encodeURIComponent(args.taskId)}/details`,
+    {
+      method: "PATCH",
+      body,
+      headers: { "If-Match": args.detailsEtag },
+    },
+  );
+  return ok(data);
+}
+
 // ─── Microsoft To Do ─────────────────────────────────────────────────────────
 
 async function listTodoLists() {
@@ -1390,6 +2207,60 @@ async function sendChannelMessage(args: {
 }) {
   const data = await graphRequest(
     `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(args.teamId)}/channels/${encodeURIComponent(args.channelId)}/messages`,
+    {
+      method: "POST",
+      body: {
+        body: { contentType: "text", content: args.message },
+      },
+    },
+  );
+  return ok(data);
+}
+
+async function listChannelMessages(args: {
+  teamId: string;
+  channelId: string;
+  top?: number;
+}) {
+  const top = Math.min(Math.max(args.top ?? 20, 1), 50);
+  const data = await graphRequest<{
+    value?: Array<{
+      id?: string;
+      createdDateTime?: string;
+      subject?: string | null;
+      body?: { content?: string; contentType?: string };
+      from?: { user?: { displayName?: string; id?: string } };
+      replyCount?: number;
+    }>;
+  }>(
+    `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(args.teamId)}/channels/${encodeURIComponent(args.channelId)}/messages?$top=${top}`,
+  );
+  const messages = (data.value || []).map((m) => ({
+    id: m.id || null,
+    createdDateTime: m.createdDateTime || null,
+    subject: m.subject || null,
+    from: m.from?.user?.displayName || null,
+    fromUserId: m.from?.user?.id || null,
+    bodyPreview: (stripHtml(m.body?.content) || "").slice(0, 500) || null,
+    replyCount: m.replyCount ?? 0,
+  }));
+  return ok({
+    teamId: args.teamId,
+    channelId: args.channelId,
+    count: messages.length,
+    messages,
+    note: "Channel messages only. Teams 1:1/group chats are not available under app-only auth.",
+  });
+}
+
+async function replyChannelMessage(args: {
+  teamId: string;
+  channelId: string;
+  messageId: string;
+  message: string;
+}) {
+  const data = await graphRequest(
+    `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(args.teamId)}/channels/${encodeURIComponent(args.channelId)}/messages/${encodeURIComponent(args.messageId)}/replies`,
     {
       method: "POST",
       body: {
@@ -1476,8 +2347,24 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
         cc?: string | string[];
       },
     ).catch(fail),
+  create_email_draft: (args) =>
+    createEmailDraft(
+      args as {
+        to: string | string[];
+        subject: string;
+        body: string;
+        contentType?: "Text" | "HTML";
+        cc?: string | string[];
+      },
+    ).catch(fail),
   create_reply_draft: (args) =>
     createReplyDraft(args as { messageId: string; comment?: string }).catch(fail),
+  list_mail_attachments: (args) =>
+    listMailAttachments(args as { messageId: string }).catch(fail),
+  get_mail_attachment: (args) =>
+    getMailAttachment(
+      args as { messageId: string; attachmentId: string; maxBytes?: number },
+    ).catch(fail),
   list_mail_folders: () => listMailFolders().catch(fail),
   list_child_mail_folders: (args) =>
     listChildMailFolders(args as { parentFolderId?: string }).catch(fail),
@@ -1520,12 +2407,85 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
     ).catch(fail),
   delete_calendar_event: (args) =>
     deleteCalendarEvent(args as { eventId: string }).catch(fail),
+  respond_calendar_event: (args) =>
+    respondCalendarEvent(
+      args as {
+        eventId: string;
+        response: "accept" | "decline" | "tentativelyAccept";
+        comment?: string;
+        sendResponse?: boolean;
+      },
+    ).catch(fail),
   list_contacts: (args) =>
     listContacts(args as { top?: number; search?: string }).catch(fail),
   list_onedrive_children: (args) =>
     listOneDriveChildren(args as { path?: string; top?: number }).catch(fail),
   search_onedrive: (args) =>
     searchOneDrive(args as { query: string; top?: number }).catch(fail),
+  get_onedrive_item: (args) =>
+    getOneDriveItem(args as { path: string }).catch(fail),
+  get_onedrive_file_content: (args) =>
+    getOneDriveFileContent(args as { path: string; maxBytes?: number }).catch(
+      fail,
+    ),
+  create_onedrive_folder: (args) =>
+    createOneDriveFolder(
+      args as { path: string; conflictBehavior?: OneDriveConflictBehavior },
+    ).catch(fail),
+  write_onedrive_file: (args) =>
+    writeOneDriveFile(
+      args as {
+        path: string;
+        content: string;
+        contentType?: string;
+        encoding?: "utf-8" | "base64";
+        conflictBehavior?: OneDriveConflictBehavior;
+      },
+    ).catch(fail),
+  delete_onedrive_item: (args) =>
+    deleteOneDriveItem(args as { path: string }).catch(fail),
+  move_onedrive_item: (args) =>
+    moveOneDriveItem(
+      args as { path: string; newPath?: string; newName?: string },
+    ).catch(fail),
+  copy_onedrive_item: (args) =>
+    copyOneDriveItem(args as { path: string; newPath: string }).catch(fail),
+  create_word_document: (args) =>
+    createWordDocument(
+      args as {
+        path?: string;
+        title?: string;
+        paragraphs?: string[];
+        blocks?: WordBlock[];
+        conflictBehavior?: OneDriveConflictBehavior;
+      },
+    ).catch(fail),
+  create_excel_workbook: (args) =>
+    createExcelWorkbook(
+      args as {
+        path?: string;
+        title?: string;
+        sheets: ExcelSheetInput[];
+        conflictBehavior?: OneDriveConflictBehavior;
+      },
+    ).catch(fail),
+  create_powerpoint_presentation: (args) =>
+    createPowerPointPresentation(
+      args as {
+        path?: string;
+        title?: string;
+        slides: PowerPointSlideInput[];
+        conflictBehavior?: OneDriveConflictBehavior;
+      },
+    ).catch(fail),
+  read_word_document: (args) =>
+    readWordDocument(args as { path: string }).catch(fail),
+  read_excel_workbook: (args) =>
+    readExcelWorkbook(
+      args as { path: string; maxRowsPerSheet?: number; maxSheets?: number },
+    ).catch(fail),
+  read_powerpoint_presentation: (args) =>
+    readPowerPointPresentation(args as { path: string }).catch(fail),
   create_sharepoint_note: (args) =>
     createSharePointNote(
       args as { title: string; content: string; folder?: string },
@@ -1572,6 +2532,19 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
         bucketId?: string;
       },
     ).catch(fail),
+  get_planner_task: (args) =>
+    getPlannerTask(args as { taskId: string }).catch(fail),
+  delete_planner_task: (args) =>
+    deletePlannerTask(args as { taskId: string; etag: string }).catch(fail),
+  set_planner_task_details: (args) =>
+    setPlannerTaskDetails(
+      args as {
+        taskId: string;
+        detailsEtag: string;
+        description?: string;
+        checklist?: Array<{ title: string; isChecked?: boolean }>;
+      },
+    ).catch(fail),
   list_todo_lists: () => listTodoLists().catch(fail),
   list_todo_tasks: (args) =>
     listTodoTasks(args as { listId: string; top?: number }).catch(fail),
@@ -1588,9 +2561,22 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
   list_joined_teams: () => listJoinedTeams().catch(fail),
   list_team_channels: (args) =>
     listTeamChannels(args as { teamId: string }).catch(fail),
+  list_channel_messages: (args) =>
+    listChannelMessages(
+      args as { teamId: string; channelId: string; top?: number },
+    ).catch(fail),
   send_channel_message: (args) =>
     sendChannelMessage(
       args as { teamId: string; channelId: string; message: string },
+    ).catch(fail),
+  reply_channel_message: (args) =>
+    replyChannelMessage(
+      args as {
+        teamId: string;
+        channelId: string;
+        messageId: string;
+        message: string;
+      },
     ).catch(fail),
 };
 

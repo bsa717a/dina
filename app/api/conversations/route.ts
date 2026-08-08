@@ -23,6 +23,8 @@ export async function GET() {
       content: m.content,
       createdAt: m.createdAt,
       openaiResponseId: m.openaiResponseId,
+      starred: Boolean(m.starredAt),
+      starredAt: m.starredAt,
       attachments: m.attachments.map((a) => ({
         id: a.id,
         filename: a.filename,

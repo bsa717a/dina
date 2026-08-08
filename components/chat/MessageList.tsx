@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/components/chat/types";
+import { LinkifiedText } from "@/lib/client/linkify";
 
 function formatTime(value: string) {
   try {
@@ -14,16 +15,50 @@ function formatTime(value: string) {
   }
 }
 
+function actionButtonClass(isUser: boolean, active = false) {
+  return `rounded px-1 py-0.5 text-[11px] leading-none transition ${
+    isUser ? "hover:bg-white/15" : "hover:bg-black/5 dark:hover:bg-white/10"
+  } ${active ? (isUser ? "text-amber-200" : "text-amber-600 dark:text-amber-400") : "opacity-70"}`;
+}
+
 export function MessageList({
   messages,
   thinking,
   thinkingLabel = "Dina is thinking…",
+  onToggleStar,
+  starBusyId,
 }: {
   messages: ChatMessage[];
   thinking: boolean;
   thinkingLabel?: string;
+  onToggleStar?: (message: ChatMessage) => void;
+  starBusyId?: string | null;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copiedTimer = useRef<number | null>(null);
+
+  async function copyMessage(message: ChatMessage) {
+    const text = message.content?.trim();
+    if (!text || text === "(attachment)") return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
+      setCopiedId(message.id);
+      copiedTimer.current = window.setTimeout(() => {
+        setCopiedId((id) => (id === message.id ? null : id));
+        copiedTimer.current = null;
+      }, 1500);
+    } catch {
+      // Clipboard may be blocked; leave UI unchanged.
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -92,14 +127,48 @@ export function MessageList({
                   </div>
                 )}
                 {message.content && message.content !== "(attachment)" && (
-                  <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                  <div className="whitespace-pre-wrap break-words">
+                    <LinkifiedText text={message.content} isUser={isUser} />
+                  </div>
                 )}
                 <div
-                  className={`mt-1 text-[10px] ${
+                  className={`mt-1.5 flex items-center gap-2 text-[10px] ${
                     isUser ? "text-white/55" : "text-[var(--muted)]"
                   }`}
                 >
-                  {formatTime(message.createdAt)}
+                  <span>{formatTime(message.createdAt)}</span>
+                  {!message.pending &&
+                    message.content &&
+                    message.content !== "(attachment)" && (
+                      <button
+                        type="button"
+                        onClick={() => void copyMessage(message)}
+                        title="Copy message"
+                        aria-label="Copy message"
+                        className={actionButtonClass(
+                          isUser,
+                          copiedId === message.id,
+                        )}
+                      >
+                        {copiedId === message.id ? "Copied" : "Copy"}
+                      </button>
+                    )}
+                  {!message.pending && onToggleStar && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleStar(message)}
+                      disabled={starBusyId === message.id}
+                      title={
+                        message.starred
+                          ? "Unstar this message"
+                          : "Star this message for later"
+                      }
+                      aria-label={message.starred ? "Unstar message" : "Star message"}
+                      className={actionButtonClass(isUser, Boolean(message.starred))}
+                    >
+                      {starBusyId === message.id ? "…" : message.starred ? "★" : "☆"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

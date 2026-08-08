@@ -22,10 +22,13 @@ model Message {
   role             String
   content          String
   openaiResponseId String?
+  /// When set, Derek starred this message for later verbatim recall.
+  starredAt        DateTime?
   createdAt        DateTime     @default(now())
   attachments      Attachment[]
 
   @@index([conversationId, createdAt])
+  @@index([starredAt])
 }
 
 model Attachment {

@@ -13,6 +13,8 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
   openaiResponseId?: string | null;
+  starred?: boolean;
+  starredAt?: string | null;
   attachments?: ChatAttachment[];
   pending?: boolean;
 };

@@ -56,12 +56,15 @@ export function getMemoryToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "remember",
-      "Store durable knowledge about Derek per Memory Rules. NOT for temporary debugging or casual chat. Foundational categories (identity, values, preferences, health, family, etc.) are stored as pending_approval until Derek approves. Safe people/project facts may activate immediately. Pass correctId to update instead of duplicating.",
+      "Store durable knowledge about Derek per Memory Rules. For collaborative lists Derek says to remember, store the FULL verbatim text in content — never a shortened summary. NOT for temporary debugging or casual chat. Foundational categories may be pending_approval. Pass correctId to update instead of duplicating.",
       {
         properties: {
           category: { type: "string", enum: [...MEMORY_CATEGORIES] },
           title: { type: "string" },
-          content: { type: "string" },
+          content: {
+            type: "string",
+            description: "Full text to store. For lists/lesson notes, include every item and note — do not summarize.",
+          },
           confidence: {
             type: "number",
             description: "0-1 confidence score",
