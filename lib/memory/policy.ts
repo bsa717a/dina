@@ -24,6 +24,7 @@ const TRUSTED_SOURCES = new Set([
   "constitution",
   "manual",
   "correction",
+  "derek_feedback",
   "derek_approved",
   "imported",
   "test",

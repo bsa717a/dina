@@ -13,7 +13,12 @@ import {
   type CosDecision,
   type NormalizedEvent,
 } from "@/lib/chief-of-staff/types";
+import {
+  formatLessonsForPrompt,
+  listActiveLessons,
+} from "@/lib/learning/lessons";
 import { MEMORY_CATEGORIES } from "@/lib/memory/types";
+import { getVoiceInstructionsForPrompt } from "@/lib/writing/voice";
 import { logger } from "@/lib/logger";
 
 const decisionSchema = z.object({
@@ -95,7 +100,8 @@ Rules:
 - Calendar: accepted/upcoming meetings within the next 48 hours → at least add_to_todays_briefing (never ignore solely because already accepted). Meeting invitations not yet responded → create_attention_card. Two meetings at the same start time → create_attention_card (conflict) with notifyNow=true.
 - notifyNow=true only with create_attention_card, and only when Derek should know now (human waiting, time-sensitive decision, meeting soon/conflict, security/outage, blocking failure).
 - interruptWhy examples: "Justin replied and is waiting for your decision.", "A GitHub workflow failed after the latest Beacon commit.", "Adam invited you to a meeting that overlaps another commitment."
-- If canDraft=true, write a concise professional draftBody in Derek's voice. Never claim it was sent.
+- If canDraft=true, write draftBody using the Writing Style / voice pack when provided. Never claim it was sent.
+- When LEARNED PREFERENCES are provided, obey them (e.g. one recommended option instead of a list of five).
 - Include every input eventId exactly once.
 - Return JSON only.`;
 
@@ -235,6 +241,13 @@ export async function decideOnEvents(
   const client = new OpenAI({ apiKey, timeout: 90_000 });
   const model = getOpenAIModel();
   const decisions: CosDecision[] = [];
+  const [lessonsBlock, voiceBlock] = await Promise.all([
+    listActiveLessons().then(formatLessonsForPrompt),
+    getVoiceInstructionsForPrompt(),
+  ]);
+  const instructions = [SYSTEM, voiceBlock, lessonsBlock]
+    .filter(Boolean)
+    .join("\n\n");
 
   for (const batch of chunk(events, 12)) {
     const payload = batch.map((event) => ({
@@ -251,7 +264,7 @@ export async function decideOnEvents(
     try {
       const response = await client.responses.create({
         model,
-        instructions: SYSTEM,
+        instructions,
         input: [
           {
             role: "user",

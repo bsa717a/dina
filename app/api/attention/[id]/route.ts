@@ -15,6 +15,7 @@ import {
   recipientFromAttentionRaw,
 } from "@/lib/attention/send";
 import { jsonError, unauthorized } from "@/lib/http";
+import { scheduleLearnFromAttentionAction } from "@/lib/learning/distill";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 import { logger } from "@/lib/logger";
 
@@ -66,10 +67,20 @@ export async function PATCH(
   }
 
   if (action === "edited_draft") {
+    const details = {
+      draftSubject,
+      draftBody,
+      priorDraftBody: item.draftBody,
+    };
     await recordAttentionAction({
       attentionItemId: item.id,
       action: "edited_draft",
-      details: { draftSubject, draftBody },
+      details,
+    });
+    scheduleLearnFromAttentionAction({
+      attentionItemId: item.id,
+      action: "edited_draft",
+      details,
     });
     const updated = await getAttentionItem(item.id);
     return NextResponse.json({ ok: true, item: updated });
@@ -92,10 +103,22 @@ export async function PATCH(
         draftBody: revised.draftBody,
         shouldDraftReply: true,
       });
+      const details = {
+        note: note || null,
+        revised,
+        priorDraftBody: item.draftBody,
+        draftSubject: revised.draftSubject,
+        draftBody: revised.draftBody,
+      };
       await recordAttentionAction({
         attentionItemId: item.id,
         action: "revise_draft",
-        details: { note: note || null, revised },
+        details,
+      });
+      scheduleLearnFromAttentionAction({
+        attentionItemId: item.id,
+        action: "revise_draft",
+        details,
       });
       return NextResponse.json({ ok: true, item: updated });
     } catch (error) {

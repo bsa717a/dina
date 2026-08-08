@@ -1,13 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AttentionPanel } from "@/components/chat/AttentionPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
-import { Composer } from "@/components/chat/Composer";
+import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage } from "@/components/chat/types";
 import { registerServiceWorker, subscribeToPush } from "@/lib/client/pwa";
+
+function dragEventHasFiles(
+  e: Pick<DragEvent, "dataTransfer"> | Pick<React.DragEvent, "dataTransfer">,
+) {
+  const types = e.dataTransfer?.types;
+  if (!types) return false;
+  // DOMStringList in older engines doesn't always have Array.includes.
+  return Array.from(types as ArrayLike<string>).includes("Files");
+}
+
+declare global {
+  interface Window {
+    __dinaPendingDropFiles?: File[];
+    __dinaFileDropHandler?: ((files: File[] | FileList) => void) | null;
+  }
+}
 
 type Status = "online" | "offline" | "degraded" | "checking";
 
@@ -44,6 +60,56 @@ export function ChatApp() {
   const [attentionHighlight, setAttentionHighlight] = useState<string | null>(
     null,
   );
+  const [dragActive, setDragActive] = useState(false);
+  const composerRef = useRef<ComposerHandle>(null);
+  const dragDepthRef = useRef(0);
+  const thinkingRef = useRef(thinking);
+  thinkingRef.current = thinking;
+
+  // file-drop-guard.js blocks navigation early; this wires drops into Composer.
+  useEffect(() => {
+    const acceptFiles = (files: File[] | FileList) => {
+      if (thinkingRef.current) return;
+      const list = Array.from(files);
+      if (!list.length) return;
+      dragDepthRef.current = 0;
+      setDragActive(false);
+      composerRef.current?.addFiles(list);
+    };
+
+    window.__dinaFileDropHandler = acceptFiles;
+    const pending = window.__dinaPendingDropFiles || [];
+    if (pending.length) {
+      window.__dinaPendingDropFiles = [];
+      acceptFiles(pending);
+    }
+
+    const onDragEnter = (e: DragEvent) => {
+      if (!dragEventHasFiles(e) || thinkingRef.current) return;
+      dragDepthRef.current += 1;
+      setDragActive(true);
+    };
+    const onDragLeave = () => {
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setDragActive(false);
+    };
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent<{ files?: File[] }>).detail;
+      if (detail?.files?.length) acceptFiles(detail.files);
+    };
+
+    window.addEventListener("dragenter", onDragEnter, true);
+    window.addEventListener("dragleave", onDragLeave, true);
+    window.addEventListener("dina:files-dropped", onCustom);
+    return () => {
+      if (window.__dinaFileDropHandler === acceptFiles) {
+        window.__dinaFileDropHandler = null;
+      }
+      window.removeEventListener("dragenter", onDragEnter, true);
+      window.removeEventListener("dragleave", onDragLeave, true);
+      window.removeEventListener("dina:files-dropped", onCustom);
+    };
+  }, []);
 
   const refreshHealth = useCallback(async () => {
     try {
@@ -277,7 +343,19 @@ export function ChatApp() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[var(--background)]">
+    <div className="relative flex h-[100dvh] flex-col bg-[var(--background)]">
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-3 z-40 flex items-center justify-center rounded-3xl border-2 border-dashed border-[var(--accent)] bg-[var(--background)]/85 backdrop-blur-sm">
+          <div className="rounded-2xl bg-[var(--accent-soft)] px-5 py-3 text-center">
+            <p className="text-base font-medium text-[var(--accent)]">
+              Drop to upload
+            </p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Photos, PDFs, and text files
+            </p>
+          </div>
+        </div>
+      )}
       <ChatHeader
         status={status}
         microsoftEnabled={microsoftEnabled}
@@ -304,7 +382,7 @@ export function ChatApp() {
         thinking={thinking}
         thinkingLabel={thinkingLabel}
       />
-      <Composer disabled={thinking} onSend={handleSend} />
+      <Composer ref={composerRef} disabled={thinking} onSend={handleSend} />
     </div>
   );
 }

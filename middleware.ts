@@ -10,6 +10,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/login",
   "/manifest.webmanifest",
   "/sw.js",
+  "/file-drop-guard.js",
 ]);
 
 function isPublic(pathname: string) {

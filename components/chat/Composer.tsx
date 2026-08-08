@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { ChatAttachment } from "@/components/chat/types";
 
 type PendingFile = {
@@ -30,13 +36,17 @@ declare global {
   }
 }
 
-export function Composer({
-  disabled,
-  onSend,
-}: {
-  disabled?: boolean;
-  onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
-}) {
+export type ComposerHandle = {
+  addFiles: (files: FileList | File[] | null | undefined) => void;
+};
+
+export const Composer = forwardRef<
+  ComposerHandle,
+  {
+    disabled?: boolean;
+    onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
+  }
+>(function Composer({ disabled, onSend }, ref) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [listening, setListening] = useState(false);
@@ -73,7 +83,9 @@ export function Composer({
 
   async function uploadFile(file: File) {
     const localId = crypto.randomUUID();
-    const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+    const previewUrl = file.type.startsWith("image/")
+      ? URL.createObjectURL(file)
+      : undefined;
     setPending((prev) => [...prev, { localId, file, previewUrl, uploading: true }]);
 
     try {
@@ -109,10 +121,17 @@ export function Composer({
     }
   }
 
-  function onFilesSelected(files: FileList | null) {
+  function onFilesSelected(files: FileList | File[] | null | undefined) {
     if (!files) return;
-    Array.from(files).forEach((file) => void uploadFile(file));
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setError(null);
+    list.forEach((file) => void uploadFile(file));
   }
+
+  useImperativeHandle(ref, () => ({
+    addFiles: onFilesSelected,
+  }));
 
   function removePending(localId: string) {
     setPending((prev) => {
@@ -180,7 +199,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-[var(--border)] bg-[var(--composer)] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-6">
+    <div className="relative border-t border-[var(--border)] bg-[var(--composer)] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-6">
       <div className="mx-auto max-w-3xl">
         {pending.length > 0 && (
           <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
@@ -197,7 +216,9 @@ export function Composer({
                     className="mb-1 h-16 w-full rounded-lg object-cover"
                   />
                 ) : (
-                  <div className="mb-1 truncate text-xs text-[var(--muted)]">{item.file.name}</div>
+                  <div className="mb-1 truncate text-xs text-[var(--muted)]">
+                    {item.file.name}
+                  </div>
                 )}
                 <div className="truncate text-[11px] text-[var(--muted)]">
                   {item.uploading ? "Uploading…" : item.error || item.file.name}
@@ -268,7 +289,7 @@ export function Composer({
               }
             }}
             rows={1}
-            placeholder="Message Dina…"
+            placeholder="Message Dina… or drop a file"
             disabled={disabled}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
           />
@@ -308,7 +329,7 @@ export function Composer({
       </div>
     </div>
   );
-}
+});
 
 function PaperclipIcon() {
   return (

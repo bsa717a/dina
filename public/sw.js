@@ -1,5 +1,5 @@
 /* Dina service worker — offline shell + web push */
-const CACHE = "dina-shell-v1";
+const CACHE = "dina-shell-v2";
 const SHELL = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -23,24 +23,30 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // Never cache hashed app bundles — stale JS breaks drag/drop and other UX.
+  if (url.pathname.startsWith("/_next/")) return;
+  if (url.pathname === "/file-drop-guard.js" || url.pathname === "/sw.js") return;
 
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
-        return response;
-      })
-      .catch(async () => {
-        const cached = await caches.match(request);
-        if (cached) return cached;
-        if (request.mode === "navigate") {
-          const offline = await caches.match("/offline");
-          if (offline) return offline;
-        }
-        return new Response("Offline", { status: 503, statusText: "Offline" });
-      }),
-  );
+  // Network-first for navigations and shell assets only.
+  if (request.mode === "navigate" || SHELL.includes(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          if (request.mode === "navigate") {
+            const offline = await caches.match("/offline");
+            if (offline) return offline;
+          }
+          return new Response("Offline", { status: 503, statusText: "Offline" });
+        }),
+    );
+  }
 });
 
 self.addEventListener("push", (event) => {
@@ -77,7 +83,6 @@ self.addEventListener("notificationclick", (event) => {
   const data = event.notification.data || {};
   let path = data.url || "/";
 
-  // Structured deep-link extension point for future message/approval targeting
   if (data.target?.type === "attention" && data.target?.id) {
     path = `/?attention=${encodeURIComponent(data.target.id)}`;
   } else if (data.target?.type === "message" && data.target?.id) {

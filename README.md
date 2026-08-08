@@ -188,6 +188,8 @@ Foundational documents (loaded into every chat system prompt; runtime wiring mus
 - [`derek-projects.md`](derek-projects.md) — active projects and project philosophy
 - [`dina-memory-rules.md`](dina-memory-rules.md) — what becomes memory, confidence, approval, hierarchy
 - [`waiting-on-engine.md`](waiting-on-engine.md) — Waiting On Engine: durable dual lists, lifecycle, v1 sources, surfaces
+- [`learning-engine.md`](learning-engine.md) — Learning Engine: feedback → lesson → apply via Memory
+- [`writing-assistant.md`](writing-assistant.md) — Writing Assistant: Derek’s voice across mediums
 
 Foundational docs are also seeded into the Memory System.
 
@@ -224,6 +226,18 @@ Live per-project backlog in SQLite (`ProjectTask`) — not Memory, not Waiting O
 Chat tools: `list_project_tasks`, `add_project_task`, `complete_project_task`, `update_project_task`.
 
 Use for “remaining tasks for Dina” / “mark 6 complete”. Numbers are 1-based on the filtered remaining list (`open` + `in_progress`).
+
+## Learning Engine
+
+Feedback → lesson → apply. Spec: [`learning-engine.md`](learning-engine.md).
+
+Attention actions (edit / revise + note / dismiss / accept) distill into Memory `learned_preferences` or `decisions`. Active lessons are injected into Chief of Staff decide and Attention revise prompts.
+
+## Writing Assistant
+
+Draft in Derek’s voice. Spec: [`writing-assistant.md`](writing-assistant.md).
+
+Chat tool: `draft_in_dereks_voice` (email / Teams / GitHub review note). Shared voice pack used by CoS drafts and Attention revise. Never sends until Derek approves.
 
 The **Chief of Staff Engine** decides when an event deserves durable memory (`writeMemory`). Temporary debugging and casual chat do not become memory.
 
