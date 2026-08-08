@@ -10,6 +10,7 @@ import {
   dayIndexMon1,
   denverDateString,
   denverLongDate,
+  denverSearchDateAnchor,
   denverWeekdayLong,
   mondayOfWeekContaining,
 } from "@/lib/morning-ritual/dates";
@@ -95,20 +96,22 @@ function formatSupplemental(plan: WeekPlan | null, dayIndex: number): string {
 export async function generateMorningBriefMarkdown(
   at: Date = new Date(),
 ): Promise<{ ok: boolean; markdown: string; error?: string }> {
-  const ctx = await buildMorningRitualContext(at);
-  let markets: MarketResearch;
-  try {
-    markets = await gatherMarketResearch(at);
-  } catch (error) {
-    markets = {
-      ok: false,
-      dateAnchor: ctx.longDate,
-      queries: [],
-      notes: "",
-      fetched: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  // Run CFM week-plan work and market research in parallel so worst-case time
+  // is ~max(weekPlan, markets) + compose, not the sum of all three.
+  const [ctx, marketsResult] = await Promise.all([
+    buildMorningRitualContext(at),
+    gatherMarketResearch(at).catch(
+      (error): MarketResearch => ({
+        ok: false,
+        dateAnchor: denverSearchDateAnchor(at),
+        queries: [],
+        notes: "",
+        fetched: [],
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    ),
+  ]);
+  const markets = marketsResult;
 
   if (isOpenAICreditsBlocked()) {
     return { ok: false, markdown: "", error: openAICreditsUserMessage() };
@@ -132,7 +135,8 @@ export async function generateMorningBriefMarkdown(
     : `Market research failed: ${markets.error || "unknown"}. Soft-degrade: omit invented numbers; say research was unavailable.`;
 
   try {
-    const client = new OpenAI({ apiKey, timeout: 180_000 });
+    // Budget: parallel prep ≤ ~85s + compose ≤ 90s ≪ chat maxDuration 300s.
+    const client = new OpenAI({ apiKey, timeout: 90_000 });
     const response = await client.responses.create({
       model: getOpenAIModel(),
       temperature: 0.55,

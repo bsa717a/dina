@@ -23,7 +23,10 @@ import { loadProviderAttachments } from "@/lib/uploads/storage";
 import { kindFromMime } from "@/lib/uploads/validation";
 
 export const runtime = "nodejs";
-/** Morning Ritual (CFM week plan + web markets + compose) can exceed 2 minutes. */
+/**
+ * Morning Ritual runs week-plan + markets in parallel then compose.
+ * Budget target is well under 300s (see lib/morning-ritual timeouts).
+ */
 export const maxDuration = 300;
 
 const bodySchema = z.object({

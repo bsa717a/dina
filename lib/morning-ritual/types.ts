@@ -38,6 +38,8 @@ export type WeekPlan = {
   days: WeekDayPlan[];
   /** Full inventory shown on Day 1 only. */
   weekSupplemental: WeekMediaItem[];
+  /** Only `llm` plans are durable; heuristic plans must not stick in cache. */
+  source?: "llm" | "heuristic";
 };
 
 export type MorningRitualContext = {

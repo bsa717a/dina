@@ -98,7 +98,8 @@ export async function gatherMarketResearch(
   }
 
   try {
-    const client = new OpenAI({ apiKey, timeout: 120_000 });
+    // Keep under chat maxDuration with parallel week-plan + compose headroom.
+    const client = new OpenAI({ apiKey, timeout: 75_000 });
     const response = await client.responses.create({
       model: getOpenAIModel(),
       // Hosted web search (Responses API). SDK typings may lag the API.
@@ -130,18 +131,22 @@ Do not invent numbers. If uncertain, say so.`,
     const urls = extractUrlsFromOutput(response.output)
       .sort((a, b) => rankMarketUrl(b) - rankMarketUrl(a))
       .filter((u) => rankMarketUrl(u) >= 0)
-      .slice(0, 5);
+      .slice(0, 4);
 
-    const fetched: MarketResearch["fetched"] = [];
-    for (const url of urls.slice(0, 3)) {
-      const result = await fetchUrlText(url, { maxChars: 8_000, timeoutMs: 15_000 });
-      fetched.push({
-        url,
-        ok: result.ok,
-        excerpt: result.text?.slice(0, 2500),
-        error: result.error,
-      });
-    }
+    const fetched: MarketResearch["fetched"] = await Promise.all(
+      urls.slice(0, 2).map(async (url) => {
+        const result = await fetchUrlText(url, {
+          maxChars: 8_000,
+          timeoutMs: 10_000,
+        });
+        return {
+          url,
+          ok: result.ok,
+          excerpt: result.text?.slice(0, 2500),
+          error: result.error,
+        };
+      }),
+    );
 
     if (!notes && fetched.every((f) => !f.ok)) {
       return {
