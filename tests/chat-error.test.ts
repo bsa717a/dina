@@ -26,6 +26,11 @@ vi.mock("@/lib/uploads/storage", () => ({
   loadProviderAttachments: vi.fn(async () => []),
 }));
 
+vi.mock("@/lib/memory/retrieve", () => ({
+  retrieveRelevantMemories: vi.fn(async () => []),
+  formatMemoriesForPrompt: vi.fn(() => ""),
+}));
+
 vi.mock("@/lib/ai/provider", () => ({
   getModelProvider: vi.fn(async () => ({
     name: "mock",

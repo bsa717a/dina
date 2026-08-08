@@ -52,8 +52,152 @@ model PushSubscription {
 }
 
 model AuthAttempt {
-  id          String   @id @default("singleton")
-  failCount   Int      @default(0)
+  id          String    @id @default("singleton")
+  failCount   Int       @default(0)
   lockedUntil DateTime?
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
+}
+
+/// Background Attention Engine scan run metadata (legacy name; used by CoS runs).
+model AttentionRun {
+  id           String    @id @default(cuid())
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  status       String    @default("running")
+  itemsSeen    Int       @default(0)
+  itemsOpen    Int       @default(0)
+  notified     Int       @default(0)
+  error        String?
+  summaryJson  String?
+}
+
+/// Every Chief of Staff Engine decision (all five dispositions).
+model CosDecisionRecord {
+  id                      String   @id @default(cuid())
+  runId                   String?
+  eventId                 String
+  eventType               String
+  connector               String
+  disposition             String
+  priority                String
+  confidence              Float    @default(0)
+  reasoningSummary        String
+  interruptWhy            String?
+  recommendedAction       String?
+  needsToKnow             Boolean  @default(false)
+  canWait                 Boolean  @default(true)
+  relatedToProject        Boolean  @default(false)
+  projectKey              String?
+  someoneWaitingOnDerek   Boolean  @default(false)
+  derekWaitingOnSomeone   Boolean  @default(false)
+  canDraft                Boolean  @default(false)
+  notifyNow               Boolean  @default(false)
+  payloadJson             String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([eventId])
+  @@index([disposition, createdAt])
+  @@index([priority, createdAt])
+  @@index([runId])
+}
+
+/// A classified attention recommendation for Derek.
+model AttentionItem {
+  id                 String   @id @default(cuid())
+  source             String
+  sourceId           String
+  category           String
+  status             String   @default("open")
+  sender             String?
+  subject            String?
+  summary            String
+  whyItMatters       String
+  recommendedAction  String
+  askSummary         String?
+  needsResponse      Boolean  @default(false)
+  hasDeadline        Boolean  @default(false)
+  deadlineAt         DateTime?
+  isBlocking         Boolean  @default(false)
+  canWait            Boolean  @default(true)
+  shouldDraftReply   Boolean  @default(false)
+  draftSubject       String?
+  draftBody          String?
+  notifyNow          Boolean  @default(false)
+  notificationTitle  String?
+  notificationBody   String?
+  notifiedAt         DateTime?
+  sourceUrl          String?
+  rawJson            String?
+  lastSeenAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  actions            AttentionAction[]
+
+  @@unique([source, sourceId])
+  @@index([status, updatedAt])
+  @@index([category, status])
+  @@index([notifyNow, notifiedAt])
+}
+
+/// Persist Derek's response to recommendations for future learning (not used yet).
+model AttentionAction {
+  id               String   @id @default(cuid())
+  attentionItemId  String
+  attentionItem    AttentionItem @relation(fields: [attentionItemId], references: [id], onDelete: Cascade)
+  action           String
+  detailsJson      String?
+  createdAt        DateTime @default(now())
+
+  @@index([attentionItemId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Structured long-term memory — not a chat transcript.
+/// Domains: derek_profile, values, communication_style, preferences, family,
+/// church, health, people, projects, commitments, decisions, learned_preferences.
+model MemoryItem {
+  id              String    @id @default(cuid())
+  category        String
+  title           String
+  content         String
+  source          String
+  confidence      Float     @default(0.5)
+  importance      String    @default("normal")
+  status          String    @default("active")
+  relatedIdsJson  String    @default("[]")
+  mergedIntoId    String?
+  /// Future semantic search: pending | ready | skipped — model stays stable.
+  embeddingStatus String    @default("pending")
+  embeddingModel  String?
+  embeddingRef    String?
+  /// Denormalized text for today's keyword retrieval (embeddings later).
+  searchText      String    @default("")
+  lastAccessedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([category, status])
+  @@index([status, importance])
+  @@index([status, updatedAt])
+  @@index([embeddingStatus])
+}
+
+/// Live per-project backlog (not Memory, not Waiting On).
+/// Status: open | in_progress | done | cancelled
+model ProjectTask {
+  id          String    @id @default(cuid())
+  projectKey  String
+  title       String
+  description String    @default("")
+  status      String    @default("open")
+  sortOrder   Int       @default(0)
+  source      String    @default("chat")
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectKey, status])
+  @@index([projectKey, sortOrder])
+  @@unique([projectKey, title])
 }

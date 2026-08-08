@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AttentionPanel } from "@/components/chat/AttentionPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
@@ -40,6 +41,9 @@ export function ChatApp() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
+  const [attentionHighlight, setAttentionHighlight] = useState<string | null>(
+    null,
+  );
 
   const refreshHealth = useCallback(async () => {
     try {
@@ -75,6 +79,12 @@ export function ChatApp() {
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
   }, [router]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const attention = params.get("attention");
+    if (attention) setAttentionHighlight(attention);
+  }, []);
 
   useEffect(() => {
     void loadConversation();
@@ -285,6 +295,10 @@ export function ChatApp() {
           </div>
         </div>
       )}
+      <AttentionPanel
+        highlightId={attentionHighlight}
+        onError={(message) => setError(message)}
+      />
       <MessageList
         messages={messages}
         thinking={thinking}

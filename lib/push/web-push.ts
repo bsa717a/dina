@@ -11,7 +11,7 @@ export type PushPayload = {
   body: string;
   url?: string;
   target?: {
-    type?: "conversation" | "message" | "approval";
+    type?: "conversation" | "message" | "approval" | "attention";
     id?: string;
   };
 };
@@ -55,9 +55,18 @@ export async function sendPushToAll(payload: PushPayload) {
         typeof error === "object" && error && "statusCode" in error
           ? Number((error as { statusCode?: number }).statusCode)
           : undefined;
-      if (statusCode === 404 || statusCode === 410) {
+      // Apple often returns 403 for expired/invalid web push subscriptions.
+      if (
+        statusCode === 404 ||
+        statusCode === 410 ||
+        statusCode === 403
+      ) {
         await deletePushSubscriptionByEndpoint(sub.endpoint);
         removed += 1;
+        logger.warn("push_subscription_removed", {
+          endpoint: sub.endpoint.slice(0, 48),
+          statusCode,
+        });
       } else {
         logger.warn("push_send_failed", {
           endpoint: sub.endpoint.slice(0, 48),

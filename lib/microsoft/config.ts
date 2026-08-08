@@ -26,7 +26,7 @@ export function getMicrosoftConfig(): MicrosoftConfig | null {
       process.env.MS_SHAREPOINT_SITE?.trim() ||
       "4studentlives.sharepoint.com:/sites/4SLTechProjects",
     sharePointDefaultFolder:
-      process.env.MS_SHAREPOINT_DEFAULT_FOLDER?.trim() || "Dev Docs/Inbox Notes",
+      process.env.MS_SHAREPOINT_DEFAULT_FOLDER?.trim() || "Dev Docs",
   };
 }
 

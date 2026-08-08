@@ -34,6 +34,15 @@ export async function middleware(request: NextRequest) {
     return applyHeaders(NextResponse.next());
   }
 
+  // Cron / launchd can trigger scans with a shared secret (no browser session).
+  if (pathname === "/api/attention/scan" && request.method === "POST") {
+    const secret = process.env.ATTENTION_SCAN_SECRET?.trim();
+    const provided = request.headers.get("x-attention-secret")?.trim();
+    if (secret && provided && secret === provided) {
+      return applyHeaders(NextResponse.next());
+    }
+  }
+
   const response = NextResponse.next();
   const password = process.env.SESSION_SECRET;
   if (!password || password.length < 32) {

@@ -12,6 +12,7 @@
     "generate-icons": "node scripts/generate-icons.mjs",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "attention:scan": "node scripts/attention-scan.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate"

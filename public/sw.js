@@ -78,7 +78,9 @@ self.addEventListener("notificationclick", (event) => {
   let path = data.url || "/";
 
   // Structured deep-link extension point for future message/approval targeting
-  if (data.target?.type === "message" && data.target?.id) {
+  if (data.target?.type === "attention" && data.target?.id) {
+    path = `/?attention=${encodeURIComponent(data.target.id)}`;
+  } else if (data.target?.type === "message" && data.target?.id) {
     path = `/?messageId=${encodeURIComponent(data.target.id)}`;
   } else if (data.target?.type === "approval" && data.target?.id) {
     path = `/?approvalId=${encodeURIComponent(data.target.id)}`;

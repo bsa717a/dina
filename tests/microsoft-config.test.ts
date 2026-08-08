@@ -51,8 +51,12 @@ describe("microsoft config and tools registry", () => {
     expect(names).toContain("create_mail_folder");
     expect(names).toContain("list_calendar_events");
     expect(names).toContain("list_planner_plans");
+    expect(names).toContain("list_my_planner_tasks");
     expect(names).toContain("create_planner_task");
     expect(names).toContain("create_sharepoint_note");
+    expect(names).toContain("list_sharepoint_folder");
+    expect(names).toContain("list_sharepoint_lists");
+    expect(names).toContain("get_sharepoint_list_items");
     expect(names).toContain("list_todo_lists");
     expect(names).toContain("list_joined_teams");
   });
