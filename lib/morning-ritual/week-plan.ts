@@ -110,6 +110,7 @@ export function buildHeuristicWeekPlan(lesson: CfmLesson, weekStart: string): We
     weekStart,
     days,
     weekSupplemental: [],
+    source: "heuristic",
   };
 }
 
@@ -123,7 +124,7 @@ async function buildLlmWeekPlan(
   if (!apiKey) return null;
 
   try {
-    const client = new OpenAI({ apiKey, timeout: 90_000 });
+    const client = new OpenAI({ apiKey, timeout: 60_000 });
     const response = await client.responses.create({
       model: getOpenAIModel(),
       temperature: 0.3,
@@ -240,6 +241,7 @@ Rules:
       weekStart,
       days,
       weekSupplemental: parsed.weekSupplemental,
+      source: "llm",
     });
   } catch (error) {
     if (isOpenAICreditsError(error)) markOpenAICreditsExhausted();
@@ -250,17 +252,42 @@ Rules:
   }
 }
 
+/** Legacy rows may lack `source`; treat rich media inventories as LLM-built. */
+export function looksLikeLlmWeekPlan(plan: WeekPlan): boolean {
+  if (plan.source === "llm") return true;
+  if (plan.source === "heuristic") return false;
+  return (
+    plan.weekSupplemental.length > 0 ||
+    plan.days.some((d) => d.media.length > 0)
+  );
+}
+
+/** Durable cache: explicit LLM, or legacy rich plans. Never durable for heuristic. */
+export function isDurableWeekPlan(plan: WeekPlan | null | undefined): boolean {
+  return Boolean(plan?.days?.length === 7 && looksLikeLlmWeekPlan(plan));
+}
+
 export async function getOrCreateWeekPlan(
   lesson: CfmLesson,
   weekStart: string,
 ): Promise<{ plan: WeekPlan; created: boolean; source: "cache" | "llm" | "heuristic" }> {
   const cached = await getWeekPlan(lesson.lessonKey, weekStart);
-  if (cached?.days?.length === 7) {
-    return { plan: cached, created: false, source: "cache" };
+  if (isDurableWeekPlan(cached)) {
+    // Migrate legacy durable rows so future hits are explicit.
+    if (cached && cached.source !== "llm") {
+      const migrated = { ...cached, source: "llm" as const };
+      await saveWeekPlan(migrated);
+      return { plan: migrated, created: false, source: "cache" };
+    }
+    return { plan: cached!, created: false, source: "cache" };
   }
 
   const fetched = lesson.url
-    ? await fetchUrlText(lesson.url, { requireChurch: true, maxChars: 45_000 })
+    ? await fetchUrlText(lesson.url, {
+        requireChurch: true,
+        maxChars: 45_000,
+        timeoutMs: 12_000,
+      })
     : { ok: false as const, url: "", error: "No lesson URL" };
 
   if (fetched.ok && fetched.text) {
@@ -276,7 +303,23 @@ export async function getOrCreateWeekPlan(
     });
   }
 
+  // Prefer an existing full cached plan over a fresh heuristic on transient failure.
+  if (cached?.days?.length === 7 && cached.source !== "heuristic") {
+    const fallback =
+      cached.source === "llm" || looksLikeLlmWeekPlan(cached)
+        ? { ...cached, source: "llm" as const }
+        : cached;
+    if (fallback.source === "llm" && cached.source !== "llm") {
+      await saveWeekPlan(fallback);
+    }
+    logger.warn("morning_ritual_week_plan_using_cached_fallback", {
+      lessonKey: lesson.lessonKey,
+      weekStart,
+    });
+    return { plan: fallback, created: false, source: "cache" };
+  }
+
+  // Do not persist heuristic plans — a transient outage must not lock the week.
   const heuristic = buildHeuristicWeekPlan(lesson, weekStart);
-  await saveWeekPlan(heuristic);
   return { plan: heuristic, created: true, source: "heuristic" };
 }

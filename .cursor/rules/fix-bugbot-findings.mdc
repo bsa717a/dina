@@ -1,0 +1,13 @@
+---
+description: Always fix Bugbot findings before merging
+alwaysApply: true
+---
+
+# Fix Bugbot Findings
+
+When `/review-bugbot` (or Bugbot) reports findings:
+
+1. **Fix them before merge** — do not commit/push/merge with open Bugbot findings unless Derek explicitly says to defer a specific finding.
+2. Treat **high** and **medium** severity as blocking for `/merge-branch`.
+3. After fixing, re-run Bugbot (or verify the specific findings are gone) before merging when time allows.
+4. If a finding is a false positive, say so briefly and only skip the fix with Derek’s explicit OK.

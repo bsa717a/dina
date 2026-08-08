@@ -11,6 +11,7 @@ import { htmlToText, isChurchUrl } from "@/lib/morning-ritual/fetch";
 import {
   buildHeuristicWeekPlan,
   enforceUniqueMedia,
+  isDurableWeekPlan,
 } from "@/lib/morning-ritual/week-plan";
 import type { CfmLesson, WeekPlan } from "@/lib/morning-ritual/types";
 
@@ -78,5 +79,32 @@ describe("morning ritual routing and helpers", () => {
     const titles = unique.days.flatMap((d) => d.media.map((m) => m.title));
     expect(titles.filter((t) => t === "By Divine Design")).toHaveLength(1);
     expect(unique.days[0].scriptureFocus).toBe("Esther");
+  });
+
+  it("does not treat heuristic week plans as durable cache hits", () => {
+    const lesson: CfmLesson = {
+      lessonKey: "ot-2026-32",
+      lessonNumber: "32",
+      start: "2026-08-03",
+      end: "2026-08-09",
+      scriptureBlock: "Esther",
+      url: "https://www.churchofjesuschrist.org/study/manual/x",
+    };
+    const heuristic = buildHeuristicWeekPlan(lesson, "2026-08-03");
+    expect(heuristic.source).toBe("heuristic");
+    expect(isDurableWeekPlan(heuristic)).toBe(false);
+    expect(
+      isDurableWeekPlan({ ...heuristic, source: "llm", weekSupplemental: [] }),
+    ).toBe(true);
+    // Legacy empty plan without source is not durable (likely old heuristic).
+    expect(isDurableWeekPlan({ ...heuristic, source: undefined })).toBe(false);
+    // Legacy rich plan without source is durable (old LLM plan).
+    expect(
+      isDurableWeekPlan({
+        ...heuristic,
+        source: undefined,
+        weekSupplemental: [{ type: "talk", title: "By Divine Design" }],
+      }),
+    ).toBe(true);
   });
 });
