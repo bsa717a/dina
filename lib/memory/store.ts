@@ -6,6 +6,7 @@ import {
   type MemoryImportance,
   type MemoryInput,
   type MemoryRecord,
+  type MemoryStatus,
 } from "@/lib/memory/types";
 
 function parseRelatedIds(raw: string | null | undefined): string[] {
@@ -178,6 +179,8 @@ export async function updateMemory(
     importance: MemoryImportance;
     relatedIds: string[];
     source: string;
+    /** Only set when intentionally changing status (e.g. correct_memory activates). */
+    status: MemoryStatus;
   }>,
 ): Promise<MemoryRecord> {
   const existing = await prisma.memoryItem.findUnique({ where: { id } });
@@ -188,6 +191,8 @@ export async function updateMemory(
   const title = patch.title?.trim() || existing.title;
   const content = patch.content?.trim() || existing.content;
   const category = patch.category || existing.category;
+  // Preserve pending_approval unless caller explicitly sets status (approve / correct).
+  const status = patch.status ?? existing.status;
 
   const updated = await prisma.memoryItem.update({
     where: { id },
@@ -207,7 +212,7 @@ export async function updateMemory(
       source: patch.source || existing.source,
       searchText: buildSearchText(title, content, category),
       embeddingStatus: "pending",
-      status: "active",
+      status,
     },
   });
   return toMemoryRecord(updated);

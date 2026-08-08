@@ -1,24 +1,65 @@
-/** Detect OpenAI billing / credit exhaustion errors. */
-export function isOpenAICreditsError(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : "";
-  const status =
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "object" && error && "message" in error) {
+    const msg = (error as { message?: unknown }).message;
+    if (typeof msg === "string") return msg;
+  }
+  return "";
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (
     typeof error === "object" &&
     error &&
     "status" in error &&
     typeof (error as { status?: unknown }).status === "number"
-      ? (error as { status: number }).status
-      : undefined;
+  ) {
+    return (error as { status: number }).status;
+  }
+  return undefined;
+}
 
+function errorCode(error: unknown): string {
+  if (typeof error !== "object" || !error) return "";
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string") return code;
+  const nested = (error as { error?: { code?: unknown } }).error?.code;
+  return typeof nested === "string" ? nested : "";
+}
+
+const CREDITS_PATTERN =
+  /no credits remaining|insufficient_quota|insufficient quota|exceeded your current quota|billing_hard_limit|payment required/i;
+
+/**
+ * Detect OpenAI billing / credit exhaustion (not transient rate limits).
+ * Do NOT treat bare HTTP 429 as credits — OpenAI also uses 429 for rate limits.
+ */
+export function isOpenAICreditsError(error: unknown): boolean {
+  const message = errorMessage(error);
+  const code = errorCode(error);
+  const status = errorStatus(error);
+
+  if (CREDITS_PATTERN.test(message) || CREDITS_PATTERN.test(code)) {
+    return true;
+  }
+
+  // Some billing failures surface as 402 Payment Required.
+  if (status === 402) return true;
+
+  return false;
+}
+
+/** Transient OpenAI rate limiting (safe to retry; do not block the app). */
+export function isOpenAIRateLimitError(error: unknown): boolean {
+  if (isOpenAICreditsError(error)) return false;
+  const message = errorMessage(error);
+  const code = errorCode(error);
+  const status = errorStatus(error);
   return (
     status === 429 ||
-    /no credits remaining|insufficient_quota|billing|exceeded your current quota/i.test(
-      message,
-    )
+    /rate[_ ]?limit/i.test(message) ||
+    /rate_limit_exceeded/i.test(code)
   );
 }
 

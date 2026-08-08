@@ -9,6 +9,7 @@ import {
   archiveMemory,
   createOrCorrectMemory,
   mergeMemories,
+  updateMemory,
 } from "@/lib/memory/store";
 import { confidenceLabel } from "@/lib/memory/policy";
 import { MEMORY_CATEGORIES } from "@/lib/memory/types";
@@ -129,6 +130,33 @@ describe("Memory System", () => {
     const approved = await approveMemory(pending.id);
     expect(approved.status).toBe("active");
     expect(approved.source).toBe("derek_approved");
+  });
+
+  it("updateMemory preserves pending_approval unless status is set", async () => {
+    const pending = await createOrCorrectMemory({
+      category: "preferences",
+      title: "Evening wind-down",
+      content: "Derek may prefer evenings for planning.",
+      source: "chat",
+      confidence: 0.55,
+    });
+    expect(pending.status).toBe("pending_approval");
+
+    const edited = await updateMemory(pending.id, {
+      content: "Derek prefers evenings for planning.",
+    });
+    expect(edited.status).toBe("pending_approval");
+    expect(edited.content).toMatch(/prefers evenings/);
+
+    const stillHidden = await retrieveRelevantMemories("evening planning");
+    expect(stillHidden.some((m) => m.id === pending.id)).toBe(false);
+
+    const activated = await updateMemory(pending.id, {
+      content: "Derek prefers evenings for planning.",
+      status: "active",
+      source: "correction",
+    });
+    expect(activated.status).toBe("active");
   });
 
   it("merges duplicate memories into a survivor", async () => {

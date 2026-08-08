@@ -65,6 +65,17 @@ export async function finishAttentionRun(
   });
 }
 
+async function hasUserProtectedDraft(attentionItemId: string): Promise<boolean> {
+  const action = await prisma.attentionAction.findFirst({
+    where: {
+      attentionItemId,
+      action: { in: ["edited_draft", "revise_draft"] },
+    },
+    select: { id: true },
+  });
+  return Boolean(action);
+}
+
 export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
   const upserted = [];
   for (const item of items) {
@@ -88,6 +99,10 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
       upserted.push(existing);
       continue;
     }
+
+    // Preserve drafts Derek saved or AI-revised; rescans must not clobber them.
+    const protectDraft =
+      existing != null && (await hasUserProtectedDraft(existing.id));
 
     const row = await prisma.attentionItem.upsert({
       where: {
@@ -138,9 +153,13 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
             : deadlineAt,
         isBlocking: item.isBlocking,
         canWait: item.canWait,
-        shouldDraftReply: item.shouldDraftReply,
-        draftSubject: item.draftSubject,
-        draftBody: item.draftBody,
+        ...(protectDraft
+          ? {}
+          : {
+              shouldDraftReply: item.shouldDraftReply,
+              draftSubject: item.draftSubject,
+              draftBody: item.draftBody,
+            }),
         notifyNow: item.notifyNow,
         notificationTitle: item.notificationTitle,
         notificationBody: item.notificationBody,

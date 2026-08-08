@@ -149,6 +149,9 @@ export async function PATCH(
     try {
       if (item.source === "email") {
         // Reply on the original message when possible; otherwise compose new mail.
+        // Never fall back to sendMail after createReply succeeded — that can
+        // duplicate outbound mail and leave an orphaned draft.
+        let replyDraftId: string | null = null;
         try {
           const reply = await graphRequest<{ id?: string }>(
             userPath(`/messages/${encodeURIComponent(graphId)}/createReply`),
@@ -158,25 +161,31 @@ export async function PATCH(
             },
           );
 
-          if (reply.id) {
-            await graphRequest(
-              userPath(`/messages/${encodeURIComponent(reply.id)}`),
-              {
-                method: "PATCH",
-                body: {
-                  subject: subject || `Re: ${item.subject || ""}`,
-                  body: { contentType: "Text", content: body },
-                },
-              },
-            );
-            await graphRequest(
-              userPath(`/messages/${encodeURIComponent(reply.id)}/send`),
-              { method: "POST" },
-            );
-          } else {
+          if (!reply.id) {
             throw new Error("createReply returned no draft id");
           }
+          replyDraftId = reply.id;
+
+          await graphRequest(
+            userPath(`/messages/${encodeURIComponent(reply.id)}`),
+            {
+              method: "PATCH",
+              body: {
+                subject: subject || `Re: ${item.subject || ""}`,
+                body: { contentType: "Text", content: body },
+              },
+            },
+          );
+          await graphRequest(
+            userPath(`/messages/${encodeURIComponent(reply.id)}/send`),
+            { method: "POST" },
+          );
         } catch (replyError) {
+          if (replyDraftId) {
+            throw replyError instanceof Error
+              ? replyError
+              : new Error("Failed after creating reply draft; not sending a second message.");
+          }
           if (!fromAddress) {
             throw replyError instanceof Error
               ? replyError

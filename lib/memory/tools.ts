@@ -113,6 +113,8 @@ const handlers: Record<
           ? (args.importance as (typeof MEMORY_IMPORTANCE)[number])
           : undefined,
       source: "correction",
+      // correct_memory explicitly activates (unlike PATCH update).
+      status: "active",
     });
     return ok({ memory });
   },
