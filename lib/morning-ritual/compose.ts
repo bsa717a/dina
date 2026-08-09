@@ -93,6 +93,39 @@ function formatSupplemental(plan: WeekPlan | null, dayIndex: number): string {
   return "";
 }
 
+function isGateContinuationLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return true; // blank lines inside the gate block
+  if (/^[-*+]\s+/.test(t)) return true;
+  if (/^\d+\.\s+/.test(t)) return true;
+  return false;
+}
+
+/**
+ * Drop a Validation Gate section: heading + following list/blank lines only.
+ * Stops at the next heading or any non-list body line so BoM/CFM content is kept.
+ */
+export function stripValidationGateSection(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (/^##\s*Validation Gate\b/i.test(line)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (/^#{1,6}\s+\S/.test(line) || !isGateContinuationLine(line)) {
+        skipping = false;
+        out.push(line);
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n").replace(/^\n+/, "").trim();
+}
+
 export async function generateMorningBriefMarkdown(
   at: Date = new Date(),
 ): Promise<{ ok: boolean; markdown: string; error?: string }> {
@@ -147,9 +180,6 @@ Output markdown with this structure and tone (match quality of a thoughtful stud
 
 # Morning brief — {weekday}, {longDate}
 
-## Validation Gate
-(short bullets from provided validation notes; mention official CFM URL)
-
 ## Book of Mormon
 Day N of Total — Reading. Include the Read link.
 
@@ -180,6 +210,7 @@ Market rules:
 ## Journal Prompt
 One prompt derived from today's CFM deep study.
 
+Do NOT include a Validation Gate section (or similar meta/debug bullets). Use schedule/context silently.
 Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
       input: [
         {
@@ -188,7 +219,6 @@ Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
             longDate: ctx.longDate,
             weekday: ctx.weekday,
             dayIndex: ctx.dayIndex,
-            validationNotes: ctx.validationNotes,
             cfm: ctx.cfm,
             bom: ctx.bom,
             todayPlan: ctx.todayPlan,
@@ -205,7 +235,15 @@ Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
     if (!markdown) {
       return { ok: false, markdown: "", error: "Model returned empty morning brief." };
     }
-    return { ok: true, markdown };
+    const cleaned = stripValidationGateSection(markdown);
+    if (!cleaned) {
+      return {
+        ok: false,
+        markdown: "",
+        error: "Morning brief was empty after removing Validation Gate.",
+      };
+    }
+    return { ok: true, markdown: cleaned };
   } catch (error) {
     if (isOpenAICreditsError(error)) markOpenAICreditsExhausted();
     logger.error("morning_ritual_compose_failed", {

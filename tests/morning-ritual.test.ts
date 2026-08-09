@@ -8,6 +8,7 @@ import {
   rankMarketUrl,
 } from "@/lib/morning-ritual/markets";
 import { htmlToText, isChurchUrl } from "@/lib/morning-ritual/fetch";
+import { stripValidationGateSection } from "@/lib/morning-ritual/compose";
 import {
   buildHeuristicWeekPlan,
   enforceUniqueMedia,
@@ -79,6 +80,52 @@ describe("morning ritual routing and helpers", () => {
     const titles = unique.days.flatMap((d) => d.media.map((m) => m.title));
     expect(titles.filter((t) => t === "By Divine Design")).toHaveLength(1);
     expect(unique.days[0].scriptureFocus).toBe("Esther");
+  });
+
+  it("strips Validation Gate without truncating on letter Z", () => {
+    const input = [
+      "# Morning brief",
+      "",
+      "## Validation Gate",
+      "- CFM Lesson 32",
+      "- Zacks is not a preferred source",
+      "",
+      "## Book of Mormon",
+      "Day 105 — Alma 12",
+      "",
+      "Talk about Zions and Zacks in the body.",
+    ].join("\n");
+    const out = stripValidationGateSection(input);
+    expect(out).not.toContain("Validation Gate");
+    expect(out).toContain("## Book of Mormon");
+    expect(out).toContain("Zions and Zacks");
+  });
+
+  it("stops Validation Gate skip at h1 headings too", () => {
+    const out = stripValidationGateSection(
+      [
+        "## Validation Gate",
+        "- meta",
+        "",
+        "# Book of Mormon",
+        "Day 105",
+      ].join("\n"),
+    );
+    expect(out).toContain("# Book of Mormon");
+    expect(out).toContain("Day 105");
+    expect(out).not.toContain("Validation Gate");
+  });
+
+  it("keeps non-heading body after Validation Gate and does not restore a gate-only brief", () => {
+    const withBody = stripValidationGateSection(
+      ["## Validation Gate", "- meta", "", "Book of Mormon — Day 105"].join("\n"),
+    );
+    expect(withBody).toBe("Book of Mormon — Day 105");
+
+    const gateOnly = stripValidationGateSection(
+      ["## Validation Gate", "- meta only"].join("\n"),
+    );
+    expect(gateOnly).toBe("");
   });
 
   it("does not treat heuristic week plans as durable cache hits", () => {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/components/chat/types";
 import { LinkifiedText } from "@/lib/client/linkify";
+import { StreamingMarkdownText } from "@/lib/client/markdown";
 
 function formatTime(value: string) {
   try {
@@ -127,9 +128,16 @@ export function MessageList({
                   </div>
                 )}
                 {message.content && message.content !== "(attachment)" && (
-                  <div className="whitespace-pre-wrap break-words">
-                    <LinkifiedText text={message.content} isUser={isUser} />
-                  </div>
+                  isUser ? (
+                    <div className="whitespace-pre-wrap break-words">
+                      <LinkifiedText text={message.content} isUser />
+                    </div>
+                  ) : (
+                    <StreamingMarkdownText
+                      text={message.content}
+                      streaming={Boolean(message.pending)}
+                    />
+                  )
                 )}
                 <div
                   className={`mt-1.5 flex items-center gap-2 text-[10px] ${
