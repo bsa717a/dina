@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkDatabase } from "@/lib/db/client";
 import { getOpenAIApiKey, getVapidConfig } from "@/lib/env";
+import { checkGoogleApis } from "@/lib/google/auth";
 import { checkMicrosoftGraph } from "@/lib/microsoft/graph";
 
 export const runtime = "nodejs";
@@ -10,6 +11,7 @@ export async function GET() {
   const openaiConfigured = Boolean(getOpenAIApiKey());
   const vapidConfigured = Boolean(getVapidConfig());
   const microsoft = await checkMicrosoftGraph();
+  const google = await checkGoogleApis();
 
   const ok = db.ok;
   return NextResponse.json(
@@ -26,10 +28,18 @@ export async function GET() {
           : microsoft.ok
             ? "ok"
             : "error",
+        google: !google.configured
+          ? "missing"
+          : google.ok
+            ? "ok"
+            : "error",
       },
       ...(db.error ? { databaseError: "unavailable" } : {}),
       ...(microsoft.configured && !microsoft.ok
         ? { microsoftError: "unavailable" }
+        : {}),
+      ...(google.configured && !google.ok
+        ? { googleError: "unavailable" }
         : {}),
     },
     { status: ok ? 200 : 503 },

@@ -53,6 +53,7 @@ export function ChatApp() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
   const [microsoftEnabled, setMicrosoftEnabled] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -221,6 +222,7 @@ export function ChatApp() {
         const data = await cfg.json();
         setVapidPublicKey(data.vapidPublicKey);
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
+        setGoogleEnabled(Boolean(data.googleEnabled));
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
           const reg = await navigator.serviceWorker.ready;
           const existing = await reg.pushManager.getSubscription();
@@ -407,6 +409,7 @@ export function ChatApp() {
       <ChatHeader
         status={status}
         microsoftEnabled={microsoftEnabled}
+        googleEnabled={googleEnabled}
         pushSupported={pushSupported && Boolean(vapidPublicKey)}
         pushEnabled={pushEnabled}
         pushBusy={pushBusy}

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
+import { createAttentionBlock } from "@/lib/attention/blocks";
 import { closeAttentionItem } from "@/lib/attention/close";
+import {
+  attentionProviderFromSourceId,
+  providerIdFromSourceId,
+} from "@/lib/attention/provider";
 import { reviseAttentionDraft } from "@/lib/attention/revise";
 import {
   getAttentionItem,
@@ -14,6 +19,7 @@ import {
   graphIdFromSourceId,
   recipientFromAttentionRaw,
 } from "@/lib/attention/send";
+import { getGmailMessage, sendGmailMessage } from "@/lib/google/gmail";
 import { jsonError, unauthorized } from "@/lib/http";
 import { scheduleLearnFromAttentionAction } from "@/lib/learning/distill";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
@@ -29,6 +35,7 @@ const patchSchema = z.object({
     "revise_draft",
     "send_draft",
     "dismissed_unimportant",
+    "blocked_sender",
     "ignored_notification",
   ]),
   draftSubject: z.string().max(500).optional(),
@@ -134,6 +141,25 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "blocked_sender") {
+    if (item.source !== "email") {
+      return jsonError("Only email Attention items can block a sender.");
+    }
+    const target = recipientFromAttentionRaw(item.rawJson, item.sender);
+    if (!target) {
+      return jsonError("Could not determine sender email to block.");
+    }
+    const block = await createAttentionBlock({
+      target,
+      reason: note || `Blocked from Attention card: ${item.subject || item.id}`,
+      source: "ui",
+    });
+    await closeAttentionItem(item, "dismissed", "blocked_sender", {
+      blocked: block,
+    });
+    return NextResponse.json({ ok: true, blocked: block });
+  }
+
   if (action === "ignored_notification") {
     await recordAttentionAction({
       attentionItemId: item.id,
@@ -167,17 +193,50 @@ export async function PATCH(
     if (!body?.trim()) return jsonError("Draft body is empty.");
 
     const fromAddress = recipientFromAttentionRaw(item.rawJson, item.sender);
-    const graphId = graphIdFromSourceId(item.sourceId);
+    const provider = attentionProviderFromSourceId(item.sourceId);
+    const resourceId =
+      providerIdFromSourceId(item.sourceId) || graphIdFromSourceId(item.sourceId);
 
     try {
-      if (item.source === "email") {
+      if (provider === "google") {
+        if (!fromAddress) {
+          return jsonError(
+            "Could not determine recipient email for this personal Google draft.",
+          );
+        }
+        let threadId: string | undefined;
+        let inReplyTo: string | undefined;
+        if (item.source === "email") {
+          try {
+            const original = await getGmailMessage(resourceId, "metadata", [
+              "Message-ID",
+              "Message-Id",
+            ]);
+            threadId = original.threadId;
+            const headers = original.payload?.headers || [];
+            inReplyTo =
+              headers.find((h) => (h.name || "").toLowerCase() === "message-id")
+                ?.value || undefined;
+          } catch {
+            // still send as new mail
+          }
+        }
+        await sendGmailMessage({
+          to: fromAddress,
+          subject: subject || `Re: ${item.subject || ""}`,
+          body: body.trim(),
+          threadId,
+          inReplyTo,
+          references: inReplyTo,
+        });
+      } else if (item.source === "email") {
         // Reply on the original message when possible; otherwise compose new mail.
         // Never fall back to sendMail after createReply succeeded — that can
         // duplicate outbound mail and leave an orphaned draft.
         let replyDraftId: string | null = null;
         try {
           const reply = await graphRequest<{ id?: string }>(
-            userPath(`/messages/${encodeURIComponent(graphId)}/createReply`),
+            userPath(`/messages/${encodeURIComponent(resourceId)}/createReply`),
             {
               method: "POST",
               body: { comment: body },

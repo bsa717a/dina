@@ -79,8 +79,13 @@ export function friendlyToolStatus(toolName: string) {
     list_onedrive_children: "Browsing OneDrive…",
     write_onedrive_file: "Writing OneDrive file…",
     create_sharepoint_note: "Creating SharePoint note…",
-    brief_inbox: "Reading inbox…",
-    list_calendar_events: "Checking calendar…",
+    brief_inbox: "Reading work inbox…",
+    gmail_brief_inbox: "Reading personal Gmail…",
+    list_calendar_events: "Checking work calendar…",
+    google_list_calendar_events: "Checking personal calendar…",
+    list_mail_accounts: "Listing mail accounts…",
+    block_attention_sender: "Blocking Attention sender…",
+    list_attention_blocks: "Listing Attention blocks…",
     generate_morning_brief: "Preparing morning brief…",
   };
   return map[toolName] || `Running ${toolName}…`;

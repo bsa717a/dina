@@ -40,6 +40,7 @@ export function getVapidConfig() {
 }
 
 export { getMicrosoftConfig, isMicrosoftConfigured } from "@/lib/microsoft/config";
+export { getGoogleConfig, isGoogleConfigured } from "@/lib/google/config";
 
 export function getAttentionScanSecret(): string | undefined {
   return process.env.ATTENTION_SCAN_SECRET?.trim() || undefined;

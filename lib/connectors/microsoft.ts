@@ -1,8 +1,12 @@
 import type { NormalizedEvent } from "@/lib/chief-of-staff/types";
 import type { Connector } from "@/lib/connectors/types";
+import {
+  listAttentionBlocks,
+  partitionByAttentionBlocks,
+} from "@/lib/attention/blocks";
 import { getMicrosoftConfig } from "@/lib/microsoft/config";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
-import { partitionMailByTriage } from "@/lib/microsoft/mail-triage";
+import { partitionMailByTriage } from "@/lib/mail/triage";
 import { logger } from "@/lib/logger";
 
 function htmlToText(html: string) {
@@ -63,18 +67,35 @@ async function emitMail(): Promise<NormalizedEvent[]> {
     }>;
   }>(userPath(`/mailFolders/inbox/messages?${listParams}`));
 
+  const config = getMicrosoftConfig();
   const messages = listed.value || [];
-  const { noise, maybeReal } = partitionMailByTriage(
-    messages.map((message) => ({
-      id: message.id,
-      subject: message.subject,
-      fromAddress: message.from?.emailAddress?.address,
-      fromName: message.from?.emailAddress?.name,
-      bodyPreview: message.bodyPreview,
-      inferenceClassification: message.inferenceClassification,
-      message,
-    })),
-  );
+  const mapped = messages.map((message) => ({
+    id: message.id,
+    subject: message.subject,
+    fromAddress: message.from?.emailAddress?.address,
+    fromName: message.from?.emailAddress?.name,
+    bodyPreview: message.bodyPreview,
+    inferenceClassification: message.inferenceClassification,
+    message,
+  }));
+
+  const blocks = await listAttentionBlocks();
+  const { blocked, allowed } = partitionByAttentionBlocks(mapped, blocks);
+
+  if (blocked.length) {
+    const marked = await markMessagesRead(blocked.map((item) => item.id));
+    logger.info("connector_microsoft_blocked_cleared", {
+      blocked: blocked.length,
+      markedRead: marked,
+      samples: blocked.slice(0, 8).map((item) => ({
+        subject: item.subject,
+        from: item.fromAddress,
+        reason: item.blockReason,
+      })),
+    });
+  }
+
+  const { noise, maybeReal } = partitionMailByTriage(allowed);
 
   if (noise.length) {
     const marked = await markMessagesRead(noise.map((item) => item.id));
@@ -134,6 +155,8 @@ async function emitMail(): Promise<NormalizedEvent[]> {
         isRead: message.isRead,
         importance: message.importance,
         triageReason: item.triage.reason,
+        accountLabel: "work",
+        accountEmail: config?.userEmail,
       },
     });
   }

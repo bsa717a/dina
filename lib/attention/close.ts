@@ -21,7 +21,10 @@ export async function closeAttentionItem(
   status: "resolved" | "dismissed" | "sent",
   action: Extract<
     AttentionActionType,
-    "accepted_recommendation" | "dismissed_unimportant" | "sent_draft"
+    | "accepted_recommendation"
+    | "dismissed_unimportant"
+    | "blocked_sender"
+    | "sent_draft"
   >,
   details?: Record<string, unknown>,
 ) {
@@ -36,11 +39,17 @@ export async function closeAttentionItem(
     action,
     details: { ...details, markedRead: marked },
   });
-  scheduleLearnFromAttentionAction({
-    attentionItemId: item.id,
-    action,
-    details: { ...details, markedRead: marked },
-  });
+  if (
+    action === "accepted_recommendation" ||
+    action === "dismissed_unimportant" ||
+    action === "sent_draft"
+  ) {
+    scheduleLearnFromAttentionAction({
+      attentionItemId: item.id,
+      action,
+      details: { ...details, markedRead: marked },
+    });
+  }
   return marked;
 }
 

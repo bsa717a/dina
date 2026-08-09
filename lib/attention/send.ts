@@ -1,3 +1,4 @@
+import { providerIdFromSourceId } from "@/lib/attention/provider";
 import type { AttentionSource } from "@/lib/attention/types";
 
 /** Sources that can send an email draft from Attention Engine. */
@@ -12,19 +13,11 @@ export function canSendAttentionDraft(source: string): boolean {
 }
 
 /**
- * Attention sourceIds are often prefixed (`microsoft365:email:…`).
- * Graph APIs need the bare resource id.
+ * Attention sourceIds are often prefixed (`microsoft365:email:…` / `google:email:…`).
+ * Vendor APIs need the bare resource id.
  */
 export function graphIdFromSourceId(sourceId: string): string {
-  const prefixes = [
-    "microsoft365:email:",
-    "microsoft365:calendar:",
-    "microsoft365:todo:",
-  ];
-  for (const prefix of prefixes) {
-    if (sourceId.startsWith(prefix)) return sourceId.slice(prefix.length);
-  }
-  return sourceId;
+  return providerIdFromSourceId(sourceId);
 }
 
 export function recipientFromAttentionRaw(

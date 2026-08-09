@@ -1,7 +1,12 @@
+import {
+  attentionProviderFromSourceId,
+  providerIdFromSourceId,
+} from "@/lib/attention/provider";
 import { graphIdFromSourceId } from "@/lib/attention/send";
 import { prisma } from "@/lib/db/client";
 import { getGitHubAccount } from "@/lib/github/config";
 import { githubRequest } from "@/lib/github/client";
+import { markGmailRead } from "@/lib/google/gmail";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 import { logger } from "@/lib/logger";
 
@@ -62,8 +67,13 @@ function parseGitHubMeta(rawJson: string | null) {
 }
 
 async function markEmailRead(sourceId: string) {
-  const messageId = graphIdFromSourceId(sourceId);
+  const messageId = providerIdFromSourceId(sourceId) || graphIdFromSourceId(sourceId);
   if (!messageId) return false;
+  const provider = attentionProviderFromSourceId(sourceId);
+  if (provider === "google") {
+    await markGmailRead(messageId, true);
+    return true;
+  }
   await graphRequest(userPath(`/messages/${encodeURIComponent(messageId)}`), {
     method: "PATCH",
     body: { isRead: true },

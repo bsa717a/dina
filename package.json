@@ -10,6 +10,7 @@
     "setup": "node scripts/setup.mjs",
     "generate-vapid": "node scripts/generate-vapid.mjs",
     "generate-icons": "node scripts/generate-icons.mjs",
+    "google-oauth": "node scripts/google-oauth-setup.mjs",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "attention:scan": "node scripts/attention-scan.mjs",

@@ -14,6 +14,18 @@ function decisionToAttentionItem(
   }
 
   const card = decision.card;
+  const accountLabel =
+    typeof event.payload?.accountLabel === "string"
+      ? event.payload.accountLabel
+      : event.connector === "google"
+        ? "personal"
+        : event.connector === "microsoft365"
+          ? "work"
+          : undefined;
+  const accountEmail =
+    typeof event.payload?.accountEmail === "string"
+      ? event.payload.accountEmail
+      : undefined;
   return {
     source:
       event.connector === "github"
@@ -34,6 +46,9 @@ function decisionToAttentionItem(
         : typeof event.payload?.organizerAddress === "string"
           ? event.payload.organizerAddress
           : undefined,
+    connector: event.connector,
+    accountLabel,
+    accountEmail,
     subject: card.subject || event.title,
     summary: card.summary,
     whyItMatters: card.whyItMatters,

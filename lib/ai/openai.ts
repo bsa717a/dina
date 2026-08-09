@@ -13,6 +13,10 @@ import { getGitHubToolDefinitions } from "@/lib/github/tool-definitions";
 import { executeGitHubTool, listGitHubToolNames } from "@/lib/github/tools";
 import { getMemoryToolDefinitions } from "@/lib/memory/tool-definitions";
 import { executeMemoryTool, listMemoryToolNames } from "@/lib/memory/tools";
+import { isGoogleConfigured } from "@/lib/google/config";
+import { getGoogleToolDefinitions } from "@/lib/google/tool-definitions";
+import { executeGoogleTool, listGoogleToolNames } from "@/lib/google/tools";
+import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { getMicrosoftToolDefinitions } from "@/lib/microsoft/tool-definitions";
 import { executeMicrosoftTool, listMicrosoftToolNames } from "@/lib/microsoft/tools";
 import {
@@ -170,7 +174,10 @@ function collectFunctionCalls(output: OpenAI.Responses.ResponseOutputItem[]): Fu
 }
 
 function buildInstructions(
+  msConfigured: boolean,
+  googleConfigured: boolean,
   msCount: number,
+  googleCount: number,
   ghCount: number,
   memoryBlock: string,
   lessonsBlock: string,
@@ -202,18 +209,46 @@ function buildInstructions(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,
     "Treat that clock as authoritative for today/tomorrow.",
   );
-  if (msCount) {
+  if (msConfigured && msCount) {
     parts.push(
       `${msCount} Microsoft Graph tools are enabled, including brief_inbox, get_email, get_emails, list_calendar_events, ensure_mail_folder, create_inbox_rule, and mark_matching_emails_read.`,
+      "These are the WORK Outlook / Microsoft 365 account. Always label results as Work/Outlook.",
       "For requests to create folders or inbox rules, you MUST call those tools. Do not answer with manual Outlook instructions.",
-      "For email summaries/digests/triage, you MUST call brief_inbox (or get_emails). brief_inbox auto-marks marketing/spam read (autoCleared); summarize textBody for remaining emails[] and only briefly note what was cleared.",
-      "For calendar/schedule/agenda questions, you MUST call list_calendar_events and report every returned item with its when/timeZone fields.",
+      "For WORK email summaries/digests/triage, you MUST call brief_inbox (or get_emails). brief_inbox auto-marks marketing/spam read (autoCleared); summarize textBody for remaining emails[] and only briefly note what was cleared.",
+      "For WORK calendar/schedule/agenda questions, you MUST call list_calendar_events and report every returned item with its when/timeZone fields.",
       "Trust live list_calendar_events JSON over earlier chat messages that claimed the calendar was empty or that a meeting was missing.",
       "Never say an event needs to be added manually when list_calendar_events already returned it.",
       "For Planner questions, call list_planner_plans then list_planner_tasks. Never claim Planner is unavailable.",
       "For SharePoint document folders, call list_sharepoint_folder. For SharePoint Lists (Network Info, contacts, etc.), call list_sharepoint_lists or get_sharepoint_list_items — never look for lists inside Dev Docs.",
       "Never claim SharePoint is unavailable.",
       'Never include a Links section, Outlook/OWA links, SendGrid/click-tracking URLs, or CTA buttons like "Save My Seat" / "Read More".',
+    );
+  }
+  if (googleConfigured) {
+    parts.push(
+      `${googleCount} Google tools are enabled for the PERSONAL Gmail / Google Calendar account (gmail_brief_inbox, gmail_get_email, google_list_calendar_events, …).`,
+      "Always label Google results as Personal/Gmail or Personal/Google Calendar. Never mix with Work/Outlook tools or results.",
+      "For PERSONAL email digests, call gmail_brief_inbox (not brief_inbox).",
+      "For PERSONAL calendar questions, call google_list_calendar_events (not list_calendar_events).",
+      "When Derek does not specify which inbox/calendar, call list_mail_accounts first, then check both if needed.",
+      "After gmail_brief_inbox, treat emails[].index as #1/#2/…. For 'block #N': block_attention_sender(target=emails[N-1].from.address) then gmail_mark_read(messageId=emails[N-1].id). For 'show #N': gmail_get_email with the FULL emails[N-1].id — never truncate ids.",
+      "If a Gmail tool errors, report the tool error and retry with the exact id from the latest brief — do not claim the message is inaccessible without retrying.",
+    );
+  }
+  if (msConfigured || googleConfigured) {
+    parts.push(
+      "Multi-account mail/calendar: Work = Microsoft 365 tools (unprefixed). Personal = gmail_* / google_* tools. Never assume one account. Name the account in every answer.",
+      "Attention block tools (block_attention_sender / unblock / list) apply to both Work and Personal Attention scans when mail is configured.",
+    );
+  }
+  if (msConfigured && !googleConfigured) {
+    parts.push(
+      "Personal Gmail/Google is NOT configured. Do not invent personal inbox results. If Derek asks about personal Gmail, say Google is not connected yet and only report Work/Outlook if you checked it.",
+    );
+  }
+  if (!msConfigured && googleConfigured) {
+    parts.push(
+      "Work Microsoft 365 is NOT configured. Do not invent Outlook results. Only report Personal Google if you checked it.",
     );
   }
   if (ghCount) {
@@ -249,6 +284,9 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
   if (listMicrosoftToolNames().includes(name)) {
     return executeMicrosoftTool(name, argsJson);
   }
+  if (listGoogleToolNames().includes(name)) {
+    return executeGoogleTool(name, argsJson);
+  }
   return JSON.stringify({ ok: false, error: `Unknown tool: ${name}` });
 }
 
@@ -274,6 +312,7 @@ export class OpenAIProvider implements ModelProvider {
     const client = new OpenAI({ apiKey, timeout: 120_000 });
     const model = getOpenAIModel();
     const msTools = getMicrosoftToolDefinitions();
+    const googleTools = getGoogleToolDefinitions();
     const ghTools = getGitHubToolDefinitions();
     const memoryTools = getMemoryToolDefinitions();
     const starTools = getStarToolDefinitions();
@@ -282,6 +321,7 @@ export class OpenAIProvider implements ModelProvider {
     const morningRitualTools = getMorningRitualToolDefinitions();
     const tools = [
       ...msTools,
+      ...googleTools,
       ...ghTools,
       ...memoryTools,
       ...starTools,
@@ -291,7 +331,10 @@ export class OpenAIProvider implements ModelProvider {
     ];
     const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
     const instructions = buildInstructions(
+      isMicrosoftConfigured(),
+      isGoogleConfigured(),
       msTools.length,
+      googleTools.length,
       ghTools.length,
       input.memoryBlock || "",
       lessonsBlock,
