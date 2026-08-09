@@ -25,6 +25,7 @@ export const ATTENTION_ACTION_TYPES = [
   "sent_draft",
   "ignored_notification",
   "dismissed_unimportant",
+  "blocked_sender",
   "reviewed",
 ] as const;
 
@@ -53,6 +54,10 @@ export type ClassifiedAttention = {
   category: AttentionCategory;
   sender?: string;
   senderEmail?: string;
+  /** Provenance connector id, e.g. microsoft365 | google | github */
+  connector?: string;
+  accountLabel?: string;
+  accountEmail?: string;
   subject?: string;
   summary: string;
   whyItMatters: string;

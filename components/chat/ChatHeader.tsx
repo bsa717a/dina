@@ -5,6 +5,7 @@ type Status = "online" | "offline" | "degraded" | "checking";
 export function ChatHeader({
   status,
   microsoftEnabled = false,
+  googleEnabled = false,
   pushSupported,
   pushEnabled,
   pushBusy,
@@ -14,6 +15,7 @@ export function ChatHeader({
 }: {
   status: Status;
   microsoftEnabled?: boolean;
+  googleEnabled?: boolean;
   pushSupported: boolean;
   pushEnabled: boolean;
   pushBusy: boolean;
@@ -47,6 +49,11 @@ export function ChatHeader({
             {microsoftEnabled && (
               <span className="hidden text-xs text-[var(--muted)] sm:inline">
                 · M365
+              </span>
+            )}
+            {googleEnabled && (
+              <span className="hidden text-xs text-[var(--muted)] sm:inline">
+                · Google
               </span>
             )}
           </div>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 export type AttentionItemView = {
   id: string;
   source: string;
+  sourceId?: string;
   category: string;
   categoryLabel: string;
   sender: string | null;
@@ -23,10 +24,26 @@ export type AttentionItemView = {
   occursAt: string | null;
   occursEndAt: string | null;
   whenLabel: string | null;
+  connector?: string | null;
+  accountLabel?: string | null;
+  accountEmail?: string | null;
   githubAccountId: string | null;
   githubAccountLabel: string | null;
   githubRepoKey: string | null;
 };
+
+function accountBadge(item: AttentionItemView): string | null {
+  if (item.githubAccountLabel) return `GitHub · ${item.githubAccountLabel}`;
+  if (item.accountLabel === "personal" || item.connector === "google") {
+    return item.accountEmail
+      ? `Personal · ${item.accountEmail}`
+      : "Personal";
+  }
+  if (item.accountLabel === "work" || item.connector === "microsoft365") {
+    return item.accountEmail ? `Work · ${item.accountEmail}` : "Work";
+  }
+  return null;
+}
 
 type EmailAddressView = {
   name: string | null;
@@ -242,6 +259,7 @@ export function AttentionPanel({ highlightId, onError }: Props) {
       if (!res.ok) throw new Error(data.error || "Action failed");
       if (
         action === "dismissed_unimportant" ||
+        action === "blocked_sender" ||
         action === "send_draft" ||
         action === "accepted_recommendation"
       ) {
@@ -323,9 +341,9 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                   <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--accent)]">
                     {item.categoryLabel}
                   </span>
-                  {item.githubAccountLabel && (
+                  {accountBadge(item) && (
                     <span className="text-[11px] text-[var(--muted)]">
-                      GitHub · {item.githubAccountLabel}
+                      {accountBadge(item)}
                     </span>
                   )}
                   {item.isBlocking && (
@@ -514,6 +532,26 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                       >
                         Not important
                       </button>
+                      {item.source === "email" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--danger)] disabled:opacity-50"
+                          onClick={() => {
+                            const label = item.sender || "this sender";
+                            if (
+                              !window.confirm(
+                                `Block future Attention from ${label}? Mail stays in the inbox; Dina will stop surfacing it.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            void act(item.id, "blocked_sender");
+                          }}
+                        >
+                          Block sender
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

@@ -6,6 +6,7 @@ import {
   formatAttentionWhen,
   isCalendarAttentionSource,
 } from "@/lib/attention/format";
+import { accountBadgeFromRaw } from "@/lib/attention/provider";
 import { listOpenAttentionItems } from "@/lib/attention/store";
 import { categoryLabel } from "@/lib/attention/types";
 import { jsonError, unauthorized } from "@/lib/http";
@@ -79,9 +80,11 @@ export async function GET() {
     items: items.map((item) => {
       const occurs = readOccurs(item);
       const github = readGitHubMeta(item);
+      const account = accountBadgeFromRaw(item.rawJson, item.sourceId);
       return {
         id: item.id,
         source: item.source,
+        sourceId: item.sourceId,
         category: item.category,
         categoryLabel: categoryLabel(item.category),
         sender: item.sender,
@@ -96,6 +99,9 @@ export async function GET() {
         occursAt: occurs.occursAt,
         occursEndAt: occurs.occursEndAt,
         whenLabel: occurs.whenLabel,
+        connector: account.connector,
+        accountLabel: account.accountLabel,
+        accountEmail: account.accountEmail,
         githubAccountId: github.githubAccountId,
         githubAccountLabel: github.githubAccountLabel,
         githubRepoKey: github.githubRepoKey,

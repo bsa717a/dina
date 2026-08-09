@@ -6,7 +6,11 @@ import {
   graphRequestContent,
   userPath,
 } from "@/lib/microsoft/graph";
-import { partitionMailByTriage } from "@/lib/microsoft/mail-triage";
+import {
+  listAttentionBlocks,
+  partitionByAttentionBlocks,
+} from "@/lib/attention/blocks";
+import { partitionMailByTriage } from "@/lib/mail/triage";
 import {
   buildExcelWorkbook,
   buildPowerPointPresentation,
@@ -405,22 +409,39 @@ async function briefInbox(args: {
     maxPages: 1,
   });
 
-  const { noise, maybeReal } = partitionMailByTriage(
-    page.messages.map((message) => ({
-      id: message.id,
-      subject: message.subject,
-      fromAddress: message.from?.emailAddress?.address,
-      fromName: message.from?.emailAddress?.name,
-      bodyPreview: message.bodyPreview,
-      inferenceClassification: message.inferenceClassification,
-      message,
+  const mapped = page.messages.map((message) => ({
+    id: message.id,
+    subject: message.subject,
+    fromAddress: message.from?.emailAddress?.address,
+    fromName: message.from?.emailAddress?.name,
+    bodyPreview: message.bodyPreview,
+    inferenceClassification: message.inferenceClassification,
+    message,
+  }));
+
+  const blocks = await listAttentionBlocks();
+  const { blocked, allowed } = partitionByAttentionBlocks(mapped, blocks);
+  const { noise, maybeReal } = partitionMailByTriage(allowed);
+
+  const toClear = [
+    ...blocked.map((item) => ({
+      id: item.id,
+      subject: item.subject || "(no subject)",
+      from: item.fromAddress || item.fromName || null,
+      reason: item.blockReason,
     })),
-  );
+    ...noise.map((item) => ({
+      id: item.id,
+      subject: item.subject || "(no subject)",
+      from: item.fromAddress || item.fromName || null,
+      reason: item.triage.reason,
+    })),
+  ];
 
   let cleared = { success: 0, failed: 0, errors: [] as string[] };
-  if (autoClearNoise && noise.length) {
+  if (autoClearNoise && toClear.length) {
     cleared = await markMessageIdsRead(
-      noise.map((item) => item.id).filter((id): id is string => Boolean(id)),
+      toClear.map((item) => item.id).filter((id): id is string => Boolean(id)),
     );
   }
 
@@ -452,20 +473,20 @@ async function briefInbox(args: {
   return ok({
     count: emails.length,
     hasMore: page.hasMore || maybeReal.length > top,
+    account: "microsoft365",
+    accountLabel: "work",
     emails,
-    autoCleared: noise.map((item) => ({
-      id: item.id,
-      subject: item.subject || "(no subject)",
-      from: item.fromAddress || item.fromName || null,
-      reason: item.triage.reason,
+    autoCleared: toClear.map((item) => ({
+      ...item,
       markedRead: autoClearNoise,
     })),
-    autoClearedCount: noise.length,
+    autoClearedCount: toClear.length,
     autoClearedMarkedRead: cleared.success,
+    blockedCount: blocked.length,
     skippedUnreadReal: Math.max(0, maybeReal.length - top),
     errors,
     guidance:
-      "Brief Derek from textBody only for emails[]. Mention autoCleared marketing/spam only briefly (count + a few subjects). Do not include Links sections, tracking URLs, SendGrid click wrappers, or Outlook/OWA links. Patterns in autoCleared are good unsubscribe candidates later.",
+      "This is WORK Outlook mail. Brief Derek from textBody only for emails[]. Mention autoCleared marketing/spam only briefly (count + a few subjects). Do not include Links sections, tracking URLs, SendGrid click wrappers, or Outlook/OWA links. Patterns in autoCleared are good unsubscribe candidates later.",
   });
 }
 

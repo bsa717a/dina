@@ -1,12 +1,20 @@
 import type { NormalizedEvent } from "@/lib/chief-of-staff/types";
 import { githubConnector } from "@/lib/connectors/github";
+import { googleConnector } from "@/lib/connectors/google";
 import { microsoftConnector } from "@/lib/connectors/microsoft";
 import type { Connector } from "@/lib/connectors/types";
+import { isGoogleConfigured } from "@/lib/google/config";
+import { isMicrosoftConfigured } from "@/lib/microsoft/config";
+import { isGitHubConfigured } from "@/lib/github/config";
 import { logger } from "@/lib/logger";
 
 /** Registered connectors. Future services only need to add an emitter here. */
 export function getConnectors(): Connector[] {
-  return [microsoftConnector, githubConnector];
+  const connectors: Connector[] = [];
+  if (isMicrosoftConfigured()) connectors.push(microsoftConnector);
+  if (isGoogleConfigured()) connectors.push(googleConnector);
+  if (isGitHubConfigured()) connectors.push(githubConnector);
+  return connectors;
 }
 
 /**

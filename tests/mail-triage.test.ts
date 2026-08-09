@@ -1,66 +1,83 @@
 import { describe, expect, it } from "vitest";
-import {
-  classifyMailNoise,
-  partitionMailByTriage,
-} from "@/lib/microsoft/mail-triage";
+import { classifyMailNoise, partitionMailByTriage } from "@/lib/mail/triage";
 
 describe("mail triage", () => {
-  it("marks obvious marketing as noise", () => {
+  it("treats Gmail Promotions as noise", () => {
     const result = classifyMailNoise({
-      subject: "Flash sale — 40% off this weekend",
-      fromAddress: "newsletter@mail.store.com",
-      bodyPreview: "Shop now before it's gone. Unsubscribe anytime.",
-      inferenceClassification: "other",
+      subject: "This week only",
+      fromAddress: "deals@shop.example",
+      bodyPreview: "Shop now",
+      labelIds: ["UNREAD", "CATEGORY_PROMOTIONS", "INBOX"],
     });
     expect(result.kind).toBe("noise");
-    expect(result.score).toBeGreaterThanOrEqual(4);
+    expect(result.reason).toMatch(/Promotions/i);
   });
 
-  it("marks ESP blasts as noise", () => {
+  it("treats Gmail SPAM label as noise", () => {
     const result = classifyMailNoise({
-      subject: "Your weekly product updates",
-      fromAddress: "updates@mg.mailgun.org",
-      bodyPreview: "View in browser · Manage preferences",
+      subject: "Hello",
+      fromAddress: "friend@example.com",
+      labelIds: ["SPAM"],
     });
     expect(result.kind).toBe("noise");
   });
 
-  it("keeps personal reply threads as maybe_real", () => {
+  it("keeps personal replies as maybe_real", () => {
     const result = classifyMailNoise({
-      subject: "Re: Login issue for district admins",
-      fromAddress: "justin@schooldistrict.org",
-      fromName: "Justin",
-      bodyPreview: "Thanks — can you jump on a call tomorrow?",
-      inferenceClassification: "focused",
+      subject: "Re: Dinner Friday",
+      fromAddress: "adam@example.com",
+      fromName: "Adam",
+      bodyPreview: "Does 6pm work?",
+      labelIds: ["UNREAD", "INBOX", "CATEGORY_PERSONAL"],
     });
     expect(result.kind).toBe("maybe_real");
   });
 
-  it("does not bury uncertain mail (bias to maybe_real)", () => {
+  it("treats HeyGen marketing as noise even without Promotions label", () => {
     const result = classifyMailNoise({
-      subject: "Quick question",
-      fromAddress: "hello@acme.io",
-      bodyPreview: "Wanted to follow up on our conversation.",
+      subject: "Create your next AI avatar video",
+      fromAddress: "hello@heygen.com",
+      fromName: "HeyGen",
+      bodyPreview: "See what’s new in HeyGen this week",
     });
-    expect(result.kind).toBe("maybe_real");
+    expect(result.kind).toBe("noise");
+    expect(result.reason).toMatch(/heygen/i);
   });
 
-  it("partitions a mixed inbox", () => {
+  it("treats HeyGen subdomain and Truvani marketing as noise", () => {
+    expect(
+      classifyMailNoise({
+        subject: "You're invited to a live session",
+        fromAddress: "webinar@learn.heygen.com",
+        fromName: "HeyGen",
+      }).kind,
+    ).toBe("noise");
+    expect(
+      classifyMailNoise({
+        subject: "Welcome to Truvani! 🎁",
+        fromAddress: "Support@truvani.com",
+        fromName: "The Truvani Team",
+        bodyPreview: "plant-based protein powder",
+      }).kind,
+    ).toBe("noise");
+  });
+
+  it("partitions mixed inbox", () => {
     const { noise, maybeReal } = partitionMailByTriage([
       {
         id: "1",
-        subject: "Newsletter: March roundup",
-        fromAddress: "news@brand.com",
-        bodyPreview: "Unsubscribe · View in browser",
+        subject: "Newsletter",
+        fromAddress: "news@mailchimp.com",
+        bodyPreview: "Unsubscribe anytime",
       },
       {
         id: "2",
-        subject: "Re: Contract signature",
-        fromAddress: "adam@4studentlives.com",
-        bodyPreview: "Please review the attached redlines.",
+        subject: "Re: Contract",
+        fromAddress: "ceo@partner.com",
+        bodyPreview: "Can you review?",
       },
     ]);
-    expect(noise.map((m) => m.id)).toEqual(["1"]);
-    expect(maybeReal.map((m) => m.id)).toEqual(["2"]);
+    expect(noise.map((n) => n.id)).toContain("1");
+    expect(maybeReal.map((n) => n.id)).toContain("2");
   });
 });

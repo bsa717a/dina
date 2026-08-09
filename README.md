@@ -61,6 +61,11 @@ Open [http://localhost:8080](http://localhost:8080).
 | `MS_USER_EMAIL` | for M365 | Mailbox / user UPN for app-only calls |
 | `MS_SHAREPOINT_SITE` | no | Graph site path, e.g. `contoso.sharepoint.com:/sites/Site` |
 | `MS_SHAREPOINT_DEFAULT_FOLDER` | no | Default folder for notes |
+| `GOOGLE_CLIENT_ID` | for Google | OAuth client id |
+| `GOOGLE_CLIENT_SECRET` | for Google | OAuth client secret (`.env` only) |
+| `GOOGLE_REFRESH_TOKEN` | for Google | Long-lived refresh token from `npm run google-oauth` |
+| `GOOGLE_USER_EMAIL` | for Google | Personal Gmail address |
+| `GOOGLE_LABEL` | no | Account label (default `personal`) |
 
 ## Microsoft 365
 
@@ -96,6 +101,36 @@ Grant **application** permissions with admin consent as needed:
 - `User.Read.All` (resolve user profile for health check)
 
 If a tool fails with 403, Dina will surface the Graph error — add the missing permission and re-consent.
+
+## Google (personal Gmail + Calendar)
+
+Personal Google stays **separate** from Microsoft 365. Chat tools are prefixed (`gmail_*`, `google_*`); Attention events use `google:email:…` / `google:calendar:…`. Dina should label results Work vs Personal.
+
+### Setup
+
+1. In Google Cloud Console: create an OAuth client, enable **Gmail API** + **Google Calendar API**.
+2. Put the OAuth consent screen in **Production** (Testing expires refresh tokens after 7 days).
+3. Add redirect URI `http://127.0.0.1:8080/oauth2/callback` (or set `GOOGLE_REDIRECT_URI`).
+4. Run:
+
+```bash
+GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... npm run google-oauth
+```
+
+5. Paste the printed `GOOGLE_REFRESH_TOKEN` (and related vars) into `.env`, then restart Dina.
+
+Scopes requested: `gmail.modify`, `gmail.send`, `calendar`, `userinfo.email`.
+
+When configured, chat can call:
+
+- Personal Gmail (brief/list/read/send/draft/labels)
+- Personal Google Calendar (list/create/update/delete/respond)
+- `list_mail_accounts` to see Work vs Personal
+- Attention block tools (`block_attention_sender`, `unblock_attention_sender`, `list_attention_blocks`)
+
+### Attention blocklist
+
+Marketing/spam is triaged before CoS (shared header/label scoring). Derek can also **Block sender** on an Attention card (or via chat tools) to durably suppress that email or `@domain` from future Attention scans on **both** Work and Personal mail. Mail is not deleted.
 
 ## Database
 
@@ -275,10 +310,11 @@ Each decision also gets priority (Critical / High / Normal / Low), confidence, r
 
 ### Connectors (today)
 
-- Microsoft 365 → mail, calendar/invites, To Do reminders
+- Microsoft 365 → work mail, calendar/invites, To Do reminders
+- Google → personal Gmail + Google Calendar
 - GitHub (multi-account) → PRs, issues, workflow results, integration alerts
 
-Adding Gmail, Slack, Apple Reminders, etc. means writing a connector that emits the same normalized events — not changing the engine.
+Adding Slack, Apple Reminders, etc. means writing a connector that emits the same normalized events — not changing the engine.
 
 ### Home screen
 
@@ -359,18 +395,19 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 ## Limitations (v1)
 
 - Single continuous conversation (single-user)
-- Access-code auth only (no Google OAuth yet)
+- Access-code auth for the app; Google uses a stored OAuth refresh token (no in-app Sign in with Google UI yet)
 - Memory retrieval is keyword-based today (embedding fields reserved for later)
 - Microsoft 365 uses app-only credentials (not delegated user OAuth); some Teams APIs may still 403 depending on tenant permissions
-- Gmail / Apple Notes / Apple Reminders not integrated
-- Office documents (`.docx`, `.xlsx`, etc.) are rejected — use PDF, images, or text/Markdown
+- Apple Notes / Apple Reminders not integrated
+- Office documents (`.docx`, `.xlsx`, etc.) are rejected as chat uploads — use PDF, images, or text/Markdown
 - HEIC may depend on browser/OS decoding for preview; OpenAI vision support varies by model
 
 ## Architecture notes
 
 - OpenAI access goes through `lib/ai/provider.ts` so Claude or another provider can be added later without rewriting the chat UI.
 - Microsoft Graph tools live in `lib/microsoft/` and are registered into the Responses API tool loop when `MS_*` env vars are set.
-- Extension stubs remain in `lib/extensions/` for non-Microsoft providers.
+- Google tools live in `lib/google/` (separate credentials, tool names, and Attention connector id).
+- Extension stubs remain in `lib/extensions/` for additional providers.
 - Prisma + SQLite today; switch `DATABASE_URL` / provider for PostgreSQL later without changing route shapes.
 
 ## Troubleshooting
@@ -385,6 +422,7 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 | Upload rejected | Stay within size limits; use image/PDF/text — not Office files |
 | Port in use | Stop the other process on 8080 or change the `-p` flag in scripts |
 | `microsoft: error` in health | Check `MS_*` env vars, client secret validity, and Entra admin consent for app permissions |
+| `google: error` in health | Check `GOOGLE_*` env vars; re-run `npm run google-oauth` if the refresh token was revoked or expired (Testing consent screen = 7-day tokens) |
 | Tool returns 403 | Missing Graph application permission — grant + admin consent, then retry |
 
 ## Tests

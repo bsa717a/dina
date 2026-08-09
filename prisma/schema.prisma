@@ -156,6 +156,19 @@ model AttentionAction {
   @@index([action, createdAt])
 }
 
+/// Durable Attention suppressions (sender email or domain). Applies to all mail connectors.
+model AttentionBlock {
+  id        String   @id @default(cuid())
+  kind      String   // sender | domain
+  value     String   // lowercased email or domain
+  reason    String?
+  source    String?  // ui | tool | import
+  createdAt DateTime @default(now())
+
+  @@unique([kind, value])
+  @@index([kind, value])
+}
+
 /// Structured long-term memory — not a chat transcript.
 /// Domains: derek_profile, values, communication_style, preferences, family,
 /// church, health, people, projects, commitments, decisions, learned_preferences.
