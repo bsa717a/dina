@@ -5,7 +5,7 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
-import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
+import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import {
   dayIndexMon1,
   denverDateString,
@@ -171,7 +171,7 @@ export async function generateMorningBriefMarkdown(
     // Budget: parallel prep ≤ ~85s + compose ≤ 90s ≪ chat maxDuration 300s.
     const client = new OpenAI({ apiKey, timeout: 90_000 });
     const response = await client.responses.create({
-      model: getOpenAIModel(),
+      model: getOpenAIResearchModel(),
       temperature: 0.55,
       max_output_tokens: 4500,
       instructions: `You write Derek's Morning Ritual brief (personal spiritual + markets packet). This is NOT the Chief of Staff Daily Briefing (no Today's Win / Waiting On / calendar).

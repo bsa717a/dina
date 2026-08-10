@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   friendlyToolStatus,
+  isChurchCitationQuestion,
   isMorningBriefRequest,
   isSharePointListQuestion,
   isWordDocumentRequest,
@@ -37,8 +38,19 @@ describe("tool routing helpers", () => {
     expect(isMorningBriefRequest("daily briefing win")).toBe(false);
   });
 
+  it("detects Church citation questions and excludes morning brief", () => {
+    expect(
+      isChurchCitationQuestion("find a conference talk for the temple lesson"),
+    ).toBe(true);
+    expect(isChurchCitationQuestion("Morning brief")).toBe(false);
+    expect(isChurchCitationQuestion("talk about my calendar today")).toBe(
+      false,
+    );
+  });
+
   it("maps tool names to friendly status labels", () => {
     expect(friendlyToolStatus("create_word_document")).toMatch(/Word/i);
     expect(friendlyToolStatus("search_memory")).toMatch(/memory/i);
+    expect(friendlyToolStatus("search_church_site")).toMatch(/Church/i);
   });
 });

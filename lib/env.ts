@@ -27,8 +27,29 @@ export function getOpenAIApiKey(): string | undefined {
   return process.env.OPENAI_API_KEY;
 }
 
+/**
+ * Legacy single-model env. Prefer getOpenAIChatModel / getOpenAIResearchModel.
+ * Kept so older OPENAI_MODEL=… still works as the chat default.
+ */
 export function getOpenAIModel(): string {
-  return process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  return getOpenAIChatModel();
+}
+
+/** Routine chat: mail, calendar, CoS Q&A, light tool use. Default: gpt-4.1-nano */
+export function getOpenAIChatModel(): string {
+  return (
+    process.env.OPENAI_MODEL_CHAT?.trim() ||
+    process.env.OPENAI_MODEL?.trim() ||
+    "gpt-4.1-nano"
+  );
+}
+
+/**
+ * Heavier synthesis: morning ritual, markets, church verification search.
+ * Default: gpt-4.1
+ */
+export function getOpenAIResearchModel(): string {
+  return process.env.OPENAI_MODEL_RESEARCH?.trim() || "gpt-4.1";
 }
 
 export function getVapidConfig() {
