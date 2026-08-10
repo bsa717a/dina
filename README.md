@@ -22,7 +22,8 @@ Edit `.env` (created from `.env.example` by setup):
 ACCESS_CODE=your-private-code
 SESSION_SECRET=at-least-32-characters-of-random-string
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL_CHAT=gpt-4.1-nano
+OPENAI_MODEL_RESEARCH=gpt-4.1
 APP_URL=http://localhost:8080
 DATABASE_URL="file:../data/dina.db"
 ```
@@ -48,7 +49,9 @@ Open [http://localhost:8080](http://localhost:8080).
 | `ACCESS_CODE` | yes | Temporary login code (never put in the URL) |
 | `SESSION_SECRET` | yes | Cookie signing secret (32+ chars) |
 | `OPENAI_API_KEY` | yes | Server-only OpenAI key |
-| `OPENAI_MODEL` | no | Defaults to `gpt-4.1-mini` |
+| `OPENAI_MODEL_CHAT` | no | Routine chat model (default `gpt-4.1-nano`) |
+| `OPENAI_MODEL_RESEARCH` | no | Morning ritual / church search (default `gpt-4.1`) |
+| `OPENAI_MODEL` | no | Legacy alias for chat model if `OPENAI_MODEL_CHAT` unset |
 | `APP_URL` | yes | Absolute public URL (`http://localhost:8080` or your ngrok HTTPS URL) |
 | `DATABASE_URL` | yes | Prisma SQLite URL, e.g. `file:../data/dina.db` |
 | `VAPID_PUBLIC_KEY` | for push | From `npm run generate-vapid` |

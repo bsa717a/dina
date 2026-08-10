@@ -1,6 +1,19 @@
 import OpenAI from "openai";
-import { getDefaultTimeZone, getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
+import {
+  getDefaultTimeZone,
+  getOpenAIApiKey,
+  getOpenAIChatModel,
+} from "@/lib/env";
 import { annotateToolOutput } from "@/lib/ai/action-receipts";
+import {
+  allRequiredDomainsMet,
+  domainsSatisfiedByTool,
+  evidenceDomainsForQuestion,
+  evidenceToolSucceeded,
+  looksLikeHonestUncertainty,
+  looksLikeUnverifiedLiveClaim,
+  type EvidenceDomain,
+} from "@/lib/ai/evidence";
 import {
   isOpenAICreditsBlocked,
   isOpenAICreditsError,
@@ -9,6 +22,13 @@ import {
 } from "@/lib/ai/openai-errors";
 import { getDinaSystemPrompt } from "@/lib/ai/prompt";
 import type { ModelProvider, ProviderMessage, StreamEvent } from "@/lib/ai/provider";
+import {
+  annotateCitationToolOutput,
+  churchToolSucceeded,
+  isChurchCitationTool,
+} from "@/lib/church/citation-receipts";
+import { getChurchToolDefinitions } from "@/lib/church/tool-definitions";
+import { executeChurchTool, listChurchToolNames } from "@/lib/church/tools";
 import { logger } from "@/lib/logger";
 import { getGitHubToolDefinitions } from "@/lib/github/tool-definitions";
 import { executeGitHubTool, listGitHubToolNames } from "@/lib/github/tools";
@@ -44,12 +64,18 @@ import {
 import {
   friendlyToolStatus,
   isCalendarQuestion,
+  isChurchCitationQuestion,
+  isEmailQuestion,
+  isGitHubQuestion,
   isMorningBriefRequest,
+  isOneDriveQuestion,
   isPlannerQuestion,
   isSharePointListQuestion,
   isSharePointQuestion,
   isWordDocumentRequest,
   looksLikeStallingFiller,
+  looksLikeUnverifiedChurchCitation,
+  requiresLiveEvidence,
 } from "@/lib/ai/tool-routing";
 
 type EasyInputMessage = OpenAI.Responses.ResponseInputItem;
@@ -194,7 +220,8 @@ function buildInstructions(
   parts.push(
     "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/id/link from the tool payload.",
     "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
-    "For Church/General Conference talks and quotes: never invent titles or quotations. Only cite material you verified from a live source or a file Derek provided; otherwise say you cannot verify it.",
+    "NEVER INVENT (critical): Do not invent people, talks, quotes, emails, meetings, file contents, GitHub status, or action outcomes. For Derek’s mail/calendar/files/GitHub/Planner/SharePoint/memory/tasks/Church citations: call a live tool THIS turn and cite ONLY ok=true facts. If you lack evidence, say you do not know / cannot verify — never fill with plausible fiction.",
+    "Church citation tools are enabled: search_church_site, fetch_church_url.",
     "Memory tools are enabled (search_memory, remember, correct_memory, approve_memory, archive_memory, merge_memories, list_memories).",
     "Memory is structured long-term knowledge — never treat the chat transcript as memory.",
     "Only remember durable facts per Memory Rules. Foundational memories may be pending_approval — ask Derek to approve, then call approve_memory.",
@@ -276,6 +303,9 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
   if (listMorningRitualToolNames().includes(name)) {
     return executeMorningRitualTool(name, argsJson);
   }
+  if (listChurchToolNames().includes(name)) {
+    return executeChurchTool(name, argsJson);
+  }
   if (listProjectTaskToolNames().includes(name)) {
     return executeProjectTaskTool(name, argsJson);
   }
@@ -314,7 +344,7 @@ export class OpenAIProvider implements ModelProvider {
     }
 
     const client = new OpenAI({ apiKey, timeout: 120_000 });
-    const model = getOpenAIModel();
+    const model = getOpenAIChatModel();
     const msTools = getMicrosoftToolDefinitions();
     const googleTools = getGoogleToolDefinitions();
     const ghTools = getGitHubToolDefinitions();
@@ -323,6 +353,7 @@ export class OpenAIProvider implements ModelProvider {
     const projectTaskTools = getProjectTaskToolDefinitions();
     const writingTools = getWritingToolDefinitions();
     const morningRitualTools = getMorningRitualToolDefinitions();
+    const churchTools = getChurchToolDefinitions();
     const tools = [
       ...msTools,
       ...googleTools,
@@ -332,7 +363,9 @@ export class OpenAIProvider implements ModelProvider {
       ...projectTaskTools,
       ...writingTools,
       ...morningRitualTools,
+      ...churchTools,
     ];
+    const toolNames = new Set(tools.map((t) => t.name));
     const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
     const instructions = buildInstructions(
       isMicrosoftConfigured(),
@@ -343,6 +376,7 @@ export class OpenAIProvider implements ModelProvider {
       input.memoryBlock || "",
       lessonsBlock,
     );
+    logger.info("chat_model", { model });
 
     try {
       let nextInput: OpenAI.Responses.ResponseInput = buildInput(input.messages);
@@ -354,8 +388,12 @@ export class OpenAIProvider implements ModelProvider {
         .reverse()
         .find((m) => m.role === "user")
         ?.content || "";
-      const forceCalendar =
-        Boolean(msTools.length) && isCalendarQuestion(lastUserText);
+      const forceCalendar = isCalendarQuestion(lastUserText);
+      const forceEmail = isEmailQuestion(lastUserText) && !forceCalendar;
+      const forceGitHub =
+        Boolean(ghTools.length) && isGitHubQuestion(lastUserText);
+      const forceOneDrive =
+        Boolean(msTools.length) && isOneDriveQuestion(lastUserText);
       const forcePlanner =
         Boolean(msTools.length) && isPlannerQuestion(lastUserText);
       const forceSharePointList =
@@ -369,7 +407,21 @@ export class OpenAIProvider implements ModelProvider {
         isWordDocumentRequest(lastUserText) &&
         !forceSharePointList;
       const forceMorningBrief = isMorningBriefRequest(lastUserText);
+      const forceChurchCitation =
+        !forceMorningBrief && isChurchCitationQuestion(lastUserText);
+      const forceEvidenceAsk = requiresLiveEvidence(lastUserText);
+      const requiredEvidenceDomains = evidenceDomainsForQuestion(lastUserText);
       let stallNudgeUsed = false;
+      let citationNudgeCount = 0;
+      let evidenceNudgeUsed = false;
+      let churchCitationOkThisTurn = false;
+      const satisfiedEvidenceDomains = new Set<EvidenceDomain>();
+      const evidenceOkThisTurn = () =>
+        allRequiredDomainsMet(
+          satisfiedEvidenceDomains,
+          requiredEvidenceDomains,
+        );
+      const citationNudgeUsed = () => citationNudgeCount > 0;
 
       for (let round = 0; round < maxRounds; round += 1) {
         if (input.signal?.aborted) break;
@@ -381,30 +433,124 @@ export class OpenAIProvider implements ModelProvider {
             round === 0
               ? forceMorningBrief
                 ? "Preparing morning brief…"
-                : forceWordDoc
-                  ? "Preparing Word document…"
-                  : "On it…"
+                : forceChurchCitation
+                  ? "Verifying Church sources…"
+                  : forceEmail
+                    ? "Checking email…"
+                    : forceCalendar
+                      ? "Checking calendar…"
+                      : forceWordDoc
+                        ? "Preparing Word document…"
+                        : "On it…"
               : "Working…",
         };
 
-        const forcedToolName =
-          forceMorningBrief && round === 0
-            ? "generate_morning_brief"
-            : forceCalendar && round === 0
-              ? "list_calendar_events"
-              : forcePlanner && round === 0
-                ? "list_planner_plans"
-                : forceSharePointList && round === 0
-                  ? "get_sharepoint_list_items"
-                  : forceSharePoint && round === 0
-                    ? "list_sharepoint_folder"
-                    : forceWordDoc && stallNudgeUsed
-                      ? "create_word_document"
-                      : null;
+        const pickMissingDomainTool = (): string | null => {
+          const missing = requiredEvidenceDomains.filter(
+            (d) => !satisfiedEvidenceDomains.has(d),
+          );
+          for (const domain of missing) {
+            if (domain === "church" && toolNames.has("search_church_site")) {
+              return "search_church_site";
+            }
+            if (domain === "mail") {
+              if (toolNames.has("brief_inbox")) return "brief_inbox";
+              if (toolNames.has("gmail_brief_inbox")) return "gmail_brief_inbox";
+            }
+            if (domain === "calendar") {
+              if (toolNames.has("list_calendar_events")) {
+                return "list_calendar_events";
+              }
+              if (toolNames.has("google_list_calendar_events")) {
+                return "google_list_calendar_events";
+              }
+            }
+            if (domain === "github" && toolNames.has("github_activity")) {
+              return "github_activity";
+            }
+            if (
+              domain === "onedrive" &&
+              toolNames.has("list_onedrive_children")
+            ) {
+              return "list_onedrive_children";
+            }
+            if (domain === "planner" && toolNames.has("list_planner_plans")) {
+              return "list_planner_plans";
+            }
+            if (domain === "sharepoint") {
+              if (toolNames.has("get_sharepoint_list_items") && forceSharePointList) {
+                return "get_sharepoint_list_items";
+              }
+              if (toolNames.has("list_sharepoint_folder")) {
+                return "list_sharepoint_folder";
+              }
+            }
+            if (
+              domain === "morning" &&
+              toolNames.has("generate_morning_brief")
+            ) {
+              return "generate_morning_brief";
+            }
+          }
+          return null;
+        };
+
+        const forcedToolName = (() => {
+          if (forceMorningBrief && round === 0) return "generate_morning_brief";
+          if (
+            (forceChurchCitation || citationNudgeUsed()) &&
+            !churchCitationOkThisTurn &&
+            (round === 0 || citationNudgeUsed())
+          ) {
+            return "search_church_site";
+          }
+          if (forceCalendar && round === 0) {
+            if (toolNames.has("list_calendar_events")) {
+              return "list_calendar_events";
+            }
+            if (toolNames.has("google_list_calendar_events")) {
+              return "google_list_calendar_events";
+            }
+          }
+          if (forceEmail && round === 0) {
+            if (toolNames.has("brief_inbox")) return "brief_inbox";
+            if (toolNames.has("gmail_brief_inbox")) return "gmail_brief_inbox";
+          }
+          if (forceGitHub && round === 0 && toolNames.has("github_activity")) {
+            return "github_activity";
+          }
+          if (
+            forceOneDrive &&
+            round === 0 &&
+            toolNames.has("list_onedrive_children")
+          ) {
+            return "list_onedrive_children";
+          }
+          if (forcePlanner && round === 0) return "list_planner_plans";
+          if (forceSharePointList && round === 0) {
+            return "get_sharepoint_list_items";
+          }
+          if (forceSharePoint && round === 0) return "list_sharepoint_folder";
+          if (forceWordDoc && stallNudgeUsed) return "create_word_document";
+          if (
+            (evidenceNudgeUsed || (forceEvidenceAsk && round === 0)) &&
+            !evidenceOkThisTurn()
+          ) {
+            return pickMissingDomainTool();
+          }
+          return null;
+        })();
 
         // Word/doc asks must use tools (memory + create_word_document), not filler chat.
+        // Evidence asks must call live tools before inventing Derek's world.
         const requireAnyTool =
-          stallNudgeUsed || (forceWordDoc && round === 0 && !forcedToolName);
+          stallNudgeUsed ||
+          citationNudgeUsed() ||
+          evidenceNudgeUsed ||
+          (forceWordDoc && round === 0 && !forcedToolName) ||
+          (forceChurchCitation && round === 0 && !forcedToolName) ||
+          (forceEvidenceAsk && round === 0 && !forcedToolName) ||
+          (citationNudgeUsed() && !churchCitationOkThisTurn);
 
         const toolChoice =
           !tools.length
@@ -522,6 +668,65 @@ export class OpenAIProvider implements ModelProvider {
             ];
             continue;
           }
+          // Cited Church talks/people without a successful church tool this turn — refuse fabrication.
+          if (
+            citationNudgeCount < 2 &&
+            tools.length &&
+            round < maxRounds - 1 &&
+            !churchCitationOkThisTurn &&
+            !looksLikeHonestUncertainty(finalText) &&
+            looksLikeUnverifiedChurchCitation(finalText)
+          ) {
+            citationNudgeCount += 1;
+            logger.info("church_citation_nudge", {
+              forceChurchCitation,
+              attempt: citationNudgeCount,
+              preview: finalText.slice(0, 160),
+            });
+            yield {
+              type: "status",
+              status: "working",
+              detail: "Verifying Church sources…",
+            };
+            previousResponseId = completed.id;
+            nextInput = [
+              {
+                role: "user",
+                content:
+                  "STOP. You cited Church talks/speakers/people/quotes without a successful search_church_site or fetch_church_url (ok=true) in this turn. Call search_church_site NOW. Cite ONLY verified results with URLs. If verification fails, say you cannot verify it — do NOT invent talks, people, or thematic stand-ins for a lesson.",
+              },
+            ];
+            continue;
+          }
+          // Asserted live-world facts without any evidence tool ok=true this turn.
+          if (
+            !evidenceNudgeUsed &&
+            tools.length &&
+            round < maxRounds - 1 &&
+            !evidenceOkThisTurn() &&
+            !looksLikeHonestUncertainty(finalText) &&
+            (forceEvidenceAsk || looksLikeUnverifiedLiveClaim(finalText))
+          ) {
+            evidenceNudgeUsed = true;
+            logger.info("evidence_nudge", {
+              forceEvidenceAsk,
+              preview: finalText.slice(0, 160),
+            });
+            yield {
+              type: "status",
+              status: "working",
+              detail: "Checking live sources…",
+            };
+            previousResponseId = completed.id;
+            nextInput = [
+              {
+                role: "user",
+                content:
+                  "STOP. You stated facts about Derek’s mail/calendar/files/GitHub/systems (or were asked for them) without a successful evidence tool (ok=true) in this turn. Call the appropriate live tool NOW and answer ONLY from the tool payload. If the tool fails or returns nothing, say you cannot verify it — do NOT invent plausible details.",
+              },
+            ];
+            continue;
+          }
           if (finalText) yield { type: "delta", text: finalText };
           break;
         }
@@ -554,6 +759,32 @@ export class OpenAIProvider implements ModelProvider {
             }
           }
           output = annotateToolOutput(call.name, output);
+          output = annotateCitationToolOutput(call.name, output);
+          if (
+            isChurchCitationTool(call.name) &&
+            churchToolSucceeded(output)
+          ) {
+            churchCitationOkThisTurn = true;
+            satisfiedEvidenceDomains.add("church");
+          }
+          if (evidenceToolSucceeded(output)) {
+            const domains =
+              requiredEvidenceDomains.length > 0
+                ? requiredEvidenceDomains
+                : ([
+                    "mail",
+                    "calendar",
+                    "github",
+                    "onedrive",
+                    "planner",
+                    "sharepoint",
+                    "church",
+                    "morning",
+                  ] as EvidenceDomain[]);
+            for (const domain of domainsSatisfiedByTool(call.name, domains)) {
+              satisfiedEvidenceDomains.add(domain);
+            }
+          }
           toolOutputs.push({
             type: "function_call_output",
             call_id: call.call_id,

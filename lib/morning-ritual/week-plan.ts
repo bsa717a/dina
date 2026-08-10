@@ -5,7 +5,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
-import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
+import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { fetchUrlText } from "@/lib/morning-ritual/fetch";
 import { getWeekPlan, saveWeekPlan } from "@/lib/morning-ritual/store";
 import type { CfmLesson, WeekMediaItem, WeekPlan } from "@/lib/morning-ritual/types";
@@ -126,7 +126,7 @@ async function buildLlmWeekPlan(
   try {
     const client = new OpenAI({ apiKey, timeout: 60_000 });
     const response = await client.responses.create({
-      model: getOpenAIModel(),
+      model: getOpenAIResearchModel(),
       temperature: 0.3,
       max_output_tokens: 2500,
       instructions: `You build a 7-day Come, Follow Me home-study plan (Monday=Day1 … Sunday=Day7).

@@ -21,6 +21,42 @@ export function isCalendarQuestion(text: string) {
   );
 }
 
+export function isEmailQuestion(text: string) {
+  return (
+    /\b(inbox|unread|emails?|e-mails?|gmail|outlook)\b/i.test(text) ||
+    /\b(brief|check|triage|digest)\b[\s\S]{0,40}\b(mail|inbox)\b/i.test(text) ||
+    /\b(mail|inbox)\b[\s\S]{0,40}\b(brief|check|triage|digest|today)\b/i.test(
+      text,
+    )
+  );
+}
+
+export function isGitHubQuestion(text: string) {
+  return /\b(github|pull requests?|\bPRs?\b|workflow|actions|repos?(itory|itories)?|commits?)\b/i.test(
+    text,
+  );
+}
+
+export function isOneDriveQuestion(text: string) {
+  return /\b(onedrive|one drive|my files)\b/i.test(text);
+}
+
+/** Any ask that must be answered from live tools, not model invention. */
+export function requiresLiveEvidence(text: string) {
+  // Word/doc creation is gated by forceWordDoc + action receipts separately.
+  return (
+    isCalendarQuestion(text) ||
+    isEmailQuestion(text) ||
+    isGitHubQuestion(text) ||
+    isOneDriveQuestion(text) ||
+    isPlannerQuestion(text) ||
+    isSharePointQuestion(text) ||
+    isSharePointListQuestion(text) ||
+    isChurchCitationQuestion(text) ||
+    isMorningBriefRequest(text)
+  );
+}
+
 export function isPlannerQuestion(text: string) {
   return /\bplanner\b|\bplan board\b|\bbuckets?\b.*\btasks?\b|\btasks?\b.*\bplanner\b/i.test(
     text,
@@ -62,6 +98,59 @@ export function isMorningBriefRequest(text: string) {
   );
 }
 
+/**
+ * Lesson / talk / Church citation asks that must use search_church_site
+ * (or fetch_church_url) before naming talks, speakers, or people.
+ */
+export function isChurchCitationQuestion(text: string) {
+  if (isMorningBriefRequest(text)) return false;
+  // Colloquial “talk about my calendar/inbox” is not a Church citation ask.
+  if (
+    isCalendarQuestion(text) ||
+    isEmailQuestion(text) ||
+    isGitHubQuestion(text) ||
+    isOneDriveQuestion(text) ||
+    isPlannerQuestion(text) ||
+    isSharePointQuestion(text)
+  ) {
+    return false;
+  }
+  return (
+    /\bgeneral\s+conference\b/i.test(text) ||
+    /\b(come[, ]?\s*follow\s*me|cfm)\b/i.test(text) ||
+    /\bchurchofjesuschrist\.org\b/i.test(text) ||
+    /\b(find|get|give|suggest|recommend|need|want|look\s*up|search\s*for|pull)\b[\s\S]{0,80}\b(talk|talks|quote|quotes|address)\b/i.test(
+      text,
+    ) ||
+    /\b(conference\s+)?(talk|talks|quote|quotes)\b[\s\S]{0,60}\b(about|on|for|by|from)\b/i.test(
+      text,
+    ) ||
+    /\b(elder|sister|president)\s+[A-Z][a-z]+/i.test(text) ||
+    /\b(nelson|oaks|holland|uchtdorf|bednar|eyring|christofferson)\b/i.test(
+      text,
+    ) ||
+    /\b(for\s+the\s+lesson|lesson\s+resource|temple\s+lesson|eq\s+lesson|elders?\s+quorum\s+lesson)\b/i.test(
+      text,
+    )
+  );
+}
+
+/** Final reply that looks like it cited Church material (for refuse-if-unverified nudge). */
+export function looksLikeUnverifiedChurchCitation(content: string) {
+  const text = content.trim();
+  if (!text) return false;
+  return (
+    /\bgeneral\s+conference\b/i.test(text) ||
+    /\b(elder|sister|president)\s+[A-ZÀ-ÖØ-öø-ÿ][\w'’-]+/i.test(text) ||
+    /\btalk\s+(titled|called|named)\b/i.test(text) ||
+    /\b(in|from)\s+(his|her|their)\s+\d{4}\b/i.test(text) ||
+    /\bchurchofjesuschrist\.org\/study\/general-conference\b/i.test(text) ||
+    /\b(quoted|quoting)\b[\s\S]{0,40}\b(elder|sister|president|nelson|oaks)\b/i.test(
+      text,
+    )
+  );
+}
+
 export function friendlyToolStatus(toolName: string) {
   const map: Record<string, string> = {
     create_word_document: "Writing Word document…",
@@ -87,6 +176,8 @@ export function friendlyToolStatus(toolName: string) {
     block_attention_sender: "Blocking Attention sender…",
     list_attention_blocks: "Listing Attention blocks…",
     generate_morning_brief: "Preparing morning brief…",
+    search_church_site: "Verifying on ChurchofJesusChrist.org…",
+    fetch_church_url: "Reading Church page…",
   };
   return map[toolName] || `Running ${toolName}…`;
 }

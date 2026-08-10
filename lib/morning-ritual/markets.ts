@@ -4,7 +4,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
-import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
+import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { denverSearchDateAnchor } from "@/lib/morning-ritual/dates";
 import { fetchUrlText, isHttpUrl } from "@/lib/morning-ritual/fetch";
 import { logger } from "@/lib/logger";
@@ -101,7 +101,7 @@ export async function gatherMarketResearch(
     // Keep under chat maxDuration with parallel week-plan + compose headroom.
     const client = new OpenAI({ apiKey, timeout: 75_000 });
     const response = await client.responses.create({
-      model: getOpenAIModel(),
+      model: getOpenAIResearchModel(),
       // Hosted web search (Responses API). SDK typings may lag the API.
       tools: [{ type: "web_search" } as unknown as OpenAI.Responses.Tool],
       tool_choice: "auto",

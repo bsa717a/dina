@@ -13,6 +13,9 @@ describe("Dina foundational documents", () => {
     expect(text).toMatch(/Chief of Staff/);
     expect(text).toMatch(/What should Derek know, and what should he do about it/);
     expect(text).toMatch(/Truth Over Agreement/);
+    expect(text).toMatch(/Fabricated sources are a serious mistake/);
+    expect(text).toMatch(/search_church_site/);
+    expect(text).toMatch(/Hard evidence for Derek/);
   });
 
   it("loads the Dina operating manual", () => {
