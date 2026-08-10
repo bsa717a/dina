@@ -53,7 +53,7 @@ describe("morning ritual routing and helpers", () => {
     expect(isChurchUrl("https://example.com")).toBe(false);
   });
 
-  it("reclassifies lesson-page art mislabeled as a talk", () => {
+  it("demotes lesson-page Brickey mislabel off talk and scrubs watch/talk claims", () => {
     const lessonUrl =
       "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
     const fixed = sanitizeMediaItem(
@@ -65,9 +65,24 @@ describe("morning ritual routing and helpers", () => {
       },
       lessonUrl,
     );
-    expect(fixed?.type).toBe("art");
-    expect(fixed?.note).toMatch(/Artwork by Joseph Brickey/i);
+    expect(fixed?.type).toBe("other");
+    expect(fixed?.note).toMatch(/by Joseph Brickey/i);
     expect(fixed?.note).not.toMatch(/\btalk by\b/i);
+  });
+
+  it("classifies explicit artwork cues on lesson pages as art", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "The Judgments of Job",
+        url: "https://churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng#p8",
+        note: "Artwork by Joseph Brickey.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("art");
   });
 
   it("scrubs talkish wording from art titles too", () => {
@@ -76,7 +91,7 @@ describe("morning ritual routing and helpers", () => {
     const fixed = sanitizeMediaItem(
       {
         type: "talk",
-        title: "Insightful talk by Joseph Brickey",
+        title: "Insightful talk — Artwork by Joseph Brickey",
         url: `${lessonUrl}#p8`,
         note: "Job's trials.",
       },
@@ -84,7 +99,7 @@ describe("morning ritual routing and helpers", () => {
     );
     expect(fixed?.type).toBe("art");
     expect(fixed?.title).toMatch(/Artwork by Joseph Brickey/i);
-    expect(fixed?.title).not.toMatch(/\btalk by\b/i);
+    expect(fixed?.title).not.toMatch(/\binsightful\s+talk\b/i);
   });
 
   it("keeps real talk URLs even if notes mention artwork", () => {

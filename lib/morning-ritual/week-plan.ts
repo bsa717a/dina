@@ -51,7 +51,8 @@ function lessonPagePath(url: string | undefined): string {
   if (!url) return "";
   try {
     const u = new URL(url);
-    return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`;
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    return `${host}${u.pathname.replace(/\/+$/, "")}`;
   } catch {
     return "";
   }
@@ -92,23 +93,29 @@ export function sanitizeMediaItem(
   const onLessonPage = isLessonPageUrl(item.url, lessonUrl);
   const talkBy = /\btalk\s+by\b/i.test(blob);
   const clerical = CLERICAL.test(blob);
+  const demotedFromTalkOrVideo = type === "talk" || type === "video";
 
   // Art wording must not override a real talk/video destination URL.
-  if (ART_SIGNAL.test(blob) && !hasTalkUrl && !hasVideoUrl) {
+  if (
+    ART_SIGNAL.test(blob) &&
+    !hasTalkUrl &&
+    !hasVideoUrl &&
+    !(talkBy && clerical)
+  ) {
     type = "art";
   }
 
   if ((type === "talk" || type === "video") && onLessonPage) {
     // Lesson-page anchors alone are never talks/videos.
     if (talkBy && clerical) {
-      // e.g. "from a talk by President Nelson" — not a painting.
+      // e.g. "from a talk by President Nelson" — study note, not a painting.
       type = "other";
-    } else if (ART_SIGNAL.test(blob) || (talkBy && !clerical)) {
-      // Explicit art, or LLM mislabel like "talk by Joseph Brickey".
+    } else if (ART_SIGNAL.test(blob)) {
       type = "art";
     } else if (MUSIC_URL.test(item.url || "") || /\bhymn\b/i.test(blob)) {
       type = "help";
     } else {
+      // Includes LLM mislabels like "talk by Joseph Brickey" with no art cue.
       type = "other";
     }
   }
@@ -120,19 +127,24 @@ export function sanitizeMediaItem(
   }
 
   let cleanedTitle = title;
+  const scrubTalkish = (s: string, asArt: boolean) =>
+    s
+      .replace(/\binsightful\s+talk\b/gi, asArt ? "Artwork" : "Resource")
+      .replace(/\btalk by\b/gi, asArt ? "art by" : "by")
+      .replace(/\bwatch\b/gi, asArt ? "view" : "see")
+      .trim();
+
   if (type === "art") {
-    const scrubTalkish = (s: string) =>
-      s
-        .replace(/\binsightful\s+talk\b/gi, "Artwork")
-        .replace(/\btalk by\b/gi, "art by")
-        .replace(/\bwatch\b/gi, "view")
-        .trim();
-    cleanedNote = scrubTalkish(cleanedNote);
-    cleanedTitle = scrubTalkish(cleanedTitle);
+    cleanedNote = scrubTalkish(cleanedNote, true);
+    cleanedTitle = scrubTalkish(cleanedTitle, true);
     if (!cleanedNote && /\bby\s+[A-Z]/.test(cleanedTitle) === false) {
       const by = note.match(/\bby\s+([A-Z][\w .'-]+)/i);
       if (by) cleanedNote = `Art by ${by[1].trim()}`;
     }
+  } else if (demotedFromTalkOrVideo && (type === "other" || type === "help")) {
+    // Strip invented watch/talk claims after demoting lesson-page media.
+    cleanedNote = scrubTalkish(cleanedNote, false);
+    cleanedTitle = scrubTalkish(cleanedTitle, false);
   }
 
   return {
