@@ -119,12 +119,17 @@ export function sanitizeMediaItem(
     else if (onLessonPage) type = "other";
   }
 
+  let cleanedTitle = title;
   if (type === "art") {
-    cleanedNote = cleanedNote
-      .replace(/\binsightful\s+talk\b/gi, "Artwork")
-      .replace(/\btalk by\b/gi, "art by")
-      .replace(/\bwatch\b/gi, "view");
-    if (!cleanedNote && /\bby\s+[A-Z]/.test(title) === false) {
+    const scrubTalkish = (s: string) =>
+      s
+        .replace(/\binsightful\s+talk\b/gi, "Artwork")
+        .replace(/\btalk by\b/gi, "art by")
+        .replace(/\bwatch\b/gi, "view")
+        .trim();
+    cleanedNote = scrubTalkish(cleanedNote);
+    cleanedTitle = scrubTalkish(cleanedTitle);
+    if (!cleanedNote && /\bby\s+[A-Z]/.test(cleanedTitle) === false) {
       const by = note.match(/\bby\s+([A-Z][\w .'-]+)/i);
       if (by) cleanedNote = `Art by ${by[1].trim()}`;
     }
@@ -132,7 +137,7 @@ export function sanitizeMediaItem(
 
   return {
     type,
-    title,
+    title: cleanedTitle,
     url: item.url?.trim() || undefined,
     note: cleanedNote || undefined,
   };

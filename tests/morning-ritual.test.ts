@@ -70,6 +70,23 @@ describe("morning ritual routing and helpers", () => {
     expect(fixed?.note).not.toMatch(/\btalk by\b/i);
   });
 
+  it("scrubs talkish wording from art titles too", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "Insightful talk by Joseph Brickey",
+        url: `${lessonUrl}#p8`,
+        note: "Job's trials.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("art");
+    expect(fixed?.title).toMatch(/Artwork by Joseph Brickey/i);
+    expect(fixed?.title).not.toMatch(/\btalk by\b/i);
+  });
+
   it("keeps real talk URLs even if notes mention artwork", () => {
     const lessonUrl =
       "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
