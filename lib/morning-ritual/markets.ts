@@ -4,6 +4,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { denverSearchDateAnchor } from "@/lib/morning-ritual/dates";
 import { fetchUrlText, isHttpUrl } from "@/lib/morning-ritual/fetch";
@@ -127,6 +128,12 @@ Do not invent numbers. If uncertain, say so.`,
       ],
     });
 
+    recordOpenAIUsage({
+      feature: "morning.markets",
+      model: response.model || getOpenAIResearchModel(),
+      response,
+      meta: { dateAnchor, queryCount: queries.length },
+    });
     const notes = (response.output_text || "").trim();
     const urls = extractUrlsFromOutput(response.output)
       .sort((a, b) => rankMarketUrl(b) - rankMarketUrl(a))

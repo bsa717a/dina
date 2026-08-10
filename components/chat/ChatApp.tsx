@@ -6,8 +6,9 @@ import { AttentionPanel } from "@/components/chat/AttentionPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
-import type { ChatMessage } from "@/components/chat/types";
+import type { ChatMessage, ChatUsage } from "@/components/chat/types";
 import { registerServiceWorker, subscribeToPush } from "@/lib/client/pwa";
+import { formatDayUsage } from "@/lib/client/usage-format";
 
 function dragEventHasFiles(
   e: Pick<DragEvent, "dataTransfer"> | Pick<React.DragEvent, "dataTransfer">,
@@ -34,6 +35,9 @@ type StreamEvent = {
   status?: string;
   detail?: string;
   error?: string;
+  usage?: ChatUsage;
+  dayUsage?: ChatUsage;
+  dayUsageLabel?: string;
 };
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -63,9 +67,11 @@ export function ChatApp() {
   );
   const [starBusyId, setStarBusyId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [dayUsageLabel, setDayUsageLabel] = useState<string | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
+  const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
   thinkingRef.current = thinking;
 
   // file-drop-guard.js blocks navigation early; this wires drops into Composer.
@@ -125,6 +131,17 @@ export function ChatApp() {
     }
   }, []);
 
+  const refreshDayUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/today");
+      if (!res.ok) return;
+      const data = (await res.json()) as { totals?: ChatUsage };
+      if (data.totals) setDayUsageLabel(formatDayUsage(data.totals));
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
   const loadConversation = useCallback(async () => {
     try {
       const res = await fetch("/api/conversations");
@@ -142,6 +159,7 @@ export function ChatApp() {
             typeof m.createdAt === "string"
               ? m.createdAt
               : new Date(m.createdAt).toISOString(),
+          usage: usageByMessageIdRef.current.get(m.id),
         })),
       );
     } catch (err) {
@@ -203,6 +221,7 @@ export function ChatApp() {
   useEffect(() => {
     void loadConversation();
     void refreshHealth();
+    void refreshDayUsage();
     const id = window.setInterval(() => void refreshHealth(), 30_000);
     const onOnline = () => void refreshHealth();
     const onOffline = () => setStatus("offline");
@@ -236,7 +255,7 @@ export function ChatApp() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [loadConversation, refreshHealth]);
+  }, [loadConversation, refreshHealth, refreshDayUsage]);
 
   async function handleSend(input: { content: string; attachmentIds: string[] }) {
     setError(null);
@@ -334,6 +353,15 @@ export function ChatApp() {
 
           if (event.type === "done" && event.message) {
             setThinking(false);
+            const turnUsage = event.usage || event.message.usage;
+            if (turnUsage && event.message.id) {
+              usageByMessageIdRef.current.set(event.message.id, turnUsage);
+            }
+            if (event.dayUsage) {
+              setDayUsageLabel(formatDayUsage(event.dayUsage));
+            } else {
+              void refreshDayUsage();
+            }
             setMessages((prev) => prev.filter((m) => m.id !== assistantId));
             void loadConversation();
           }
@@ -410,6 +438,7 @@ export function ChatApp() {
         status={status}
         microsoftEnabled={microsoftEnabled}
         googleEnabled={googleEnabled}
+        dayUsageLabel={dayUsageLabel}
         pushSupported={pushSupported && Boolean(vapidPublicKey)}
         pushEnabled={pushEnabled}
         pushBusy={pushBusy}

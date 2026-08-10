@@ -8,6 +8,7 @@ export function ChatHeader({
   status,
   microsoftEnabled = false,
   googleEnabled = false,
+  dayUsageLabel,
   pushSupported,
   pushEnabled,
   pushBusy,
@@ -18,6 +19,8 @@ export function ChatHeader({
   status: Status;
   microsoftEnabled?: boolean;
   googleEnabled?: boolean;
+  /** e.g. "Today ~$0.12" */
+  dayUsageLabel?: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
   pushBusy: boolean;
@@ -55,7 +58,7 @@ export function ChatHeader({
                 Chief of staff
               </span>
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[var(--muted)]">
               <span
                 className="inline-block h-1.5 w-1.5 rounded-full"
                 style={{ background: color }}
@@ -64,6 +67,14 @@ export function ChatHeader({
               <span>{statusLabel}</span>
               {microsoftEnabled && <span className="hidden sm:inline">· M365</span>}
               {googleEnabled && <span className="hidden sm:inline">· Google</span>}
+              {dayUsageLabel && (
+                <span
+                  className="tabular-nums text-[var(--muted)]"
+                  title="Estimated OpenAI spend today (America/Denver), from local usage log"
+                >
+                  · {dayUsageLabel}
+                </span>
+              )}
             </div>
           </div>
         </div>

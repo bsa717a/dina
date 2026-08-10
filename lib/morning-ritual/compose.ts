@@ -5,6 +5,7 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import {
   dayIndexMon1,
@@ -170,8 +171,9 @@ export async function generateMorningBriefMarkdown(
   try {
     // Budget: parallel prep ≤ ~85s + compose ≤ 90s ≪ chat maxDuration 300s.
     const client = new OpenAI({ apiKey, timeout: 90_000 });
+    const researchModel = getOpenAIResearchModel();
     const response = await client.responses.create({
-      model: getOpenAIResearchModel(),
+      model: researchModel,
       temperature: 0.55,
       max_output_tokens: 4500,
       instructions: `You write Derek's Morning Ritual brief (personal spiritual + markets packet). This is NOT the Chief of Staff Daily Briefing (no Today's Win / Waiting On / calendar).
@@ -231,6 +233,12 @@ Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
       ],
     });
 
+    recordOpenAIUsage({
+      feature: "morning.compose",
+      model: response.model || researchModel,
+      response,
+      meta: { weekday: ctx.weekday, dayIndex: ctx.dayIndex },
+    });
     const markdown = (response.output_text || "").trim();
     if (!markdown) {
       return { ok: false, markdown: "", error: "Model returned empty morning brief." };

@@ -5,6 +5,7 @@ import { DinaAvatar } from "@/components/chat/DinaAvatar";
 import type { ChatMessage } from "@/components/chat/types";
 import { LinkifiedText } from "@/lib/client/linkify";
 import { StreamingMarkdownText } from "@/lib/client/markdown";
+import { formatChatUsage } from "@/lib/client/usage-format";
 
 function formatTime(value: string) {
   try {
@@ -145,11 +146,23 @@ export function MessageList({
                   )
                 )}
                 <div
-                  className={`mt-1.5 flex items-center gap-2 text-[10px] ${
+                  className={`mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] ${
                     isUser ? "text-white/55" : "text-[var(--muted)]"
                   }`}
                 >
                   <span>{formatTime(message.createdAt)}</span>
+                  {!isUser && message.usage && !message.pending && (
+                    <span
+                      className="tabular-nums opacity-80"
+                      title={
+                        message.usage.model
+                          ? `Model ${message.usage.model} · estimated local cost`
+                          : "Estimated local OpenAI cost for this turn"
+                      }
+                    >
+                      {formatChatUsage(message.usage)}
+                    </span>
+                  )}
                   {!message.pending &&
                     message.content &&
                     message.content !== "(attachment)" && (
