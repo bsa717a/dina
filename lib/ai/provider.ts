@@ -17,10 +17,24 @@ export type ProviderMessage = {
   attachments?: ProviderAttachment[];
 };
 
+export type StreamUsage = {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  estUsd: number;
+  model?: string;
+};
+
 export type StreamEvent =
   | { type: "status"; status: string; detail?: string }
   | { type: "delta"; text: string }
-  | { type: "done"; responseId?: string; text: string }
+  | {
+      type: "done";
+      responseId?: string;
+      text: string;
+      usage?: StreamUsage;
+    }
   | { type: "error"; message: string };
 
 export interface ModelProvider {

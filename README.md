@@ -157,6 +157,7 @@ Uploads are stored in `data/uploads/` (outside `public/`) and served only throug
 | `npm run dev` | Dev server on `0.0.0.0:8080` |
 | `npm run build` | Production build |
 | `npm run start` | Production server on `0.0.0.0:8080` |
+| `npm run usage` | Local OpenAI token/cost summary (`--hours 24`, `--feature morning`) |
 | `npm test` | Vitest suite |
 
 ## ngrok

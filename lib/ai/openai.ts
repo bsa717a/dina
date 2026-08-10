@@ -15,13 +15,24 @@ import {
   type EvidenceDomain,
 } from "@/lib/ai/evidence";
 import {
+  attachChatTurnUsage,
+  detachChatTurnUsage,
+  emptyUsageTotals,
+  recordOpenAIUsage,
+} from "@/lib/ai/usage";
+import {
   isOpenAICreditsBlocked,
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
 import { getDinaSystemPrompt } from "@/lib/ai/prompt";
-import type { ModelProvider, ProviderMessage, StreamEvent } from "@/lib/ai/provider";
+import type {
+  ModelProvider,
+  ProviderMessage,
+  StreamEvent,
+  StreamUsage,
+} from "@/lib/ai/provider";
 import {
   annotateCitationToolOutput,
   churchToolSucceeded,
@@ -378,6 +389,11 @@ export class OpenAIProvider implements ModelProvider {
     );
     logger.info("chat_model", { model });
 
+    const turnRef: { current: StreamUsage } = {
+      current: { ...emptyUsageTotals(), model },
+    };
+    attachChatTurnUsage(turnRef);
+
     try {
       let nextInput: OpenAI.Responses.ResponseInput = buildInput(input.messages);
       let previousResponseId: string | undefined;
@@ -626,7 +642,13 @@ export class OpenAIProvider implements ModelProvider {
         if (!completed) {
           if (text) {
             yield { type: "delta", text };
-            yield { type: "done", responseId, text };
+            yield {
+              type: "done",
+              responseId,
+              text,
+              usage:
+                turnRef.current.calls > 0 ? turnRef.current : undefined,
+            };
             return;
           }
           yield { type: "error", message: "OpenAI response ended unexpectedly." };
@@ -637,6 +659,18 @@ export class OpenAIProvider implements ModelProvider {
         const functionCalls =
           fromCompleted.length > 0 ? fromCompleted : Array.from(streamedCalls.values());
         finalResponseId = completed.id;
+        recordOpenAIUsage({
+          feature: "chat",
+          model: completed.model || model,
+          response: completed,
+          meta: {
+            round,
+            tools: functionCalls.map((c) => c.name),
+            forceEvidenceAsk,
+            forceMorningBrief,
+            forceChurchCitation,
+          },
+        });
 
         if (!functionCalls.length) {
           finalText = text || completed.output_text || "";
@@ -800,6 +834,7 @@ export class OpenAIProvider implements ModelProvider {
         type: "done",
         responseId: finalResponseId,
         text: finalText,
+        usage: turnRef.current.calls > 0 ? turnRef.current : undefined,
       };
     } catch (error) {
       logger.error("openai_stream_failed", {
@@ -815,6 +850,8 @@ export class OpenAIProvider implements ModelProvider {
           ? "Request was cancelled."
           : "Dina could not reach OpenAI right now. Please try again.";
       yield { type: "error", message };
+    } finally {
+      detachChatTurnUsage(turnRef);
     }
   }
 }

@@ -7,6 +7,15 @@ export type ChatAttachment = {
   previewUrl?: string;
 };
 
+export type ChatUsage = {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  estUsd: number;
+  model?: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -17,4 +26,6 @@ export type ChatMessage = {
   starredAt?: string | null;
   attachments?: ChatAttachment[];
   pending?: boolean;
+  /** Client-side OpenAI usage for this turn (not persisted). */
+  usage?: ChatUsage;
 };

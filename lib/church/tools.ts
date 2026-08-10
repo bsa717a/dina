@@ -3,6 +3,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import {
@@ -58,9 +59,10 @@ async function searchChurchSite(query: string): Promise<string> {
 
   try {
     const client = new OpenAI({ apiKey, timeout: 60_000 });
+    const researchModel = getOpenAIResearchModel();
     const scoped = `site:churchofjesuschrist.org ${q}`;
     const response = await client.responses.create({
-      model: getOpenAIResearchModel(),
+      model: researchModel,
       tools: [{ type: "web_search" } as unknown as OpenAI.Responses.Tool],
       tool_choice: "auto",
       max_output_tokens: 1200,
@@ -81,6 +83,12 @@ Rules:
       ],
     });
 
+    recordOpenAIUsage({
+      feature: "church.search",
+      model: response.model || researchModel,
+      response,
+      meta: { query: q },
+    });
     const notes = (response.output_text || "").trim();
     const candidateUrls = extractUrls(response.output)
       .filter(isChurchUrl)

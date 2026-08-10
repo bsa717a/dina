@@ -14,6 +14,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "attention:scan": "node scripts/attention-scan.mjs",
+    "usage": "node scripts/openai-usage.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate"

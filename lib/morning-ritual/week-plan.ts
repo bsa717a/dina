@@ -5,6 +5,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { fetchUrlText } from "@/lib/morning-ritual/fetch";
 import { getWeekPlan, saveWeekPlan } from "@/lib/morning-ritual/store";
@@ -125,8 +126,9 @@ async function buildLlmWeekPlan(
 
   try {
     const client = new OpenAI({ apiKey, timeout: 60_000 });
+    const researchModel = getOpenAIResearchModel();
     const response = await client.responses.create({
-      model: getOpenAIResearchModel(),
+      model: researchModel,
       temperature: 0.3,
       max_output_tokens: 2500,
       instructions: `You build a 7-day Come, Follow Me home-study plan (Monday=Day1 … Sunday=Day7).
@@ -215,6 +217,12 @@ Rules:
       },
     });
 
+    recordOpenAIUsage({
+      feature: "morning.week_plan",
+      model: response.model || researchModel,
+      response,
+      meta: { lessonNumber: lesson.lessonNumber, weekStart },
+    });
     const raw = response.output_text || "";
     const parsed = planSchema.parse(JSON.parse(raw));
     // Normalize dayIndex/weekday order Mon–Sun.

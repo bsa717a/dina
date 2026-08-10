@@ -91,6 +91,16 @@ export async function POST(request: NextRequest) {
 
         let fullText = "";
         let responseId: string | undefined;
+        let turnUsage:
+          | {
+              calls: number;
+              inputTokens: number;
+              outputTokens: number;
+              reasoningTokens: number;
+              estUsd: number;
+              model?: string;
+            }
+          | undefined;
 
         const relevant = await retrieveRelevantMemories(
           content || "derek preferences projects people",
@@ -135,6 +145,7 @@ export async function POST(request: NextRequest) {
           } else if (event.type === "done") {
             responseId = event.responseId;
             if (!fullText && event.text) fullText = event.text;
+            if (event.usage) turnUsage = event.usage;
           }
         }
 
@@ -145,6 +156,11 @@ export async function POST(request: NextRequest) {
           openaiResponseId: responseId,
         });
 
+        const { formatUsageCompact, getTodayUsageTotals } = await import(
+          "@/lib/ai/usage"
+        );
+        const dayTotals = getTodayUsageTotals();
+
         send({
           type: "done",
           message: {
@@ -153,7 +169,11 @@ export async function POST(request: NextRequest) {
             content: assistant.content,
             createdAt: assistant.createdAt,
             openaiResponseId: assistant.openaiResponseId,
+            usage: turnUsage,
           },
+          usage: turnUsage,
+          dayUsage: dayTotals,
+          dayUsageLabel: formatUsageCompact(dayTotals),
         });
       } catch (error) {
         logger.error("chat_stream_error", {
