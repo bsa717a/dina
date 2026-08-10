@@ -64,8 +64,10 @@ function isLessonPageUrl(url: string | undefined, lessonUrl: string): boolean {
   return itemPath === lessonPath;
 }
 
-const ART_SIGNAL =
-  /\b(art by|painting|artwork|artist|illustration|picture)\b/i;
+/** Strong art cues only — avoid weak words like "picture" flipping real study notes. */
+const ART_SIGNAL = /\b(art by|painting|artwork)\b/i;
+const CLERICAL =
+  /\b(President|Elder|Sister|Bishop|Brother)\b/;
 const TALK_URL =
   /\/(general-conference|teachings(?:-of-presidents)?|ensign|liahona|new-era|friend|broadcasts|magazines)\b/i;
 const VIDEO_URL = /\/(media-library|media\/video|videos?)\b/i;
@@ -88,6 +90,8 @@ export function sanitizeMediaItem(
   const hasTalkUrl = Boolean(item.url && TALK_URL.test(item.url));
   const hasVideoUrl = Boolean(item.url && VIDEO_URL.test(item.url));
   const onLessonPage = isLessonPageUrl(item.url, lessonUrl);
+  const talkBy = /\btalk\s+by\b/i.test(blob);
+  const clerical = CLERICAL.test(blob);
 
   // Art wording must not override a real talk/video destination URL.
   if (ART_SIGNAL.test(blob) && !hasTalkUrl && !hasVideoUrl) {
@@ -96,16 +100,11 @@ export function sanitizeMediaItem(
 
   if ((type === "talk" || type === "video") && onLessonPage) {
     // Lesson-page anchors alone are never talks/videos.
-    const clericalTalkBy =
-      /\btalk\s+by\b/i.test(blob) &&
-      /\b(President|Elder|Sister|Bishop|Brother)\b/.test(blob);
-    if (ART_SIGNAL.test(blob)) {
-      type = "art";
-    } else if (clericalTalkBy) {
-      // e.g. "from a talk by President Nelson" — keep as other, not a painting.
+    if (talkBy && clerical) {
+      // e.g. "from a talk by President Nelson" — not a painting.
       type = "other";
-    } else if (/\bby\s+[A-Z][\w .'-]{2,}/.test(blob)) {
-      // CFM image credit, or LLM mislabel like "talk by Joseph Brickey".
+    } else if (ART_SIGNAL.test(blob) || (talkBy && !clerical)) {
+      // Explicit art, or LLM mislabel like "talk by Joseph Brickey".
       type = "art";
     } else if (MUSIC_URL.test(item.url || "") || /\bhymn\b/i.test(blob)) {
       type = "help";

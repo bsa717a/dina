@@ -100,6 +100,21 @@ describe("morning ritual routing and helpers", () => {
     expect(fixed?.type).toBe("other");
   });
 
+  it("does not treat Delivered-by Elder notes on lesson anchors as art", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "Delivered by Elder Oaks",
+        url: `${lessonUrl}#p3`,
+        note: "Short excerpt on the lesson page.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("other");
+  });
+
   it("enforces unique media across the week plan", () => {
     const lesson: CfmLesson = {
       lessonKey: "ot-2026-32",
