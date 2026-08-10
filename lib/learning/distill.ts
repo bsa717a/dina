@@ -5,6 +5,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { withTemperature } from "@/lib/ai/model-params";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { heuristicLessonFromSignal } from "@/lib/learning/heuristics";
 import { persistLesson } from "@/lib/learning/lessons";
@@ -51,9 +52,10 @@ async function distillWithModel(
 
   try {
     const client = new OpenAI({ apiKey, timeout: 45_000 });
+    const model = getOpenAIModel();
     const response = await client.responses.create({
-      model: getOpenAIModel(),
-      temperature: 0.2,
+      model,
+      ...withTemperature(model, 0.2),
       max_output_tokens: 500,
       instructions: `You are Dina's Learning Engine. Decide if Derek's feedback implies a DURABLE preference or decision lesson useful in six months.
 Do NOT invent lessons for one-off factual edits, typos, or thread-specific details.

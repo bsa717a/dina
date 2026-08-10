@@ -5,6 +5,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { withTemperature } from "@/lib/ai/model-params";
 import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import { fetchUrlText } from "@/lib/morning-ritual/fetch";
@@ -252,7 +253,7 @@ async function buildLlmWeekPlan(
     const researchModel = getOpenAIResearchModel();
     const response = await client.responses.create({
       model: researchModel,
-      temperature: 0.3,
+      ...withTemperature(researchModel, 0.3),
       max_output_tokens: 2500,
       instructions: `You build a 7-day Come, Follow Me home-study plan (Monday=Day1 … Sunday=Day7).
 
