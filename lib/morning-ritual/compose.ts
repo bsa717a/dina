@@ -6,6 +6,7 @@ import {
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
 import { recordOpenAIUsage } from "@/lib/ai/usage";
+import { withTemperature } from "@/lib/ai/model-params";
 import { getOpenAIApiKey, getOpenAIResearchModel } from "@/lib/env";
 import {
   dayIndexMon1,
@@ -174,7 +175,7 @@ export async function generateMorningBriefMarkdown(
     const researchModel = getOpenAIResearchModel();
     const response = await client.responses.create({
       model: researchModel,
-      temperature: 0.55,
+      ...withTemperature(researchModel, 0.55),
       max_output_tokens: 4500,
       instructions: `You write Derek's Morning Ritual brief (personal spiritual + markets packet). This is NOT the Chief of Staff Daily Briefing (no Today's Win / Waiting On / calendar).
 

@@ -6,6 +6,7 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
+import { withTemperature } from "@/lib/ai/model-params";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { prisma } from "@/lib/db/client";
 import {
@@ -91,7 +92,7 @@ export async function reviseAttentionDraft(input: {
   try {
     const response = await client.responses.create({
       model,
-      temperature: 0.3,
+      ...withTemperature(model, 0.3),
       max_output_tokens: 1200,
       input: [
         {

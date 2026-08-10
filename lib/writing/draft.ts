@@ -6,6 +6,7 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
+import { withTemperature } from "@/lib/ai/model-params";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
 import { buildVoicePack } from "@/lib/writing/voice";
@@ -74,9 +75,10 @@ export async function draftInDereksVoice(
 
   try {
     const client = new OpenAI({ apiKey, timeout: 60_000 });
+    const model = getOpenAIModel();
     const response = await client.responses.create({
-      model: getOpenAIModel(),
-      temperature: 0.4,
+      model,
+      ...withTemperature(model, 0.4),
       max_output_tokens: 1200,
       instructions: `${voice.instructions}
 
