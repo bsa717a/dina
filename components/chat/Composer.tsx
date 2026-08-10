@@ -289,7 +289,7 @@ export const Composer = forwardRef<
               }
             }}
             rows={1}
-            placeholder="Message Dina… or drop a file"
+            placeholder="What’s on your mind?"
             disabled={disabled}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
           />

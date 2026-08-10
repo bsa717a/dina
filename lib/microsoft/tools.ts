@@ -1133,6 +1133,50 @@ async function getOneDriveItem(args: { path: string }) {
   return ok({ item: summarizeOneDriveItem(data) });
 }
 
+async function fetchOneDriveItemSummary(path: string) {
+  const normalized = normalizeOneDrivePath(path);
+  const data = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
+    `${oneDriveItemUrl(normalized)}?$select=${ONEDRIVE_ITEM_SELECT}`,
+  );
+  return summarizeOneDriveItem(data);
+}
+
+/** Re-fetch after mutate so we never report done on a ghost path. */
+async function withOneDriveVerify(input: {
+  intendedPath: string;
+  item: ReturnType<typeof summarizeOneDriveItem>;
+  extra?: Record<string, unknown>;
+}) {
+  const path =
+    normalizeOneDrivePath(input.item.path) ||
+    normalizeOneDrivePath(input.intendedPath);
+  try {
+    const verifiedItem = await fetchOneDriveItemSummary(path);
+    return ok({
+      item: verifiedItem,
+      path: verifiedItem.path || path,
+      webUrl: verifiedItem.webUrl,
+      verified: true,
+      ...input.extra,
+    });
+  } catch (error) {
+    // Mutation itself already succeeded; a flaky verify-read must not flip ok=false
+    // (that made Derek think writes failed when they stuck). Mark unconfirmed instead.
+    const status = error instanceof GraphError ? error.status : null;
+    return ok({
+      item: input.item,
+      path,
+      webUrl: input.item.webUrl,
+      verified: false,
+      verifyError:
+        error instanceof Error ? error.message : "verification read failed",
+      verifyStatus: status,
+      note: "Mutation API succeeded but the follow-up read did not confirm yet (possible Graph lag/throttle). Do NOT claim finished — offer to re-check the path.",
+      ...input.extra,
+    });
+  }
+}
+
 async function getOneDriveFileContent(args: {
   path: string;
   maxBytes?: number;
@@ -1209,7 +1253,10 @@ async function createOneDriveFolder(args: {
       },
     },
   );
-  return ok({ item: summarizeOneDriveItem(data) });
+  return withOneDriveVerify({
+    intendedPath: fullPath,
+    item: summarizeOneDriveItem(data),
+  });
 }
 
 async function writeOneDriveFile(args: {
@@ -1253,13 +1300,29 @@ async function writeOneDriveFile(args: {
       contentType,
     },
   );
-  return ok({ item: summarizeOneDriveItem(data), conflictBehavior });
+  return withOneDriveVerify({
+    intendedPath: path,
+    item: summarizeOneDriveItem(data),
+    extra: { conflictBehavior },
+  });
 }
 
 async function deleteOneDriveItem(args: { path: string }) {
   const path = normalizeOneDrivePath(args.path);
   await graphRequest(oneDriveItemUrl(path), { method: "DELETE" });
-  return ok({ deleted: true, path });
+  // Confirm absence — a successful DELETE should make the path unreadable.
+  try {
+    await fetchOneDriveItemSummary(path);
+    return JSON.stringify({
+      ok: false,
+      error:
+        "Delete was requested but the item is still readable — do NOT tell Derek it was deleted.",
+      path,
+      verified: false,
+    });
+  } catch {
+    return ok({ deleted: true, path, verified: true });
+  }
 }
 
 async function moveOneDriveItem(args: {
@@ -1304,7 +1367,17 @@ async function moveOneDriveItem(args: {
     oneDriveItemUrl(path),
     { method: "PATCH", body },
   );
-  return ok({ item: summarizeOneDriveItem(data) });
+  const item = summarizeOneDriveItem(data);
+  const intendedPath =
+    item.path ||
+    (args.newPath?.trim()
+      ? normalizeOneDrivePath(args.newPath)
+      : path);
+  return withOneDriveVerify({
+    intendedPath,
+    item,
+    extra: { movedFrom: path },
+  });
 }
 
 async function copyOneDriveItem(args: {
@@ -1347,9 +1420,10 @@ async function copyOneDriveItem(args: {
   if (!monitor) {
     return ok({
       queued: true,
+      verified: false,
       path,
       newPath: destination,
-      note: "Copy accepted; no monitor URL returned.",
+      note: "Copy accepted; no monitor URL returned. Do NOT claim the copy is finished until verified.",
     });
   }
 
@@ -1376,19 +1450,39 @@ async function copyOneDriveItem(args: {
         const item = await graphRequest<Parameters<typeof summarizeOneDriveItem>[0]>(
           userPath(`/drive/items/${encodeURIComponent(statusJson.resourceId)}?$select=${ONEDRIVE_ITEM_SELECT}`),
         );
-        return ok({ item: summarizeOneDriveItem(item), copiedFrom: path });
+        return withOneDriveVerify({
+          intendedPath: destination,
+          item: summarizeOneDriveItem(item),
+          extra: { copiedFrom: path },
+        });
       }
-      return ok({ completed: true, path, newPath: destination });
+      return withOneDriveVerify({
+        intendedPath: destination,
+        item: {
+          id: null,
+          name: name || null,
+          path: destination,
+          size: null,
+          webUrl: null,
+          lastModifiedDateTime: null,
+          createdDateTime: null,
+          isFolder: false,
+          childCount: null,
+          mimeType: null,
+        },
+        extra: { copiedFrom: path },
+      });
     }
     await new Promise((r) => setTimeout(r, 400));
   }
 
   return ok({
     queued: true,
+    verified: false,
     path,
     newPath: destination,
     monitorUrl: monitor,
-    note: "Copy still in progress.",
+    note: "Copy still in progress. Do NOT claim the copy is finished until verified.",
   });
 }
 
@@ -1455,16 +1549,38 @@ async function officeCreateResult(input: {
   kind: "word" | "excel" | "powerpoint";
   extra?: Record<string, unknown>;
 }) {
-  const openUrl = (await oneDriveOpenLink(input.item.id)) || input.item.webUrl;
-  return ok({
+  const verified = await withOneDriveVerify({
+    intendedPath: input.path,
     item: input.item,
-    path: input.path,
-    kind: input.kind,
-    openUrl,
-    location: oneDriveLocationHint(input.path),
-    note: "File is on work OneDrive (derek@4studentlives.com). openUrl is the best link to open it.",
-    ...input.extra,
+    extra: { kind: input.kind, ...input.extra },
   });
+  try {
+    const parsed = JSON.parse(verified) as {
+      ok?: boolean;
+      data?: {
+        item?: ReturnType<typeof summarizeOneDriveItem>;
+        path?: string;
+        webUrl?: string | null;
+      };
+      item?: ReturnType<typeof summarizeOneDriveItem>;
+    };
+    if (!parsed.ok) return verified;
+    const item = parsed.data?.item || input.item;
+    const path = parsed.data?.path || input.path;
+    const openUrl = (await oneDriveOpenLink(item.id)) || item.webUrl || parsed.data?.webUrl;
+    return ok({
+      item,
+      path,
+      kind: input.kind,
+      openUrl,
+      location: oneDriveLocationHint(path),
+      verified: true,
+      note: "File is on work OneDrive (derek@4studentlives.com). openUrl is the best link to open it.",
+      ...input.extra,
+    });
+  } catch {
+    return verified;
+  }
 }
 
 async function createWordDocument(args: {

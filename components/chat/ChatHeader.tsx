@@ -1,5 +1,7 @@
 "use client";
 
+import { DinaAvatar } from "@/components/chat/DinaAvatar";
+
 type Status = "online" | "offline" | "degraded" | "checking";
 
 export function ChatHeader({
@@ -32,30 +34,37 @@ export function ChatHeader({
           ? "var(--status-err)"
           : "var(--muted)";
 
+  const statusLabel =
+    status === "checking"
+      ? "Connecting"
+      : status === "online"
+        ? "Here"
+        : status === "degraded"
+          ? "Degraded"
+          : "Offline";
+
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur-md">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:px-6">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-lg font-semibold tracking-tight">Dina</h1>
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted)]">
+        <div className="flex min-w-0 items-center gap-3">
+          <DinaAvatar size="md" className="dina-avatar-glow" />
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2">
+              <h1 className="truncate text-lg font-semibold tracking-tight">Dina</h1>
+              <span className="hidden text-xs text-[var(--muted)] sm:inline">
+                Chief of staff
+              </span>
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
               <span
-                className="inline-block h-2 w-2 rounded-full"
+                className="inline-block h-1.5 w-1.5 rounded-full"
                 style={{ background: color }}
                 aria-hidden
               />
-              {status === "checking" ? "Connecting" : status}
-            </span>
-            {microsoftEnabled && (
-              <span className="hidden text-xs text-[var(--muted)] sm:inline">
-                · M365
-              </span>
-            )}
-            {googleEnabled && (
-              <span className="hidden text-xs text-[var(--muted)] sm:inline">
-                · Google
-              </span>
-            )}
+              <span>{statusLabel}</span>
+              {microsoftEnabled && <span className="hidden sm:inline">· M365</span>}
+              {googleEnabled && <span className="hidden sm:inline">· Google</span>}
+            </div>
           </div>
         </div>
 

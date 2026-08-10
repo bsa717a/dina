@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { DinaAvatar } from "@/components/chat/DinaAvatar";
 import type { ChatMessage } from "@/components/chat/types";
 import { LinkifiedText } from "@/lib/client/linkify";
 import { StreamingMarkdownText } from "@/lib/client/markdown";
@@ -25,7 +26,7 @@ function actionButtonClass(isUser: boolean, active = false) {
 export function MessageList({
   messages,
   thinking,
-  thinkingLabel = "Dina is thinking…",
+  thinkingLabel = "On it…",
   onToggleStar,
   starBusyId,
 }: {
@@ -67,12 +68,13 @@ export function MessageList({
 
   if (!messages.length && !thinking) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 text-center">
-        <div>
-          <p className="text-lg font-medium tracking-tight">Dina</p>
-          <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">
-            Ask anything, share a photo, or drop a document. I&apos;ll keep things clear and
-            useful.
+      <div className="dina-ambient flex flex-1 items-center justify-center px-6 text-center">
+        <div className="flex flex-col items-center">
+          <DinaAvatar size="xl" className="dina-avatar-glow shadow-sm" />
+          <p className="mt-5 text-xl font-semibold tracking-tight">Hey — I&apos;m Dina</p>
+          <p className="mt-2 max-w-sm text-sm leading-relaxed text-[var(--muted)]">
+            Your chief of staff. Ask anything, drop a file, or tell me what needs
+            clearing — I&apos;ll keep it calm, clear, and useful.
           </p>
         </div>
       </div>
@@ -87,8 +89,11 @@ export function MessageList({
           return (
             <div
               key={message.id}
-              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+              className={`flex items-end gap-2 ${isUser ? "justify-end" : "justify-start"}`}
             >
+              {!isUser && (
+                <DinaAvatar size="sm" className="mb-0.5 hidden sm:block" />
+              )}
               <div
                 className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed sm:max-w-[75%] ${
                   isUser
@@ -97,7 +102,7 @@ export function MessageList({
                 }`}
               >
                 {!isUser && (
-                  <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
+                  <div className="mb-1 text-[11px] font-medium tracking-wide text-[var(--muted)] sm:hidden">
                     Dina
                   </div>
                 )}
@@ -183,7 +188,8 @@ export function MessageList({
           );
         })}
         {thinking && (
-          <div className="flex justify-start">
+          <div className="flex items-end justify-start gap-2">
+            <DinaAvatar size="sm" className="mb-0.5 hidden sm:block" />
             <div className="rounded-2xl bg-[var(--assistant-bubble)] px-3.5 py-2.5 text-sm text-[var(--muted)]">
               <span className="dina-thinking">{thinkingLabel}</span>
             </div>
