@@ -47,10 +47,133 @@ function mediaKey(item: WeekMediaItem): string {
   return `${item.type}:${(item.url || item.title).trim().toLowerCase()}`;
 }
 
+function lessonPagePath(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    return `${host}${u.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return "";
+  }
+}
+
+function isLessonPageUrl(url: string | undefined, lessonUrl: string): boolean {
+  const itemPath = lessonPagePath(url);
+  const lessonPath = lessonPagePath(lessonUrl);
+  if (!itemPath || !lessonPath) return false;
+  return itemPath === lessonPath;
+}
+
+/** Strong art cues only — avoid weak words like "picture" flipping real study notes. */
+const ART_SIGNAL = /\b(art by|painting|artwork)\b/i;
+const CLERICAL =
+  /\b(President|Elder|Sister|Bishop|Brother)\b/;
+const TALK_URL =
+  /\/(general-conference|teachings(?:-of-presidents)?|ensign|liahona|new-era|friend|broadcasts|magazines)\b/i;
+const VIDEO_URL = /\/(media-library|media\/video|videos?)\b/i;
+const MUSIC_URL = /\/music\b/i;
+
+/**
+ * Fix common CFM media mislabels (e.g. lesson-page art listed as a "talk").
+ * Types must match the resource; lesson-page anchors alone are not talks/videos.
+ */
+export function sanitizeMediaItem(
+  item: WeekMediaItem,
+  lessonUrl: string,
+): WeekMediaItem | null {
+  const title = item.title.trim();
+  if (!title) return null;
+  const note = (item.note || "").trim();
+  const blob = `${title}\n${note}`;
+  let type = item.type;
+  let cleanedNote = note;
+  const hasTalkUrl = Boolean(item.url && TALK_URL.test(item.url));
+  const hasVideoUrl = Boolean(item.url && VIDEO_URL.test(item.url));
+  const onLessonPage = isLessonPageUrl(item.url, lessonUrl);
+  const talkBy = /\btalk\s+by\b/i.test(blob);
+  const clerical = CLERICAL.test(blob);
+  const demotedFromTalkOrVideo = type === "talk" || type === "video";
+
+  // Art wording must not override a real talk/video destination URL.
+  if (
+    ART_SIGNAL.test(blob) &&
+    !hasTalkUrl &&
+    !hasVideoUrl &&
+    !(talkBy && clerical)
+  ) {
+    type = "art";
+  }
+
+  if ((type === "talk" || type === "video") && onLessonPage) {
+    // Lesson-page anchors alone are never talks/videos.
+    if (talkBy && clerical) {
+      // e.g. "from a talk by President Nelson" — study note, not a painting.
+      type = "other";
+    } else if (ART_SIGNAL.test(blob)) {
+      type = "art";
+    } else if (MUSIC_URL.test(item.url || "") || /\bhymn\b/i.test(blob)) {
+      type = "help";
+    } else {
+      // Includes LLM mislabels like "talk by Joseph Brickey" with no art cue.
+      type = "other";
+    }
+  }
+
+  if (type === "talk" && item.url && !hasTalkUrl) {
+    if (hasVideoUrl) type = "video";
+    else if (MUSIC_URL.test(item.url)) type = "help";
+    else if (onLessonPage) type = "other";
+  }
+
+  let cleanedTitle = title;
+  const scrubTalkish = (s: string, asArt: boolean) =>
+    s
+      .replace(/\binsightful\s+talk\b/gi, asArt ? "Artwork" : "Resource")
+      .replace(/\btalk by\b/gi, asArt ? "art by" : "by")
+      .replace(/\bwatch\b/gi, asArt ? "view" : "see")
+      .trim();
+
+  if (type === "art") {
+    cleanedNote = scrubTalkish(cleanedNote, true);
+    cleanedTitle = scrubTalkish(cleanedTitle, true);
+    if (!cleanedNote && /\bby\s+[A-Z]/.test(cleanedTitle) === false) {
+      const by = note.match(/\bby\s+([A-Z][\w .'-]+)/i);
+      if (by) cleanedNote = `Art by ${by[1].trim()}`;
+    }
+  } else if (demotedFromTalkOrVideo && (type === "other" || type === "help")) {
+    // Strip invented watch/talk claims after demoting lesson-page media.
+    cleanedNote = scrubTalkish(cleanedNote, false);
+    cleanedTitle = scrubTalkish(cleanedTitle, false);
+  }
+
+  return {
+    type,
+    title: cleanedTitle,
+    url: item.url?.trim() || undefined,
+    note: cleanedNote || undefined,
+  };
+}
+
+export function sanitizeWeekPlanMedia(plan: WeekPlan): WeekPlan {
+  const lessonUrl = plan.url;
+  const days = plan.days.map((day) => ({
+    ...day,
+    media: day.media
+      .map((m) => sanitizeMediaItem(m, lessonUrl))
+      .filter((m): m is WeekMediaItem => Boolean(m)),
+  }));
+  const weekSupplemental = plan.weekSupplemental
+    .map((m) => sanitizeMediaItem(m, lessonUrl))
+    .filter((m): m is WeekMediaItem => Boolean(m));
+  return { ...plan, days, weekSupplemental };
+}
+
 /** Enforce unique media titles/urls across the week; drop duplicates. */
 export function enforceUniqueMedia(plan: WeekPlan): WeekPlan {
+  const sanitized = sanitizeWeekPlanMedia(plan);
   const seen = new Set<string>();
-  const days = plan.days.map((day) => {
+  const days = sanitized.days.map((day) => {
     const media: WeekMediaItem[] = [];
     for (const item of day.media) {
       const key = mediaKey(item);
@@ -61,7 +184,7 @@ export function enforceUniqueMedia(plan: WeekPlan): WeekPlan {
     return { ...day, media };
   });
   const weekSupplemental: WeekMediaItem[] = [];
-  for (const item of plan.weekSupplemental) {
+  for (const item of sanitized.weekSupplemental) {
     const key = mediaKey(item);
     if (seen.has(key) && !weekSupplemental.some((w) => mediaKey(w) === key)) {
       // keep in supplemental inventory even if also assigned a day
@@ -72,11 +195,11 @@ export function enforceUniqueMedia(plan: WeekPlan): WeekPlan {
   }
   // Rebuild supplemental from union of day media + declared supplemental (unique).
   const all = new Map<string, WeekMediaItem>();
-  for (const item of [...plan.weekSupplemental, ...days.flatMap((d) => d.media)]) {
+  for (const item of [...weekSupplemental, ...days.flatMap((d) => d.media)]) {
     all.set(mediaKey(item), item);
   }
   return {
-    ...plan,
+    ...sanitized,
     days,
     weekSupplemental: Array.from(all.values()),
   };
@@ -136,6 +259,13 @@ async function buildLlmWeekPlan(
 Rules:
 - Partition the week's scripture into daily deep-dive foci (scriptureFocus). Prefer concrete passage ranges when the lesson text suggests them.
 - Inventory talks, videos, art, and scripture helps from the lesson page text.
+- Type media accurately:
+  - "art" = paintings/illustrations (e.g. Joseph Brickey artwork). NEVER label art as a talk.
+  - "talk" = General Conference / magazine / Teachings of Presidents talks with their own talk URL.
+  - "video" = actual videos with a media/video URL.
+  - "help" = hymns, scripture helps, study aids.
+- Do NOT invent speakers, titles, or watch links. If the lesson only shows an image title + artist, type is "art".
+- A Come, Follow Me lesson-page anchor (#p…) is NOT a talk URL. Prefer the real resource URL when present; otherwise type art/help/other as appropriate.
 - Spread media across the week. Not every day needs media. Important supplements should appear sometime during the week.
 - NEVER assign the same talk/video/art/help twice in the week (unique by title or URL).
 - weekSupplemental = full inventory of supplemental resources for the week (for Day-1 listing).
@@ -281,13 +411,17 @@ export async function getOrCreateWeekPlan(
 ): Promise<{ plan: WeekPlan; created: boolean; source: "cache" | "llm" | "heuristic" }> {
   const cached = await getWeekPlan(lesson.lessonKey, weekStart);
   if (isDurableWeekPlan(cached)) {
-    // Migrate legacy durable rows so future hits are explicit.
-    if (cached && cached.source !== "llm") {
-      const migrated = { ...cached, source: "llm" as const };
-      await saveWeekPlan(migrated);
-      return { plan: migrated, created: false, source: "cache" };
+    const cleaned = enforceUniqueMedia(
+      cached!.source === "llm"
+        ? cached!
+        : { ...cached!, source: "llm" as const },
+    );
+    // Re-persist when sanitizer fixes mislabeled media (e.g. art as talk).
+    if (JSON.stringify(cleaned) !== JSON.stringify(cached)) {
+      await saveWeekPlan(cleaned);
+      return { plan: cleaned, created: false, source: "cache" };
     }
-    return { plan: cached!, created: false, source: "cache" };
+    return { plan: cleaned, created: false, source: "cache" };
   }
 
   const fetched = lesson.url
