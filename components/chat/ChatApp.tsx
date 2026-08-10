@@ -49,7 +49,7 @@ export function ChatApp() {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [thinking, setThinking] = useState(false);
-  const [thinkingLabel, setThinkingLabel] = useState("Dina is thinking…");
+  const [thinkingLabel, setThinkingLabel] = useState("On it…");
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
   const [microsoftEnabled, setMicrosoftEnabled] = useState(false);
@@ -257,7 +257,7 @@ export function ChatApp() {
       },
     ]);
     setThinking(true);
-    setThinkingLabel("Dina is thinking…");
+    setThinkingLabel("On it…");
 
     const assistantId = `stream-${crypto.randomUUID()}`;
     let started = false;
@@ -302,9 +302,9 @@ export function ChatApp() {
           if (event.type === "status") {
             setThinking(true);
             if (event.detail) setThinkingLabel(event.detail);
-            else if (event.status === "tool") setThinkingLabel("Working…");
-            else if (event.status === "working") setThinkingLabel("Working…");
-            else setThinkingLabel("Dina is thinking…");
+            else if (event.status === "tool") setThinkingLabel("Working on it…");
+            else if (event.status === "working") setThinkingLabel("Working on it…");
+            else setThinkingLabel("On it…");
           }
 
           if (event.type === "delta" && event.text) {

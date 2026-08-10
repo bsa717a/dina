@@ -73,6 +73,32 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.dina-ambient {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 18%, rgba(47, 93, 80, 0.09), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 90%, rgba(232, 220, 200, 0.35), transparent 65%),
+    var(--background);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dina-ambient {
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 18%, rgba(126, 185, 166, 0.1), transparent 70%),
+      radial-gradient(ellipse 50% 40% at 80% 90%, rgba(47, 93, 80, 0.12), transparent 65%),
+      var(--background);
+  }
+}
+
+.dina-avatar-glow {
+  box-shadow: 0 0 0 3px rgba(47, 93, 80, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dina-avatar-glow {
+    box-shadow: 0 0 0 3px rgba(126, 185, 166, 0.18);
+  }
+}
+
 button,
 textarea,
 input {

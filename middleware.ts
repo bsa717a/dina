@@ -18,6 +18,8 @@ function isPublic(pathname: string) {
   if (pathname.startsWith("/icons/")) return true;
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;
+  // Brand assets used on login / offline (no session yet).
+  if (pathname === "/dina-avatar.jpg" || pathname.startsWith("/dina-")) return true;
   return false;
 }
 

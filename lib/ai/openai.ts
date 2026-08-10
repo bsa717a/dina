@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { getDefaultTimeZone, getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
+import { annotateToolOutput } from "@/lib/ai/action-receipts";
 import {
   isOpenAICreditsBlocked,
   isOpenAICreditsError,
@@ -191,6 +192,9 @@ function buildInstructions(
   }
   parts.push("", "SESSION RUNTIME:");
   parts.push(
+    "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/id/link from the tool payload.",
+    "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
+    "For Church/General Conference talks and quotes: never invent titles or quotations. Only cite material you verified from a live source or a file Derek provided; otherwise say you cannot verify it.",
     "Memory tools are enabled (search_memory, remember, correct_memory, approve_memory, archive_memory, merge_memories, list_memories).",
     "Memory is structured long-term knowledge — never treat the chat transcript as memory.",
     "Only remember durable facts per Memory Rules. Foundational memories may be pending_approval — ask Derek to approve, then call approve_memory.",
@@ -379,7 +383,7 @@ export class OpenAIProvider implements ModelProvider {
                 ? "Preparing morning brief…"
                 : forceWordDoc
                   ? "Preparing Word document…"
-                  : "Dina is thinking…"
+                  : "On it…"
               : "Working…",
         };
 
@@ -536,6 +540,7 @@ export class OpenAIProvider implements ModelProvider {
               const parsed = JSON.parse(output) as {
                 ok?: boolean;
                 data?: { count?: number; items?: unknown[] };
+                instruction?: string;
               };
               if (parsed.ok && (parsed.data?.count ?? 0) > 0) {
                 output = JSON.stringify({
@@ -548,6 +553,7 @@ export class OpenAIProvider implements ModelProvider {
               // keep raw output
             }
           }
+          output = annotateToolOutput(call.name, output);
           toolOutputs.push({
             type: "function_call_output",
             call_id: call.call_id,

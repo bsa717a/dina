@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DinaAvatar } from "@/components/chat/DinaAvatar";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,16 +34,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--background)] px-6">
+    <main className="dina-ambient flex min-h-[100dvh] items-center justify-center px-6">
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm"
         autoComplete="current-password"
       >
-        <h1 className="text-3xl font-semibold tracking-tight">Dina</h1>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Enter your access code to continue.
-        </p>
+        <div className="flex flex-col items-start gap-4">
+          <DinaAvatar size="xl" className="dina-avatar-glow shadow-sm" />
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">Dina</h1>
+            <p className="mt-1.5 text-sm leading-relaxed text-[var(--muted)]">
+              Your chief of staff. Enter your access code and we&apos;ll pick up
+              where things left off.
+            </p>
+          </div>
+        </div>
 
         <label className="mt-8 block text-sm text-[var(--muted)]" htmlFor="access-code">
           Access code
