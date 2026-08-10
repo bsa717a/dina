@@ -13,6 +13,7 @@ import {
   buildHeuristicWeekPlan,
   enforceUniqueMedia,
   isDurableWeekPlan,
+  sanitizeMediaItem,
 } from "@/lib/morning-ritual/week-plan";
 import type { CfmLesson, WeekPlan } from "@/lib/morning-ritual/types";
 
@@ -50,6 +51,23 @@ describe("morning ritual routing and helpers", () => {
       true,
     );
     expect(isChurchUrl("https://example.com")).toBe(false);
+  });
+
+  it("reclassifies lesson-page art mislabeled as a talk", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "The Judgments of Job",
+        url: `${lessonUrl}#p8`,
+        note: "Insightful talk by Joseph Brickey on Job's trials and judgments.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("art");
+    expect(fixed?.note).toMatch(/Artwork by Joseph Brickey/i);
+    expect(fixed?.note).not.toMatch(/\btalk by\b/i);
   });
 
   it("enforces unique media across the week plan", () => {

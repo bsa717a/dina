@@ -196,6 +196,11 @@ For TODAY's scriptureFocus only:
 If today has assigned media, include a short "Today's media" subsection with titles/links.
 If dayIndex===1, include the supplemental inventory section provided.
 If dayIndex>1, do NOT repeat the full week supplemental dump.
+Media types in the context are authoritative:
+- (art) = artwork/painting — say "View" / "See", never "Watch", never call it a talk.
+- (talk) = an actual talk — Read/Watch only if the URL is a real talk page.
+- (video) = video — Watch is OK.
+Never invent a talk title, speaker, or watch link that is not in the provided media list.
 
 ## Market brief (~150 words)
 Then:
