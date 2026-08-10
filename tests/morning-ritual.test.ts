@@ -70,6 +70,36 @@ describe("morning ritual routing and helpers", () => {
     expect(fixed?.note).not.toMatch(/\btalk by\b/i);
   });
 
+  it("keeps real talk URLs even if notes mention artwork", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "Think Celestial!",
+        url: "https://www.churchofjesuschrist.org/study/general-conference/2023/10/think-celestial?lang=eng",
+        note: "Mentions an artist's picture of the Savior.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("talk");
+  });
+
+  it("does not treat clerical talk-by notes on lesson anchors as art", () => {
+    const lessonUrl =
+      "https://www.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026/33?lang=eng";
+    const fixed = sanitizeMediaItem(
+      {
+        type: "talk",
+        title: "Job's faith",
+        url: `${lessonUrl}#p12`,
+        note: "Quote from a talk by President Nelson.",
+      },
+      lessonUrl,
+    );
+    expect(fixed?.type).toBe("other");
+  });
+
   it("enforces unique media across the week plan", () => {
     const lesson: CfmLesson = {
       lessonKey: "ot-2026-32",

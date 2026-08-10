@@ -85,30 +85,39 @@ export function sanitizeMediaItem(
   const blob = `${title}\n${note}`;
   let type = item.type;
   let cleanedNote = note;
+  const hasTalkUrl = Boolean(item.url && TALK_URL.test(item.url));
+  const hasVideoUrl = Boolean(item.url && VIDEO_URL.test(item.url));
+  const onLessonPage = isLessonPageUrl(item.url, lessonUrl);
 
-  if (ART_SIGNAL.test(blob)) {
+  // Art wording must not override a real talk/video destination URL.
+  if (ART_SIGNAL.test(blob) && !hasTalkUrl && !hasVideoUrl) {
     type = "art";
   }
 
-  if (
-    (type === "talk" || type === "video") &&
-    isLessonPageUrl(item.url, lessonUrl)
-  ) {
-    // CFM captions like "Title — by Artist" on a lesson-page #anchor are art, not talks.
-    if (ART_SIGNAL.test(blob) || /\bby\s+[A-Z][\w .'-]{2,}/.test(blob)) {
+  if ((type === "talk" || type === "video") && onLessonPage) {
+    // Lesson-page anchors alone are never talks/videos.
+    const clericalTalkBy =
+      /\btalk\s+by\b/i.test(blob) &&
+      /\b(President|Elder|Sister|Bishop|Brother)\b/.test(blob);
+    if (ART_SIGNAL.test(blob)) {
+      type = "art";
+    } else if (clericalTalkBy) {
+      // e.g. "from a talk by President Nelson" — keep as other, not a painting.
+      type = "other";
+    } else if (/\bby\s+[A-Z][\w .'-]{2,}/.test(blob)) {
+      // CFM image credit, or LLM mislabel like "talk by Joseph Brickey".
       type = "art";
     } else if (MUSIC_URL.test(item.url || "") || /\bhymn\b/i.test(blob)) {
       type = "help";
     } else {
-      // Lesson-page deep link without a distinct talk/video URL — keep as other.
       type = "other";
     }
   }
 
-  if (type === "talk" && item.url && !TALK_URL.test(item.url)) {
-    if (VIDEO_URL.test(item.url)) type = "video";
+  if (type === "talk" && item.url && !hasTalkUrl) {
+    if (hasVideoUrl) type = "video";
     else if (MUSIC_URL.test(item.url)) type = "help";
-    else if (isLessonPageUrl(item.url, lessonUrl)) type = "other";
+    else if (onLessonPage) type = "other";
   }
 
   if (type === "art") {
