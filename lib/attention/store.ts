@@ -85,6 +85,7 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
         : null;
 
     // Never reopen dismissed/resolved/sent items automatically.
+    // Active snoozes stay snoozed until wake; expired snoozes wake first.
     const existing = await prisma.attentionItem.findUnique({
       where: {
         source_sourceId: { source: item.source, sourceId: item.sourceId },
@@ -98,6 +99,22 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
       });
       upserted.push(existing);
       continue;
+    }
+
+    if (existing?.status === "snoozed") {
+      const until = existing.snoozedUntil?.getTime() ?? 0;
+      if (until > Date.now()) {
+        await prisma.attentionItem.update({
+          where: { id: existing.id },
+          data: { lastSeenAt: new Date() },
+        });
+        upserted.push(existing);
+        continue;
+      }
+      await prisma.attentionItem.update({
+        where: { id: existing.id },
+        data: { status: "open", snoozedUntil: null },
+      });
     }
 
     // Preserve drafts Derek saved or AI-revised; rescans must not clobber them.
@@ -172,7 +189,28 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
   return upserted;
 }
 
-export async function listOpenAttentionItems() {
+/** Flip expired snoozes back to open so they reappear in the panel. */
+export async function wakeExpiredSnoozes(now = new Date()) {
+  const result = await prisma.attentionItem.updateMany({
+    where: {
+      status: "snoozed",
+      snoozedUntil: { lte: now },
+    },
+    data: {
+      status: "open",
+      snoozedUntil: null,
+    },
+  });
+  return result.count;
+}
+
+export async function listOpenAttentionItems(options?: {
+  /** When false, leave expired snoozes alone (e.g. Mark all done). Default true. */
+  wakeSnoozes?: boolean;
+}) {
+  if (options?.wakeSnoozes !== false) {
+    await wakeExpiredSnoozes();
+  }
   return prisma.attentionItem.findMany({
     where: {
       status: "open",
@@ -208,8 +246,16 @@ export async function updateAttentionItemStatus(
     draftSubject?: string;
     draftBody?: string;
     notifiedAt?: Date;
+    snoozedUntil?: Date | null;
   },
 ) {
+  const snoozedUntil =
+    status === "snoozed"
+      ? (extra?.snoozedUntil ?? undefined)
+      : extra && "snoozedUntil" in extra
+        ? extra.snoozedUntil
+        : null;
+
   return prisma.attentionItem.update({
     where: { id },
     data: {
@@ -217,6 +263,7 @@ export async function updateAttentionItemStatus(
       draftSubject: extra?.draftSubject,
       draftBody: extra?.draftBody,
       notifiedAt: extra?.notifiedAt,
+      ...(snoozedUntil !== undefined ? { snoozedUntil } : {}),
     },
   });
 }

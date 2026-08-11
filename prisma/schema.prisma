@@ -130,6 +130,7 @@ model AttentionItem {
   notificationTitle  String?
   notificationBody   String?
   notifiedAt         DateTime?
+  snoozedUntil       DateTime?
   sourceUrl          String?
   rawJson            String?
   lastSeenAt         DateTime @default(now())
@@ -141,6 +142,7 @@ model AttentionItem {
   @@index([status, updatedAt])
   @@index([category, status])
   @@index([notifyNow, notifiedAt])
+  @@index([status, snoozedUntil])
 }
 
 /// Persist Derek's response to recommendations for future learning (not used yet).
