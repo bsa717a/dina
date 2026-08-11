@@ -27,7 +27,11 @@ export const ATTENTION_ACTION_TYPES = [
   "dismissed_unimportant",
   "blocked_sender",
   "reviewed",
+  "snoozed",
 ] as const;
+
+/** Fixed snooze duration for Attention cards. */
+export const ATTENTION_SNOOZE_MS = 60 * 60 * 1000;
 
 export type AttentionActionType = (typeof ATTENTION_ACTION_TYPES)[number];
 

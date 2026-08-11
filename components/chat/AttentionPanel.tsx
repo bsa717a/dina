@@ -261,7 +261,8 @@ export function AttentionPanel({ highlightId, onError }: Props) {
         action === "dismissed_unimportant" ||
         action === "blocked_sender" ||
         action === "send_draft" ||
-        action === "accepted_recommendation"
+        action === "accepted_recommendation" ||
+        action === "snoozed"
       ) {
         setItems((prev) => prev.filter((i) => i.id !== id));
         if (editingId === id) setEditingId(null);
@@ -511,6 +512,15 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                         }
                       >
                         Done
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
+                        title="Hide for 1 hour"
+                        onClick={() => void act(item.id, "snoozed")}
+                      >
+                        Snooze
                       </button>
                       {item.source === "email" && (
                         <button

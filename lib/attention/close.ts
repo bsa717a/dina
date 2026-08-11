@@ -55,7 +55,9 @@ export async function closeAttentionItem(
 
 /** Resolve every open attention card (Done for all). */
 export async function markAllAttentionDone() {
-  const items = await listOpenAttentionItems();
+  // Do not wake expired snoozes here — Mark all done should only clear cards
+  // already open in the queue, not silently resolve items still snoozed.
+  const items = await listOpenAttentionItems({ wakeSnoozes: false });
   let resolved = 0;
   for (const item of items) {
     await closeAttentionItem(item, "resolved", "accepted_recommendation", {

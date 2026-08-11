@@ -8,6 +8,7 @@ import {
   providerIdFromSourceId,
 } from "@/lib/attention/provider";
 import { reviseAttentionDraft } from "@/lib/attention/revise";
+import { snoozeAttentionItem } from "@/lib/attention/snooze";
 import {
   getAttentionItem,
   recordAttentionAction,
@@ -37,6 +38,7 @@ const patchSchema = z.object({
     "dismissed_unimportant",
     "blocked_sender",
     "ignored_notification",
+    "snoozed",
   ]),
   draftSubject: z.string().max(500).optional(),
   draftBody: z.string().max(20_000).optional(),
@@ -134,6 +136,14 @@ export async function PATCH(
         500,
       );
     }
+  }
+
+  if (action === "snoozed") {
+    if (item.status !== "open") {
+      return jsonError("Only open Attention items can be snoozed.");
+    }
+    const updated = await snoozeAttentionItem(item);
+    return NextResponse.json({ ok: true, item: updated });
   }
 
   if (action === "dismissed_unimportant") {
