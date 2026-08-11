@@ -19,7 +19,7 @@ export function DinaAvatar({
   return (
     // eslint-disable-next-line @next/next/no-img-element -- static brand asset; matches app image usage
     <img
-      src="/dina-avatar.jpg?v=2"
+      src="/dina-avatar.jpg?v=3"
       alt={alt}
       width={size === "xl" ? 96 : size === "lg" ? 56 : size === "md" ? 36 : 28}
       height={size === "xl" ? 96 : size === "lg" ? 56 : size === "md" ? 36 : 28}
