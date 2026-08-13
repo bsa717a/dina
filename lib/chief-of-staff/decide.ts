@@ -5,6 +5,7 @@ import {
   isOpenAICreditsError,
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import {
   DISPOSITIONS,
@@ -376,6 +377,13 @@ export async function decideOnEvents(
             },
           },
         },
+      });
+
+      recordOpenAIUsage({
+        feature: "chief_of_staff.decide",
+        model: response.model || model,
+        response,
+        meta: { batchSize: batch.length },
       });
 
       const text = response.output_text || "{}";

@@ -6,6 +6,7 @@ import {
   markOpenAICreditsExhausted,
 } from "@/lib/ai/openai-errors";
 import { withTemperature } from "@/lib/ai/model-params";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { heuristicLessonFromSignal } from "@/lib/learning/heuristics";
 import { persistLesson } from "@/lib/learning/lessons";
@@ -99,6 +100,13 @@ Return JSON only.`,
           },
         },
       },
+    });
+
+    recordOpenAIUsage({
+      feature: "learning.distill",
+      model: response.model || model,
+      response,
+      meta: { action: signal.action },
     });
 
     const text = response.output_text || "";

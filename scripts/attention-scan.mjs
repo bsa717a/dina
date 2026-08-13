@@ -2,7 +2,7 @@
 /**
  * Trigger the Chief of Staff Engine scan against a running Dina server.
  * Connectors collect normalized events; the engine decides dispositions.
- * Intended for launchd: every 15 min 6:00–17:00 local, hourly otherwise.
+ * Intended for launchd: every 30 min 6:00–17:00 local, hourly otherwise.
  *
  * Env:
  *   APP_URL (default http://127.0.0.1:8080)

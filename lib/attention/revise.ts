@@ -7,6 +7,7 @@ import {
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
 import { withTemperature } from "@/lib/ai/model-params";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { prisma } from "@/lib/db/client";
 import {
@@ -153,6 +154,13 @@ ${voiceBlock}${lessonsBlock ? `\n\n${lessonsBlock}` : ""}`,
           strict: true,
         },
       },
+    });
+
+    recordOpenAIUsage({
+      feature: "attention.revise",
+      model: response.model || model,
+      response,
+      meta: { itemId: input.item.id },
     });
 
     const text =
