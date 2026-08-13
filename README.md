@@ -338,7 +338,7 @@ Or `POST /api/attention/scan` (session or `ATTENTION_SCAN_SECRET`).
 
 ### launchd (attention scan schedule)
 
-Scans on local time: **every 15 minutes from 6:00–17:00**, then **hourly from 18:00–05:00** (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)).
+Scans on local time: **every 30 minutes from 6:00–17:00**, then **hourly from 18:00–05:00** (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)).
 
 1. Ensure Dina is running (`com.dina.app` or `npm run start`).
 2. Confirm the plist paths match this Mac (`which node`, repo path).

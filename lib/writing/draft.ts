@@ -7,6 +7,7 @@ import {
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
 import { withTemperature } from "@/lib/ai/model-params";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
 import { buildVoicePack } from "@/lib/writing/voice";
@@ -116,6 +117,13 @@ Return JSON only.`,
           },
         },
       },
+    });
+
+    recordOpenAIUsage({
+      feature: "writing.draft",
+      model: response.model || model,
+      response,
+      meta: { medium, audience },
     });
 
     const parsed = draftSchema.safeParse(

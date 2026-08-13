@@ -196,10 +196,27 @@ export function AttentionPanel({ highlightId, onError }: Props) {
     }
   }
 
+  function closeEditor() {
+    setEditingId(null);
+  }
+
+  const editingItem = editingId
+    ? items.find((item) => item.id === editingId) || null
+    : null;
+  const editingBusy = Boolean(editingItem && busyId === editingItem.id);
+
   useEffect(() => {
-    if (!emailItemId) return;
+    if (editingId && !items.some((item) => item.id === editingId)) {
+      setEditingId(null);
+    }
+  }, [editingId, items]);
+
+  useEffect(() => {
+    if (!emailItemId && !editingItem) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeEmailModal();
+      if (event.key !== "Escape") return;
+      if (emailItemId) closeEmailModal();
+      else if (editingItem && busyId !== editingItem.id) closeEditor();
     }
     window.addEventListener("keydown", onKeyDown);
     const prev = document.body.style.overflow;
@@ -208,7 +225,7 @@ export function AttentionPanel({ highlightId, onError }: Props) {
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prev;
     };
-  }, [emailItemId]);
+  }, [emailItemId, editingItem, busyId]);
 
   async function markAllDone() {
     if (markingAllDone || !items.length) return;
@@ -294,7 +311,8 @@ export function AttentionPanel({ highlightId, onError }: Props) {
     );
   }
 
-  if (!items.length) return null;
+  // Keep rendering overlays even when the open list is empty (e.g. after Send).
+  if (!items.length && !editingItem && !emailItemId) return null;
 
   return (
     <section className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-3 sm:px-6">
@@ -380,92 +398,9 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                   </p>
 
                   {editingId === item.id ? (
-                    <div className="space-y-2">
-                      <input
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                        value={draftSubject}
-                        onChange={(e) => setDraftSubject(e.target.value)}
-                        placeholder="Subject"
-                      />
-                      <textarea
-                        className="min-h-28 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                        value={draftBody}
-                        onChange={(e) => setDraftBody(e.target.value)}
-                        placeholder={
-                          item.source === "github"
-                            ? "Review / decision note"
-                            : "Draft reply"
-                        }
-                      />
-                      <textarea
-                        className="min-h-16 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                        value={reviseNote}
-                        onChange={(e) => setReviseNote(e.target.value)}
-                        placeholder="Notes for Dina (optional) — e.g. shorter, approve Dependabot, ask about tests…"
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="rounded-xl bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
-                          onClick={() =>
-                            void act(item.id, "revise_draft", {
-                              draftSubject,
-                              draftBody,
-                              note: reviseNote.trim() || undefined,
-                            })
-                          }
-                        >
-                          {busy ? "Revising…" : "Revise with AI"}
-                        </button>
-                        {item.canSendDraft && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
-                            onClick={() =>
-                              void act(item.id, "send_draft", {
-                                draftSubject,
-                                draftBody,
-                              })
-                            }
-                          >
-                            Send
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
-                          onClick={() =>
-                            void act(item.id, "edited_draft", {
-                              draftSubject,
-                              draftBody,
-                            })
-                          }
-                        >
-                          Save edits
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
-                          onClick={() => setEditingId(null)}
-                        >
-                          Cancel
-                        </button>
-                        {item.source === "email" && (
-                          <button
-                            type="button"
-                            disabled={busy || emailLoading}
-                            className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
-                            onClick={() => void openEmail(item)}
-                          >
-                            View email
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    <p className="text-sm text-[var(--muted)]">
+                      Editing in full screen…
+                    </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {(item.shouldDraftReply || item.draftBody) && (
@@ -571,41 +506,170 @@ export function AttentionPanel({ highlightId, onError }: Props) {
         })}
       </ul>
 
-      {emailItemId && (
+      {editingItem && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
-          role="presentation"
-          onClick={closeEmailModal}
+          className="fixed inset-0 z-50 flex flex-col bg-[var(--background)]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Edit attention draft"
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={emailTitleId}
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)] sm:rounded-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-              <div className="min-w-0">
-                <h3
-                  id={emailTitleId}
-                  className="truncate text-base font-semibold text-[var(--foreground)]"
-                >
-                  {fullEmail?.subject ||
-                    items.find((item) => item.id === emailItemId)?.subject ||
-                    "Email"}
-                </h3>
-                <p className="text-xs text-[var(--muted)]">Full message</p>
-              </div>
+          <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                {editingItem.categoryLabel}
+              </p>
+              <h2 className="truncate text-lg font-semibold text-[var(--foreground)]">
+                {editingItem.subject || editingItem.summary}
+              </h2>
+              {editingItem.sender && (
+                <p className="truncate text-sm text-[var(--muted)]">
+                  {editingItem.sender}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={editingBusy}
+              className="shrink-0 rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
+              onClick={closeEditor}
+            >
+              Close
+            </button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="mx-auto flex h-full max-w-3xl flex-col gap-3">
+              <p className="text-sm text-[var(--foreground)]">
+                <span className="text-[var(--muted)]">Why it matters: </span>
+                {editingItem.whyItMatters}
+              </p>
+              <p className="text-sm text-[var(--foreground)]">
+                <span className="text-[var(--muted)]">Recommended: </span>
+                {editingItem.recommendedAction}
+              </p>
+              <input
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-base"
+                value={draftSubject}
+                onChange={(e) => setDraftSubject(e.target.value)}
+                placeholder="Subject"
+                autoFocus
+              />
+              <textarea
+                className="min-h-[45vh] w-full flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-base leading-relaxed"
+                value={draftBody}
+                onChange={(e) => setDraftBody(e.target.value)}
+                placeholder={
+                  editingItem.source === "github"
+                    ? "Review / decision note"
+                    : "Draft reply"
+                }
+              />
+              <textarea
+                className="min-h-20 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
+                value={reviseNote}
+                onChange={(e) => setReviseNote(e.target.value)}
+                placeholder="Notes for Dina (optional) — e.g. shorter, approve Dependabot, ask about tests…"
+              />
+            </div>
+          </div>
+
+          <footer className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">
+            <div className="mx-auto flex max-w-3xl flex-wrap gap-2">
               <button
                 type="button"
-                className="shrink-0 rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm"
-                onClick={closeEmailModal}
+                disabled={editingBusy}
+                className="rounded-xl bg-[var(--accent)] px-3 py-2 text-sm text-white disabled:opacity-50"
+                onClick={() =>
+                  void act(editingItem.id, "revise_draft", {
+                    draftSubject,
+                    draftBody,
+                    note: reviseNote.trim() || undefined,
+                  })
+                }
               >
-                Close
+                {editingBusy ? "Revising…" : "Revise with AI"}
+              </button>
+              {editingItem.canSendDraft && (
+                <button
+                  type="button"
+                  disabled={editingBusy}
+                  className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
+                  onClick={() =>
+                    void act(editingItem.id, "send_draft", {
+                      draftSubject,
+                      draftBody,
+                    })
+                  }
+                >
+                  Send
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={editingBusy}
+                className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
+                onClick={() =>
+                  void act(editingItem.id, "edited_draft", {
+                    draftSubject,
+                    draftBody,
+                  })
+                }
+              >
+                Save edits
+              </button>
+              {editingItem.source === "email" && (
+                <button
+                  type="button"
+                  disabled={editingBusy || emailLoading}
+                  className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
+                  onClick={() => void openEmail(editingItem)}
+                >
+                  View email
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={editingBusy}
+                className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--muted)] disabled:opacity-50"
+                onClick={closeEditor}
+              >
+                Cancel
               </button>
             </div>
+          </footer>
+        </div>
+      )}
 
-            <div className="overflow-y-auto px-4 py-3">
+      {emailItemId && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col bg-[var(--background)]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={emailTitleId}
+        >
+          <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-xs text-[var(--muted)]">Full message</p>
+              <h3
+                id={emailTitleId}
+                className="truncate text-lg font-semibold text-[var(--foreground)]"
+              >
+                {fullEmail?.subject ||
+                  items.find((item) => item.id === emailItemId)?.subject ||
+                  "Email"}
+              </h3>
+            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded-xl border border-[var(--border)] px-3 py-1.5 text-sm"
+              onClick={closeEmailModal}
+            >
+              Close
+            </button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="mx-auto max-w-3xl">
               {emailLoading && (
                 <p className="text-sm text-[var(--muted)]">Loading email…</p>
               )}
@@ -613,8 +677,8 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                 <p className="text-sm text-[var(--danger)]">{emailError}</p>
               )}
               {fullEmail && !emailLoading && (
-                <div className="space-y-3 text-sm">
-                  <dl className="space-y-1.5">
+                <div className="space-y-4 text-sm">
+                  <dl className="space-y-2">
                     <div>
                       <dt className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted)]">
                         From
@@ -663,8 +727,8 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                       </div>
                     )}
                   </dl>
-                  <div className="border-t border-[var(--border)] pt-3">
-                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-[var(--foreground)]">
+                  <div className="border-t border-[var(--border)] pt-4">
+                    <pre className="whitespace-pre-wrap break-words font-sans text-base leading-relaxed text-[var(--foreground)]">
                       {fullEmail.bodyText}
                     </pre>
                     {fullEmail.bodyTruncated && (

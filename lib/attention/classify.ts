@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import { recordOpenAIUsage } from "@/lib/ai/usage";
 import { getOpenAIApiKey, getOpenAIModel } from "@/lib/env";
 import type { ClassifiedAttention, CollectedSignal } from "@/lib/attention/types";
 import { ATTENTION_CATEGORIES } from "@/lib/attention/types";
@@ -170,6 +171,13 @@ export async function classifyAttentionSignals(
             },
           },
         },
+      });
+
+      recordOpenAIUsage({
+        feature: "attention.classify",
+        model: response.model || model,
+        response,
+        meta: { batchSize: batch.length },
       });
 
       const text = response.output_text || "{}";
