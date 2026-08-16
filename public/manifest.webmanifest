@@ -4,8 +4,9 @@
   "description": "Derek’s calm, capable chief of staff",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#f7f7f5",
   "theme_color": "#2f5d50",
   "icons": [

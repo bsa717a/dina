@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
+import {
+  homepageInstallHelp,
+  isStandalonePwa,
+  promptAddToHomepage,
+  subscribeInstallState,
+} from "@/lib/client/pwa";
 
 type Status = "online" | "offline" | "degraded" | "checking";
 
@@ -126,8 +133,20 @@ function HeaderActions({
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [alreadyInstalled, setAlreadyInstalled] = useState(false);
+  const [installHelp, setInstallHelp] = useState<ReturnType<
+    typeof homepageInstallHelp
+  > | null>(null);
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function refreshInstalled() {
+      setAlreadyInstalled(isStandalonePwa());
+    }
+    refreshInstalled();
+    return subscribeInstallState(refreshInstalled);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -145,9 +164,27 @@ function HeaderActions({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!installHelp) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setInstallHelp(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [installHelp]);
+
   function run(action: () => void) {
     setOpen(false);
     action();
+  }
+
+  async function addToHomepage() {
+    const result = await promptAddToHomepage();
+    if (result.kind === "installed" || result.kind === "prompted") {
+      setAlreadyInstalled(isStandalonePwa());
+      return;
+    }
+    setInstallHelp(homepageInstallHelp(result.platform));
   }
 
   return (
@@ -192,6 +229,16 @@ function HeaderActions({
               )}
             </>
           )}
+          {!alreadyInstalled && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(() => void addToHomepage())}
+              className="block w-full px-3 py-2 text-left text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+            >
+              Add to Homepage
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -202,6 +249,41 @@ function HeaderActions({
           </button>
         </div>
       )}
+      {installHelp &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-to-homepage-title"
+            onClick={() => setInstallHelp(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-lg"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h2
+                id="add-to-homepage-title"
+                className="text-base font-semibold tracking-tight"
+              >
+                {installHelp.title}
+              </h2>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-[var(--muted)]">
+                {installHelp.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <button
+                type="button"
+                className="mt-4 w-full rounded-xl bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white dark:text-[#102019]"
+                onClick={() => setInstallHelp(null)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
