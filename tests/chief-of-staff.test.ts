@@ -42,6 +42,33 @@ describe("Chief of Staff Engine contracts", () => {
     );
   });
 
+  it("does not generate reply drafts or why-it-matters copy during decide", () => {
+    const decideSrc = readFileSync(
+      resolve(process.cwd(), "lib/chief-of-staff/decide.ts"),
+      "utf8",
+    );
+    expect(decideSrc).not.toMatch(/"draftSubject"/);
+    expect(decideSrc).not.toMatch(/"draftBody"/);
+    expect(decideSrc).not.toMatch(/"interruptWhy"/);
+    expect(decideSrc).not.toMatch(/"cardSummary"/);
+    expect(decideSrc).toMatch(/canDraft/);
+    expect(decideSrc).toMatch(/projectKey/);
+  });
+
+  it("omits GitHub from the regular scan unless includeGitHub is set", () => {
+    const src = readFileSync(
+      resolve(process.cwd(), "lib/connectors/index.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/includeGitHub/);
+    expect(src).toMatch(/options\?\.includeGitHub && isGitHubConfigured/);
+    const engineSrc = readFileSync(
+      resolve(process.cwd(), "lib/chief-of-staff/engine.ts"),
+      "utf8",
+    );
+    expect(engineSrc).not.toMatch(/includeGitHub:\s*true/);
+  });
+
   it("keeps vendor APIs out of the Chief of Staff Engine module", () => {
     const enginePath = resolve(
       process.cwd(),

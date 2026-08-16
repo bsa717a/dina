@@ -8,24 +8,36 @@ import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { isGitHubConfigured } from "@/lib/github/config";
 import { logger } from "@/lib/logger";
 
+export type CollectOptions = {
+  /**
+   * GitHub is off for the regular Attention scan (too noisy vs mail/calendar).
+   * Pass true for a future once-a-day GitHub pass — chat GitHub tools stay on.
+   */
+  includeGitHub?: boolean;
+};
+
 /** Registered connectors. Future services only need to add an emitter here. */
-export function getConnectors(): Connector[] {
+export function getConnectors(options?: CollectOptions): Connector[] {
   const connectors: Connector[] = [];
   if (isMicrosoftConfigured()) connectors.push(microsoftConnector);
   if (isGoogleConfigured()) connectors.push(googleConnector);
-  if (isGitHubConfigured()) connectors.push(githubConnector);
+  if (options?.includeGitHub && isGitHubConfigured()) {
+    connectors.push(githubConnector);
+  }
   return connectors;
 }
 
 /**
- * Collect normalized events from every connector.
+ * Collect normalized events from every connector enabled for this scan.
  * One connector failing must not block the others.
  */
-export async function collectNormalizedEvents(): Promise<{
+export async function collectNormalizedEvents(
+  options?: CollectOptions,
+): Promise<{
   events: NormalizedEvent[];
   connectorErrors: Array<{ connectorId: string; error: string }>;
 }> {
-  const connectors = getConnectors();
+  const connectors = getConnectors(options);
   const settled = await Promise.allSettled(
     connectors.map(async (connector) => ({
       connectorId: connector.id,

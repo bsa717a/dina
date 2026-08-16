@@ -67,8 +67,11 @@ export const Composer = forwardRef<
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.height = "auto";
+    const max = 160;
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
   }, [text]);
 
   useEffect(() => {
@@ -291,7 +294,7 @@ export const Composer = forwardRef<
             rows={1}
             placeholder="What’s on your mind?"
             disabled={disabled}
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
+            className="max-h-40 min-h-[40px] flex-1 resize-none overflow-hidden bg-transparent px-1 py-2 text-[15px] leading-5 outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
           />
 
           <button

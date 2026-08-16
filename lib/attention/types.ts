@@ -22,6 +22,7 @@ export const ATTENTION_ACTION_TYPES = [
   "accepted_recommendation",
   "edited_draft",
   "revise_draft",
+  "generated_draft",
   "sent_draft",
   "ignored_notification",
   "dismissed_unimportant",

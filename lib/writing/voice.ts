@@ -23,7 +23,7 @@ export function extractWritingStyleSection(manual?: string): string {
 }
 
 /**
- * Shared voice pack for chat drafts, CoS draftBody, and Attention revise.
+ * Shared voice pack for chat drafts, Attention generate-draft, and Attention revise.
  */
 export async function buildVoicePack(options?: {
   recipientHint?: string;

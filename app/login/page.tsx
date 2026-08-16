@@ -1,11 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,8 +22,9 @@ export default function LoginPage() {
       if (!res.ok) {
         throw new Error(data.error || "Login failed");
       }
-      router.replace("/");
-      router.refresh();
+      // Full navigation so Safari sends the new session cookie (client
+      // router.replace can race before the cookie is stored).
+      window.location.assign("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

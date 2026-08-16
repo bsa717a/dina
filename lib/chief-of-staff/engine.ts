@@ -17,9 +17,13 @@ import { sendPushToAll } from "@/lib/push/web-push";
 /**
  * Chief of Staff Engine scan:
  * 1) Connectors emit normalized events (vendor APIs stay in connectors)
- * 2) Engine decides dispositions (no vendor calls)
- * 3) Apply decisions (attention cards, context records, etc.)
- * 4) Push only for interrupt-worthy cards
+ * 2) Cheap triage already happened in connectors (blocklist / marketing)
+ * 3) Decide — disposition, priority, interrupt-or-not. No reply drafts.
+ * 4) Apply decisions (attention cards, context records, etc.)
+ * 5) Push only for interrupt-worthy cards
+ *
+ * Reply drafts are generated later when Derek opens Review draft.
+ * GitHub is omitted from this scan; pass includeGitHub for a future daily job.
  */
 export async function runChiefOfStaffScan(options?: { sendPush?: boolean }) {
   const sendPush = options?.sendPush ?? true;
@@ -69,10 +73,7 @@ export async function runChiefOfStaffScan(options?: { sendPush?: boolean }) {
         const title =
           item.notificationTitle ||
           (item.isBlocking ? "Urgent" : item.sender || "Dina");
-        const body =
-          item.notificationBody ||
-          item.whyItMatters ||
-          item.summary;
+        const body = item.notificationBody || item.summary;
 
         try {
           const result = await sendPushToAll({

@@ -66,7 +66,7 @@ function decisionToAttentionItem(
     isBlocking:
       decision.priority === "critical" || decision.priority === "high",
     canWait: decision.analysis.canWait,
-    shouldDraftReply: Boolean(decision.analysis.canDraft && decision.draftBody),
+    shouldDraftReply: Boolean(decision.analysis.canDraft),
     draftSubject: decision.draftSubject,
     draftBody: decision.draftBody,
     notifyNow: decision.notifyNow,
@@ -74,7 +74,7 @@ function decisionToAttentionItem(
       decision.priority === "critical"
         ? "Urgent"
         : card.githubAccountLabel || event.actor || "Dina",
-    notificationBody: decision.interruptWhy || card.whyItMatters,
+    notificationBody: card.subject || card.summary,
   };
 }
 

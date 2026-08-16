@@ -113,4 +113,46 @@ describe("attention draft preservation on rescan", () => {
     expect(rescanned.draftSubject).toBe("Revised subject");
     expect(rescanned.draftBody).toBe("Revised body");
   });
+
+  it("keeps on-view generated drafts when a later scan has no draft copy", async () => {
+    const [created] = await upsertClassifiedItems([baseItem()]);
+    await prisma.attentionItem.update({
+      where: { id: created.id },
+      data: {
+        draftSubject: "Re: Funding",
+        draftBody: "Generated when Derek opened the card",
+      },
+    });
+    await prisma.attentionAction.create({
+      data: {
+        attentionItemId: created.id,
+        action: "generated_draft",
+      },
+    });
+
+    const [rescanned] = await upsertClassifiedItems([
+      baseItem({
+        draftSubject: undefined,
+        draftBody: undefined,
+        shouldDraftReply: true,
+      }),
+    ]);
+
+    expect(rescanned.draftSubject).toBe("Re: Funding");
+    expect(rescanned.draftBody).toBe("Generated when Derek opened the card");
+  });
+
+  it("clears unprotected scan-era drafts when the engine no longer wants a reply", async () => {
+    await upsertClassifiedItems([baseItem()]);
+    const [rescanned] = await upsertClassifiedItems([
+      baseItem({
+        draftSubject: undefined,
+        draftBody: undefined,
+        shouldDraftReply: false,
+      }),
+    ]);
+    expect(rescanned.shouldDraftReply).toBe(false);
+    expect(rescanned.draftSubject).toBeNull();
+    expect(rescanned.draftBody).toBeNull();
+  });
 });
