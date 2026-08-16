@@ -169,6 +169,43 @@ export function AttentionPanel({ highlightId, onError }: Props) {
     void act(item.id, "reviewed");
   }
 
+  async function beginDraft(item: AttentionItemView) {
+    setExpandedId(item.id);
+    setReviseNote("");
+    setBusyId(item.id);
+    try {
+      const res = await fetch(`/api/attention/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate_draft" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Draft failed");
+      if (data.item) {
+        setItems((prev) =>
+          prev.map((i) => (i.id === item.id ? mergeItem(i, data.item) : i)),
+        );
+        setDraftSubject(
+          data.item.draftSubject || `Re: ${item.subject || ""}`,
+        );
+        setDraftBody(data.item.draftBody || "");
+      } else {
+        setDraftSubject(item.draftSubject || `Re: ${item.subject || ""}`);
+        setDraftBody(item.draftBody || "");
+      }
+      setEditingId(item.id);
+      void fetch(`/api/attention/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reviewed" }),
+      });
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Draft failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   function closeEmailModal() {
     setEmailItemId(null);
     setFullEmail(null);
@@ -388,10 +425,12 @@ export function AttentionPanel({ highlightId, onError }: Props) {
 
               {open && (
                 <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3 text-sm">
-                  <p>
-                    <span className="text-[var(--muted)]">Why it matters: </span>
-                    {item.whyItMatters}
-                  </p>
+                  {item.whyItMatters ? (
+                    <p>
+                      <span className="text-[var(--muted)]">Project: </span>
+                      {item.whyItMatters}
+                    </p>
+                  ) : null}
                   <p>
                     <span className="text-[var(--muted)]">Recommended: </span>
                     {item.recommendedAction}
@@ -408,9 +447,13 @@ export function AttentionPanel({ highlightId, onError }: Props) {
                           type="button"
                           disabled={busy}
                           className="rounded-xl bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
-                          onClick={() => beginEdit(item)}
+                          onClick={() => void beginDraft(item)}
                         >
-                          Review draft
+                          {busy && !item.draftBody
+                            ? "Drafting…"
+                            : item.draftBody
+                              ? "Review draft"
+                              : "Draft reply"}
                         </button>
                       )}
                       <button
@@ -539,10 +582,12 @@ export function AttentionPanel({ highlightId, onError }: Props) {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
             <div className="mx-auto flex h-full max-w-3xl flex-col gap-3">
-              <p className="text-sm text-[var(--foreground)]">
-                <span className="text-[var(--muted)]">Why it matters: </span>
-                {editingItem.whyItMatters}
-              </p>
+              {editingItem.whyItMatters ? (
+                <p className="text-sm text-[var(--foreground)]">
+                  <span className="text-[var(--muted)]">Project: </span>
+                  {editingItem.whyItMatters}
+                </p>
+              ) : null}
               <p className="text-sm text-[var(--foreground)]">
                 <span className="text-[var(--muted)]">Recommended: </span>
                 {editingItem.recommendedAction}

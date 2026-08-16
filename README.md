@@ -290,7 +290,7 @@ Attention actions (edit / revise + note / dismiss / accept) distill into Memory 
 
 Draft in Derek’s voice. Spec: [`writing-assistant.md`](writing-assistant.md).
 
-Chat tool: `draft_in_dereks_voice` (email / Teams / GitHub review note). Shared voice pack used by CoS drafts and Attention revise. Never sends until Derek approves.
+Shared voice pack used by Attention drafts (on card open) and Attention revise. Never sends until Derek approves.
 
 The **Chief of Staff Engine** decides when an event deserves durable memory (`writeMemory`). Temporary debugging and casual chat do not become memory.
 
@@ -312,17 +312,31 @@ It never calls Microsoft 365, GitHub, or future vendor APIs directly. **Connecto
 
 Each decision also gets priority (Critical / High / Normal / Low), confidence, reasoning summary, and a recommended action when useful.
 
+### What the scan asks the model (decide)
+
+This is the credit-heavy step. It does **not** write a reply. For each remaining event it only decides:
+
+1. **Disposition** — interrupt (Attention card), briefing, project context, store, or ignore
+2. **Priority / notifyNow** — whether to push
+3. **Flags** — waiting on Derek, can wait, related to a project, `canDraft`
+4. **Project** — short name if this belongs to one (Beacon, Gridley, etc.); otherwise blank
+5. **Memory** — rare durable facts only
+
+The card shows the event subject/preview as collected. Dina does not write a “why it matters” paragraph during the scan.
+
+Reply text is generated later, when Derek taps **Draft reply** on a card (Writing Assistant + voice pack). Rescans will not overwrite a draft that was already generated or edited.
+
 ### Connectors (today)
 
 - Microsoft 365 → work mail, calendar/invites, To Do reminders
 - Google → personal Gmail + Google Calendar
-- GitHub (multi-account) → PRs, issues, workflow results, integration alerts
+- GitHub (multi-account) → **off the regular scan** (chat tools still work). Re-enable later as a once-a-day pass via `includeGitHub`.
 
 Adding Slack, Apple Reminders, etc. means writing a connector that emits the same normalized events — not changing the engine.
 
 ### Home screen
 
-Chat shows **Needs Your Attention** cards from the `create_attention_card` disposition. Drafts support **Review / Edit / Send** — never auto-send. Push notifies only when the engine sets `notifyNow`.
+Chat shows **Needs Your Attention** cards from the `create_attention_card` disposition. The scan only decides *whether* a reply would help (`canDraft`). The actual draft is written when Derek taps **Draft reply** / **Review draft**. Never auto-send. Push notifies only when the engine sets `notifyNow`.
 
 ### Waiting On Engine
 
@@ -338,7 +352,7 @@ Or `POST /api/attention/scan` (session or `ATTENTION_SCAN_SECRET`).
 
 ### launchd (attention scan schedule)
 
-Scans on local time: **every 30 minutes from 6:00–17:00**, then **hourly from 18:00–05:00** (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)).
+Scans on local time: **every 30 minutes from 6:00–17:00**. No scans from 18:00–05:00 (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)).
 
 1. Ensure Dina is running (`com.dina.app` or `npm run start`).
 2. Confirm the plist paths match this Mac (`which node`, repo path).

@@ -19,7 +19,6 @@ import {
   listActiveLessons,
 } from "@/lib/learning/lessons";
 import { MEMORY_CATEGORIES } from "@/lib/memory/types";
-import { getVoiceInstructionsForPrompt } from "@/lib/writing/voice";
 import { logger } from "@/lib/logger";
 
 const decisionSchema = z.object({
@@ -30,7 +29,6 @@ const decisionSchema = z.object({
       priority: z.enum(PRIORITIES),
       confidence: z.number().min(0).max(1),
       reasoningSummary: z.string(),
-      interruptWhy: z.string().nullable(),
       recommendedAction: z.string().nullable(),
       needsToKnow: z.boolean(),
       canWait: z.boolean(),
@@ -41,8 +39,6 @@ const decisionSchema = z.object({
       canRecommendAction: z.boolean(),
       canDraft: z.boolean(),
       isContextOnly: z.boolean(),
-      draftSubject: z.string().nullable(),
-      draftBody: z.string().nullable(),
       notifyNow: z.boolean(),
       cardCategory: z
         .enum([
@@ -53,7 +49,6 @@ const decisionSchema = z.object({
           "fyi_ignore",
         ])
         .nullable(),
-      cardSummary: z.string().nullable(),
       writeMemory: z.boolean(),
       memoryCategory: z.enum(MEMORY_CATEGORIES).nullable(),
       memoryTitle: z.string().nullable(),
@@ -77,12 +72,12 @@ For every event answer:
 - Is someone waiting on Derek?
 - Is Derek waiting on someone else?
 - Can Dina recommend a next action?
-- Can Dina draft something?
+- Would a reply draft help later? (canDraft — do NOT write the reply)
 - Should this simply become context?
 - Does this deserve durable STRUCTURED MEMORY (not chat log)?
 
 Every event gets EXACTLY one disposition:
-- create_attention_card — interrupt-worthy; requires interruptWhy explaining why Dina interrupted
+- create_attention_card — interrupt-worthy
 - add_to_todays_briefing — useful today, not interrupt now
 - update_project_context — matters for a project Derek is running
 - store_as_context — keep for short-term context, no interrupt
@@ -100,11 +95,18 @@ Rules:
 - Unread human email that asks a question, needs a decision/reply, or is from a real person Derek works with → create_attention_card. Set notifyNow=true when someone is waiting on Derek or the message is high/critical. Do not quietly bury reply-needed inbox mail in ignore.
 - Calendar: accepted/upcoming meetings within the next 48 hours → at least add_to_todays_briefing (never ignore solely because already accepted). Meeting invitations not yet responded → create_attention_card. Two meetings at the same start time → create_attention_card (conflict) with notifyNow=true.
 - notifyNow=true only with create_attention_card, and only when Derek should know now (human waiting, time-sensitive decision, meeting soon/conflict, security/outage, blocking failure).
-- interruptWhy examples: "Justin replied and is waiting for your decision.", "A GitHub workflow failed after the latest Beacon commit.", "Adam invited you to a meeting that overlaps another commitment."
-- If canDraft=true, write draftBody using the Writing Style / voice pack when provided. Never claim it was sent.
+- Do not write why-it-matters prose, interrupt copy, or a rewritten card summary. The card uses the event title/preview as-is.
+- If relatedToProject=true, set projectKey to a short human name (Beacon, Gridley, Church). Null if none.
+- Set canDraft=true when a reply would help. Do not write draftSubject or draftBody — drafts are generated only when Derek opens the card.
 - When LEARNED PREFERENCES are provided, obey them (e.g. one recommended option instead of a list of five).
 - Include every input eventId exactly once.
 - Return JSON only.`;
+
+function formatProjectLabel(key: string | null | undefined): string {
+  if (!key?.trim()) return "";
+  const parts = key.trim().split(/[/:]/).filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -149,11 +151,10 @@ function toDecision(
       ? {
           sender: event.actor,
           subject: event.title,
-          summary: item.cardSummary || event.summary.slice(0, 280),
-          whyItMatters:
-            item.interruptWhy ||
-            item.reasoningSummary ||
-            "Dina believes this needs your attention.",
+          summary: event.summary.slice(0, 280),
+          whyItMatters: formatProjectLabel(
+            item.projectKey || event.projectHint,
+          ),
           category: item.cardCategory || "decision_required",
           occursAt:
             typeof event.payload?.startDateTime === "string"
@@ -204,7 +205,6 @@ function toDecision(
     priority: item.priority,
     confidence: item.confidence,
     reasoningSummary: item.reasoningSummary,
-    interruptWhy: item.interruptWhy,
     recommendedAction: item.recommendedAction,
     analysis: {
       needsToKnow: item.needsToKnow,
@@ -218,15 +218,13 @@ function toDecision(
       canDraft: item.canDraft,
       isContextOnly: item.isContextOnly,
     },
-    draftSubject: item.draftSubject,
-    draftBody: item.draftBody,
     notifyNow,
     memoryWrite,
     card,
   };
 }
 
-/** Pure decision step: normalized events in → decisions out. No vendor APIs. */
+/** Pure decision step: normalized events in → dispositions out. No vendor APIs, no reply drafts. */
 export async function decideOnEvents(
   events: NormalizedEvent[],
 ): Promise<CosDecision[]> {
@@ -242,13 +240,8 @@ export async function decideOnEvents(
   const client = new OpenAI({ apiKey, timeout: 90_000 });
   const model = getOpenAIModel();
   const decisions: CosDecision[] = [];
-  const [lessonsBlock, voiceBlock] = await Promise.all([
-    listActiveLessons().then(formatLessonsForPrompt),
-    getVoiceInstructionsForPrompt(),
-  ]);
-  const instructions = [SYSTEM, voiceBlock, lessonsBlock]
-    .filter(Boolean)
-    .join("\n\n");
+  const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
+  const instructions = [SYSTEM, lessonsBlock].filter(Boolean).join("\n\n");
 
   for (const batch of chunk(events, 12)) {
     const payload = batch.map((event) => ({
@@ -300,7 +293,6 @@ export async function decideOnEvents(
                       "priority",
                       "confidence",
                       "reasoningSummary",
-                      "interruptWhy",
                       "recommendedAction",
                       "needsToKnow",
                       "canWait",
@@ -311,11 +303,8 @@ export async function decideOnEvents(
                       "canRecommendAction",
                       "canDraft",
                       "isContextOnly",
-                      "draftSubject",
-                      "draftBody",
                       "notifyNow",
                       "cardCategory",
-                      "cardSummary",
                       "writeMemory",
                       "memoryCategory",
                       "memoryTitle",
@@ -332,7 +321,6 @@ export async function decideOnEvents(
                       priority: { type: "string", enum: [...PRIORITIES] },
                       confidence: { type: "number" },
                       reasoningSummary: { type: "string" },
-                      interruptWhy: { type: ["string", "null"] },
                       recommendedAction: { type: ["string", "null"] },
                       needsToKnow: { type: "boolean" },
                       canWait: { type: "boolean" },
@@ -343,8 +331,6 @@ export async function decideOnEvents(
                       canRecommendAction: { type: "boolean" },
                       canDraft: { type: "boolean" },
                       isContextOnly: { type: "boolean" },
-                      draftSubject: { type: ["string", "null"] },
-                      draftBody: { type: ["string", "null"] },
                       notifyNow: { type: "boolean" },
                       cardCategory: {
                         type: ["string", "null"],
@@ -357,7 +343,6 @@ export async function decideOnEvents(
                           null,
                         ],
                       },
-                      cardSummary: { type: ["string", "null"] },
                       writeMemory: { type: "boolean" },
                       memoryCategory: {
                         type: ["string", "null"],

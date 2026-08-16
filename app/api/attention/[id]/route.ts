@@ -8,9 +8,11 @@ import {
   providerIdFromSourceId,
 } from "@/lib/attention/provider";
 import { reviseAttentionDraft } from "@/lib/attention/revise";
+import { generateAttentionDraft } from "@/lib/attention/generate-draft";
 import { snoozeAttentionItem } from "@/lib/attention/snooze";
 import {
   getAttentionItem,
+  persistGeneratedDraft,
   recordAttentionAction,
   updateAttentionItemContent,
   updateAttentionItemStatus,
@@ -34,6 +36,7 @@ const patchSchema = z.object({
     "accepted_recommendation",
     "edited_draft",
     "revise_draft",
+    "generate_draft",
     "send_draft",
     "dismissed_unimportant",
     "blocked_sender",
@@ -133,6 +136,26 @@ export async function PATCH(
     } catch (error) {
       return jsonError(
         error instanceof Error ? error.message : "AI revise failed.",
+        500,
+      );
+    }
+  }
+
+  if (action === "generate_draft") {
+    try {
+      if (item.draftBody?.trim()) {
+        const updated = await persistGeneratedDraft(item.id, {
+          draftSubject: item.draftSubject,
+          draftBody: item.draftBody,
+        });
+        return NextResponse.json({ ok: true, item: updated });
+      }
+      const draft = await generateAttentionDraft(item);
+      const updated = await persistGeneratedDraft(item.id, draft);
+      return NextResponse.json({ ok: true, item: updated });
+    } catch (error) {
+      return jsonError(
+        error instanceof Error ? error.message : "Draft failed.",
         500,
       );
     }

@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   await clearAuthFailures();
-  const session = await getSession();
+  const session = await getSession(request);
   session.authenticated = true;
   session.createdAt = Date.now();
   await session.save();

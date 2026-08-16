@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
+import { cookieSecureForRequest } from "@/lib/auth/cookie-secure";
 import type { SessionData } from "@/lib/auth/session";
 import { SECURITY_HEADERS } from "@/lib/http";
 
@@ -60,19 +61,15 @@ export async function middleware(request: NextRequest) {
     return applyHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
-  const appUrl = process.env.APP_URL || "";
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const secure =
-    appUrl.startsWith("https://") ||
-    forwardedProto === "https" ||
-    process.env.NODE_ENV === "production";
-
   const session = await getIronSession<SessionData>(request, response, {
     cookieName: "dina_session",
     password,
     cookieOptions: {
       httpOnly: true,
-      secure,
+      secure: cookieSecureForRequest({
+        forwardedProto: request.headers.get("x-forwarded-proto"),
+        url: request.url,
+      }),
       sameSite: "lax",
       path: "/",
     },

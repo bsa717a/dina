@@ -65,11 +65,11 @@ export async function finishAttentionRun(
   });
 }
 
-async function hasUserProtectedDraft(attentionItemId: string): Promise<boolean> {
+export async function hasProtectedDraft(attentionItemId: string): Promise<boolean> {
   const action = await prisma.attentionAction.findFirst({
     where: {
       attentionItemId,
-      action: { in: ["edited_draft", "revise_draft"] },
+      action: { in: ["edited_draft", "revise_draft", "generated_draft"] },
     },
     select: { id: true },
   });
@@ -119,7 +119,7 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
 
     // Preserve drafts Derek saved or AI-revised; rescans must not clobber them.
     const protectDraft =
-      existing != null && (await hasUserProtectedDraft(existing.id));
+      existing != null && (await hasProtectedDraft(existing.id));
 
     const row = await prisma.attentionItem.upsert({
       where: {
@@ -174,8 +174,17 @@ export async function upsertClassifiedItems(items: ClassifiedAttention[]) {
           ? {}
           : {
               shouldDraftReply: item.shouldDraftReply,
-              draftSubject: item.draftSubject,
-              draftBody: item.draftBody,
+              ...(item.draftBody
+                ? {
+                    draftSubject: item.draftSubject,
+                    draftBody: item.draftBody,
+                  }
+                : item.shouldDraftReply
+                  ? {}
+                  : {
+                      draftSubject: null,
+                      draftBody: null,
+                    }),
             }),
         notifyNow: item.notifyNow,
         notificationTitle: item.notificationTitle,
@@ -236,6 +245,39 @@ export async function recordAttentionAction(input: {
       action: input.action,
       detailsJson: input.details ? JSON.stringify(input.details) : null,
     },
+  });
+}
+
+/** Record generated_draft first so a later rescan cannot clobber the body. */
+export async function persistGeneratedDraft(
+  itemId: string,
+  draft: { draftSubject: string | null; draftBody: string },
+) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.attentionAction.findFirst({
+      where: { attentionItemId: itemId, action: "generated_draft" },
+      select: { id: true },
+    });
+    if (!existing) {
+      await tx.attentionAction.create({
+        data: {
+          attentionItemId: itemId,
+          action: "generated_draft",
+          detailsJson: JSON.stringify({
+            draftSubject: draft.draftSubject,
+            draftBody: draft.draftBody,
+          }),
+        },
+      });
+    }
+    return tx.attentionItem.update({
+      where: { id: itemId },
+      data: {
+        draftSubject: draft.draftSubject,
+        draftBody: draft.draftBody,
+        shouldDraftReply: true,
+      },
+    });
   });
 }
 
