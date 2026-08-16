@@ -62,7 +62,7 @@ describe("attachment download authz", () => {
       storageKey: "secret.png",
     });
     const { GET } = await import("@/app/api/attachments/[id]/route");
-    const res = await GET(new Request("http://localhost/api/attachments/a1"), {
+    const res = await GET(new Request("http://localhost/api/attachments/a1") as never, {
       params: Promise.resolve({ id: "a1" }),
     });
     expect(res.status).toBe(404);
@@ -92,7 +92,7 @@ describe("attachment download authz", () => {
       storageKey: "legacy.png",
     });
     const { GET } = await import("@/app/api/attachments/[id]/route");
-    const res = await GET(new Request("http://localhost/api/attachments/a1"), {
+    const res = await GET(new Request("http://localhost/api/attachments/a1") as never, {
       params: Promise.resolve({ id: "a1" }),
     });
     expect(res.status).toBe(200);
@@ -109,7 +109,7 @@ describe("attachment download authz", () => {
       storageKey: "legacy.png",
     });
     const { GET } = await import("@/app/api/attachments/[id]/route");
-    const res = await GET(new Request("http://localhost/api/attachments/a1"), {
+    const res = await GET(new Request("http://localhost/api/attachments/a1") as never, {
       params: Promise.resolve({ id: "a1" }),
     });
     expect(res.status).toBe(404);
@@ -126,7 +126,7 @@ describe("attachment download authz", () => {
       storageKey: "mine.png",
     });
     const { GET } = await import("@/app/api/attachments/[id]/route");
-    const res = await GET(new Request("http://localhost/api/attachments/a1"), {
+    const res = await GET(new Request("http://localhost/api/attachments/a1") as never, {
       params: Promise.resolve({ id: "a1" }),
     });
     expect(res.status).toBe(200);
