@@ -24,16 +24,44 @@ function actionButtonClass(isUser: boolean, active = false) {
   } ${active ? (isUser ? "text-amber-200" : "text-amber-600 dark:text-amber-400") : "opacity-70"}`;
 }
 
+function AssistantIcon({
+  src,
+  name,
+  size,
+  className = "",
+}: {
+  src?: string | null;
+  name: string;
+  size: "sm" | "xl";
+  className?: string;
+}) {
+  if (src && !src.includes("dina-avatar")) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- static assistant portrait
+      <img
+        src={src}
+        alt={name}
+        className={`${size === "xl" ? "h-24 w-24" : "h-7 w-7"} shrink-0 rounded-full object-cover bg-black ${className}`}
+      />
+    );
+  }
+  return <DinaAvatar size={size} className={className} alt={name} />;
+}
+
 export function MessageList({
   messages,
   thinking,
   thinkingLabel = "On it…",
+  assistantName = "Dina",
+  avatarUrl,
   onToggleStar,
   starBusyId,
 }: {
   messages: ChatMessage[];
   thinking: boolean;
   thinkingLabel?: string;
+  assistantName?: string;
+  avatarUrl?: string | null;
   onToggleStar?: (message: ChatMessage) => void;
   starBusyId?: string | null;
 }) {
@@ -71,11 +99,19 @@ export function MessageList({
     return (
       <div className="dina-ambient flex flex-1 items-center justify-center px-6 text-center">
         <div className="flex flex-col items-center">
-          <DinaAvatar size="xl" className="dina-avatar-glow shadow-sm" />
-          <p className="mt-5 text-xl font-semibold tracking-tight">Hey — I&apos;m Dina</p>
+          <AssistantIcon
+            src={avatarUrl}
+            name={assistantName}
+            size="xl"
+            className="dina-avatar-glow shadow-sm"
+          />
+          <p className="mt-5 text-xl font-semibold tracking-tight">
+            Hey — I&apos;m {assistantName}
+          </p>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-[var(--muted)]">
-            Your chief of staff. Ask anything, drop a file, or tell me what needs
-            clearing — I&apos;ll keep it calm, clear, and useful.
+            {assistantName === "Dina"
+              ? "Your chief of staff. Ask anything, drop a file, or tell me what needs clearing — I'll keep it calm, clear, and useful."
+              : "Your project assistant. Ask about tasks, status, or what needs a decision."}
           </p>
         </div>
       </div>
@@ -93,7 +129,12 @@ export function MessageList({
               className={`flex items-end gap-2 ${isUser ? "justify-end" : "justify-start"}`}
             >
               {!isUser && (
-                <DinaAvatar size="sm" className="mb-0.5 hidden sm:block" />
+                <AssistantIcon
+                  src={avatarUrl}
+                  name={assistantName}
+                  size="sm"
+                  className="mb-0.5 hidden sm:block"
+                />
               )}
               <div
                 className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed sm:max-w-[75%] ${
@@ -104,7 +145,7 @@ export function MessageList({
               >
                 {!isUser && (
                   <div className="mb-1 text-[11px] font-medium tracking-wide text-[var(--muted)] sm:hidden">
-                    Dina
+                    {assistantName}
                   </div>
                 )}
                 {message.attachments && message.attachments.length > 0 && (
@@ -202,7 +243,12 @@ export function MessageList({
         })}
         {thinking && (
           <div className="flex items-end justify-start gap-2">
-            <DinaAvatar size="sm" className="mb-0.5 hidden sm:block" />
+            <AssistantIcon
+              src={avatarUrl}
+              name={assistantName}
+              size="sm"
+              className="mb-0.5 hidden sm:block"
+            />
             <div className="rounded-2xl bg-[var(--assistant-bubble)] px-3.5 py-2.5 text-sm text-[var(--muted)]">
               <span className="dina-thinking">{thinkingLabel}</span>
             </div>

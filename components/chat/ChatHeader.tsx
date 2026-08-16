@@ -5,6 +5,9 @@ import { DinaAvatar } from "@/components/chat/DinaAvatar";
 type Status = "online" | "offline" | "degraded" | "checking";
 
 export function ChatHeader({
+  assistantName = "Dina",
+  assistantSubtitle = "Chief of staff",
+  avatarUrl,
   status,
   microsoftEnabled = false,
   googleEnabled = false,
@@ -16,6 +19,9 @@ export function ChatHeader({
   onTestPush,
   onSignOut,
 }: {
+  assistantName?: string;
+  assistantSubtitle?: string;
+  avatarUrl?: string | null;
   status: Status;
   microsoftEnabled?: boolean;
   googleEnabled?: boolean;
@@ -50,12 +56,23 @@ export function ChatHeader({
     <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur-md">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <DinaAvatar size="md" className="dina-avatar-glow" />
+          {avatarUrl && !avatarUrl.includes("dina-avatar") ? (
+            // eslint-disable-next-line @next/next/no-img-element -- static assistant portrait
+            <img
+              src={avatarUrl}
+              alt={assistantName}
+              className="h-9 w-9 shrink-0 rounded-full object-cover bg-black"
+            />
+          ) : (
+            <DinaAvatar size="md" className="dina-avatar-glow" />
+          )}
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
-              <h1 className="truncate text-lg font-semibold tracking-tight">Dina</h1>
+              <h1 className="truncate text-lg font-semibold tracking-tight">
+                {assistantName}
+              </h1>
               <span className="hidden text-xs text-[var(--muted)] sm:inline">
-                Chief of staff
+                {assistantSubtitle}
               </span>
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[var(--muted)]">

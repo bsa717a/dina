@@ -17,7 +17,7 @@ function safeStorageKey(filename: string) {
   return `${randomUUID()}${ext}`;
 }
 
-export async function storeUpload(file: File) {
+export async function storeUpload(file: File, uploadedByUserId: string) {
   const validation = validateUpload({
     filename: file.name,
     mimeType: file.type,
@@ -39,6 +39,7 @@ export async function storeUpload(file: File) {
       mimeType: validation.mimeType,
       size: file.size,
       storageKey,
+      uploadedByUserId,
     },
   });
 
@@ -68,10 +69,13 @@ export async function readAttachmentBytes(storageKey: string) {
   return readFile(filePath);
 }
 
-export async function loadProviderAttachments(attachmentIds: string[]) {
+export async function loadProviderAttachments(
+  attachmentIds: string[],
+  uploadedByUserId: string,
+) {
   if (!attachmentIds.length) return [];
   const rows = await prisma.attachment.findMany({
-    where: { id: { in: attachmentIds } },
+    where: { id: { in: attachmentIds }, uploadedByUserId },
   });
 
   const { extractAttachmentContent } = await import("@/lib/uploads/extract");

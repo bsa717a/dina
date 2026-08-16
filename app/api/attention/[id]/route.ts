@@ -23,7 +23,7 @@ import {
   recipientFromAttentionRaw,
 } from "@/lib/attention/send";
 import { getGmailMessage, sendGmailMessage } from "@/lib/google/gmail";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { scheduleLearnFromAttentionAction } from "@/lib/learning/distill";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 import { logger } from "@/lib/logger";
@@ -52,7 +52,9 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
   const { id } = await context.params;
   const item = await getAttentionItem(id);
   if (!item) return jsonError("Attention item not found.", 404);

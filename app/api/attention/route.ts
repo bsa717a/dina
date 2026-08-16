@@ -9,7 +9,7 @@ import {
 import { accountBadgeFromRaw } from "@/lib/attention/provider";
 import { listOpenAttentionItems } from "@/lib/attention/store";
 import { categoryLabel } from "@/lib/attention/types";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -73,7 +73,9 @@ function readGitHubMeta(item: {
 }
 
 export async function GET() {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
 
   const items = await listOpenAttentionItems();
   return NextResponse.json({
@@ -121,7 +123,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
 
   let json: unknown;
   try {

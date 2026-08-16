@@ -18,13 +18,20 @@ function previewOf(content: string, max = 180) {
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
-export async function countStarredMessages() {
-  return prisma.message.count({ where: { starredAt: { not: null } } });
+function ownedStarWhere(userId: string) {
+  return {
+    starredAt: { not: null },
+    conversation: { userId },
+  };
 }
 
-export async function listStarredMessages(limit = STAR_SOFT_CAP) {
+export async function countStarredMessages(userId: string) {
+  return prisma.message.count({ where: ownedStarWhere(userId) });
+}
+
+export async function listStarredMessages(userId: string, limit = STAR_SOFT_CAP) {
   const rows = await prisma.message.findMany({
-    where: { starredAt: { not: null } },
+    where: ownedStarWhere(userId),
     orderBy: { starredAt: "desc" },
     take: Math.min(Math.max(limit, 1), STAR_SOFT_CAP),
   });
@@ -41,9 +48,9 @@ export async function listStarredMessages(limit = STAR_SOFT_CAP) {
   );
 }
 
-export async function getStarredMessage(id: string) {
+export async function getStarredMessage(id: string, userId: string) {
   const row = await prisma.message.findFirst({
-    where: { id, starredAt: { not: null } },
+    where: { id, ...ownedStarWhere(userId) },
   });
   if (!row) return null;
   return {
@@ -57,8 +64,14 @@ export async function getStarredMessage(id: string) {
   };
 }
 
-export async function setMessageStarred(id: string, starred: boolean) {
-  const existing = await prisma.message.findUnique({ where: { id } });
+export async function setMessageStarred(
+  id: string,
+  starred: boolean,
+  userId: string,
+) {
+  const existing = await prisma.message.findFirst({
+    where: { id, conversation: { userId } },
+  });
   if (!existing) {
     return { ok: false as const, error: "Message not found.", status: 404 };
   }
@@ -68,7 +81,7 @@ export async function setMessageStarred(id: string, starred: boolean) {
       where: { id },
       data: { starredAt: null },
     });
-    const count = await countStarredMessages();
+    const count = await countStarredMessages(userId);
     return {
       ok: true as const,
       starred: false,
@@ -79,7 +92,7 @@ export async function setMessageStarred(id: string, starred: boolean) {
   }
 
   if (existing.starredAt) {
-    const count = await countStarredMessages();
+    const count = await countStarredMessages(userId);
     return {
       ok: true as const,
       starred: true,
@@ -89,9 +102,9 @@ export async function setMessageStarred(id: string, starred: boolean) {
     };
   }
 
-  const count = await countStarredMessages();
+  const count = await countStarredMessages(userId);
   if (count >= STAR_SOFT_CAP) {
-    const oldest = await listStarredMessages(STAR_SOFT_CAP);
+    const oldest = await listStarredMessages(userId, STAR_SOFT_CAP);
     return {
       ok: false as const,
       error: `Star limit reached (${STAR_SOFT_CAP}). Unstar something before starring more.`,

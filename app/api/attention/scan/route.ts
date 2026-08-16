@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { runChiefOfStaffScan } from "@/lib/chief-of-staff/engine";
 import { getAttentionScanSecret } from "@/lib/env";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -15,8 +15,9 @@ function authorized(request: NextRequest, sessionOk: boolean) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
-  if (!authorized(request, Boolean(session))) return unauthorized();
+  const user = await requireSession();
+  if (user && user.role !== "owner") return forbidden();
+  if (!authorized(request, Boolean(user))) return unauthorized();
 
   try {
     const result = await runChiefOfStaffScan({ sendPush: true });

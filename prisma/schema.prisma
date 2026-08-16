@@ -3,16 +3,54 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  username           String   @unique
+  role               String
+  assistantName      String   @default("")
+  assistantPersona   String   @default("")
+  assistantKey       String?
+  passwordHash       String
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  conversations     Conversation[]
+  memberships       ProjectMember[]
+  createdTasks      ProjectTask[]      @relation("TaskCreator")
+  assignedTasks     ProjectTask[]      @relation("TaskAssignee")
+  memories            MemoryItem[]
+  pushSubscriptions   PushSubscription[]
+  uploadedAttachments Attachment[]
+}
+
+model ProjectMember {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectKey String
+  role       String   @default("member")
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, projectKey])
+  @@index([projectKey])
 }
 
 model Conversation {
   id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String    @default("Dina")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   messages  Message[]
+
+  @@index([userId, createdAt])
 }
 
 model Message {
@@ -22,7 +60,7 @@ model Message {
   role             String
   content          String
   openaiResponseId String?
-  /// When set, Derek starred this message for later verbatim recall.
+  /// When set, the conversation owner starred this message for later verbatim recall.
   starredAt        DateTime?
   createdAt        DateTime     @default(now())
   attachments      Attachment[]
@@ -32,26 +70,33 @@ model Message {
 }
 
 model Attachment {
-  id         String   @id @default(cuid())
-  messageId  String?
-  message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  filename   String
-  mimeType   String
-  size       Int
-  storageKey String
-  createdAt  DateTime @default(now())
+  id               String   @id @default(cuid())
+  messageId        String?
+  message          Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploadedByUserId String?
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  filename         String
+  mimeType         String
+  size             Int
+  storageKey       String
+  createdAt        DateTime @default(now())
 
   @@index([messageId])
+  @@index([uploadedByUserId])
 }
 
 model PushSubscription {
   id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   endpoint  String   @unique
   p256dh    String
   auth      String
   userAgent String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model AuthAttempt {
@@ -63,41 +108,41 @@ model AuthAttempt {
 
 /// Background Attention Engine scan run metadata (legacy name; used by CoS runs).
 model AttentionRun {
-  id           String    @id @default(cuid())
-  startedAt    DateTime  @default(now())
-  finishedAt   DateTime?
-  status       String    @default("running")
-  itemsSeen    Int       @default(0)
-  itemsOpen    Int       @default(0)
-  notified     Int       @default(0)
-  error        String?
-  summaryJson  String?
+  id          String    @id @default(cuid())
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  status      String    @default("running")
+  itemsSeen   Int       @default(0)
+  itemsOpen   Int       @default(0)
+  notified    Int       @default(0)
+  error       String?
+  summaryJson String?
 }
 
 /// Every Chief of Staff Engine decision (all five dispositions).
 model CosDecisionRecord {
-  id                      String   @id @default(cuid())
-  runId                   String?
-  eventId                 String
-  eventType               String
-  connector               String
-  disposition             String
-  priority                String
-  confidence              Float    @default(0)
-  reasoningSummary        String
-  interruptWhy            String?
-  recommendedAction       String?
-  needsToKnow             Boolean  @default(false)
-  canWait                 Boolean  @default(true)
-  relatedToProject        Boolean  @default(false)
-  projectKey              String?
-  someoneWaitingOnDerek   Boolean  @default(false)
-  derekWaitingOnSomeone   Boolean  @default(false)
-  canDraft                Boolean  @default(false)
-  notifyNow               Boolean  @default(false)
-  payloadJson             String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  runId                 String?
+  eventId               String
+  eventType             String
+  connector             String
+  disposition           String
+  priority              String
+  confidence            Float    @default(0)
+  reasoningSummary      String
+  interruptWhy          String?
+  recommendedAction     String?
+  needsToKnow           Boolean  @default(false)
+  canWait               Boolean  @default(true)
+  relatedToProject      Boolean  @default(false)
+  projectKey            String?
+  someoneWaitingOnDerek Boolean  @default(false)
+  derekWaitingOnSomeone Boolean  @default(false)
+  canDraft              Boolean  @default(false)
+  notifyNow             Boolean  @default(false)
+  payloadJson           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([eventId])
   @@index([disposition, createdAt])
@@ -107,36 +152,36 @@ model CosDecisionRecord {
 
 /// A classified attention recommendation for Derek.
 model AttentionItem {
-  id                 String   @id @default(cuid())
-  source             String
-  sourceId           String
-  category           String
-  status             String   @default("open")
-  sender             String?
-  subject            String?
-  summary            String
-  whyItMatters       String
-  recommendedAction  String
-  askSummary         String?
-  needsResponse      Boolean  @default(false)
-  hasDeadline        Boolean  @default(false)
-  deadlineAt         DateTime?
-  isBlocking         Boolean  @default(false)
-  canWait            Boolean  @default(true)
-  shouldDraftReply   Boolean  @default(false)
-  draftSubject       String?
-  draftBody          String?
-  notifyNow          Boolean  @default(false)
-  notificationTitle  String?
-  notificationBody   String?
-  notifiedAt         DateTime?
-  snoozedUntil       DateTime?
-  sourceUrl          String?
-  rawJson            String?
-  lastSeenAt         DateTime @default(now())
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  actions            AttentionAction[]
+  id                String            @id @default(cuid())
+  source            String
+  sourceId          String
+  category          String
+  status            String            @default("open")
+  sender            String?
+  subject           String?
+  summary           String
+  whyItMatters      String
+  recommendedAction String
+  askSummary        String?
+  needsResponse     Boolean           @default(false)
+  hasDeadline       Boolean           @default(false)
+  deadlineAt        DateTime?
+  isBlocking        Boolean           @default(false)
+  canWait           Boolean           @default(true)
+  shouldDraftReply  Boolean           @default(false)
+  draftSubject      String?
+  draftBody         String?
+  notifyNow         Boolean           @default(false)
+  notificationTitle String?
+  notificationBody  String?
+  notifiedAt        DateTime?
+  snoozedUntil      DateTime?
+  sourceUrl         String?
+  rawJson           String?
+  lastSeenAt        DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  actions           AttentionAction[]
 
   @@unique([source, sourceId])
   @@index([status, updatedAt])
@@ -147,12 +192,12 @@ model AttentionItem {
 
 /// Persist Derek's response to recommendations for future learning (not used yet).
 model AttentionAction {
-  id               String   @id @default(cuid())
-  attentionItemId  String
-  attentionItem    AttentionItem @relation(fields: [attentionItemId], references: [id], onDelete: Cascade)
-  action           String
-  detailsJson      String?
-  createdAt        DateTime @default(now())
+  id              String        @id @default(cuid())
+  attentionItemId String
+  attentionItem   AttentionItem @relation(fields: [attentionItemId], references: [id], onDelete: Cascade)
+  action          String
+  detailsJson     String?
+  createdAt       DateTime      @default(now())
 
   @@index([attentionItemId, createdAt])
   @@index([action, createdAt])
@@ -161,10 +206,10 @@ model AttentionAction {
 /// Durable Attention suppressions (sender email or domain). Applies to all mail connectors.
 model AttentionBlock {
   id        String   @id @default(cuid())
-  kind      String   // sender | domain
-  value     String   // lowercased email or domain
+  kind      String
+  value     String
   reason    String?
-  source    String?  // ui | tool | import
+  source    String?
   createdAt DateTime @default(now())
 
   @@unique([kind, value])
@@ -176,6 +221,9 @@ model AttentionBlock {
 /// church, health, people, projects, commitments, decisions, learned_preferences.
 model MemoryItem {
   id              String    @id @default(cuid())
+  ownerUserId     String?
+  owner           User?     @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  projectKey      String?
   category        String
   title           String
   content         String
@@ -199,35 +247,41 @@ model MemoryItem {
   @@index([status, importance])
   @@index([status, updatedAt])
   @@index([embeddingStatus])
+  @@index([ownerUserId, status])
+  @@index([projectKey, status])
 }
 
 /// Live per-project backlog (not Memory, not Waiting On).
 /// Status: open | in_progress | done | cancelled
 model ProjectTask {
-  id          String    @id @default(cuid())
-  projectKey  String
-  title       String
-  description String    @default("")
-  status      String    @default("open")
-  sortOrder   Int       @default(0)
-  source      String    @default("chat")
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  projectKey      String
+  title           String
+  description     String    @default("")
+  status          String    @default("open")
+  sortOrder       Int       @default(0)
+  source          String    @default("chat")
+  createdByUserId String?
+  createdBy       User?     @relation("TaskCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  assigneeUserId  String?
+  assignee        User?     @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
+  @@unique([projectKey, title])
   @@index([projectKey, status])
   @@index([projectKey, sortOrder])
-  @@unique([projectKey, title])
 }
 
 /// Cached 7-day Come, Follow Me plan for Morning Ritual (Mon–Sun).
 model MorningRitualWeekPlan {
-  id          String   @id @default(cuid())
-  lessonKey   String
-  weekStart   String
-  planJson    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  lessonKey String
+  weekStart String
+  planJson  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([lessonKey, weekStart])
   @@index([weekStart])

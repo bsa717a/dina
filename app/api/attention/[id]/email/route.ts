@@ -5,7 +5,7 @@ import {
   fetchAttentionEmail,
 } from "@/lib/attention/fetch-email";
 import { getAttentionItem } from "@/lib/attention/store";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -14,7 +14,9 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
   const { id } = await context.params;
   const item = await getAttentionItem(id);
   if (!item) return jsonError("Attention item not found.", 404);

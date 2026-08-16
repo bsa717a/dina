@@ -2,7 +2,7 @@ import webpush from "web-push";
 import { getVapidConfig } from "@/lib/env";
 import {
   deletePushSubscriptionByEndpoint,
-  listPushSubscriptions,
+  listOwnerPushSubscriptions,
 } from "@/lib/db/push";
 import { logger } from "@/lib/logger";
 
@@ -29,7 +29,7 @@ export async function sendPushToAll(payload: PushPayload) {
     throw new Error("VAPID keys are not configured.");
   }
 
-  const subscriptions = await listPushSubscriptions();
+  const subscriptions = await listOwnerPushSubscriptions();
   const body = JSON.stringify({
     title: payload.title,
     body: payload.body,

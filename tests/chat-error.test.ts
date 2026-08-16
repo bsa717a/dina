@@ -1,7 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/session", () => ({
-  requireSession: vi.fn(async () => ({ authenticated: true })),
+  requireSession: vi.fn(async () => ({
+    id: "user-derek",
+    name: "Derek",
+    username: "derek",
+    role: "owner",
+    assistantName: "Dina",
+    assistantPersona: "",
+    assistantKey: "dina",
+    mustChangePassword: false,
+  })),
+}));
+
+vi.mock("@/lib/memory/scope", () => ({
+  memoryScopeForUser: vi.fn(async () => ({
+    role: "owner",
+    userId: "user-derek",
+    projectKeys: ["dina"],
+  })),
+}));
+
+vi.mock("@/lib/project-tasks/membership", () => ({
+  listMemberProjectKeys: vi.fn(async () => ["dina"]),
 }));
 
 vi.mock("@/lib/db/client", () => ({

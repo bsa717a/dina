@@ -41,13 +41,8 @@ const migrate = spawnSync(
 );
 
 if (migrate.status !== 0) {
-  console.log("migrate deploy failed or no migrations yet; trying prisma db push…");
-  const push = spawnSync("npx", ["prisma", "db", "push"], {
-    cwd: root,
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (push.status !== 0) process.exit(push.status ?? 1);
+  console.error("prisma migrate deploy failed. Check DATABASE_URL and run migrations.");
+  process.exit(migrate.status ?? 1);
 }
 
 const generate = spawnSync("npx", ["prisma", "generate"], {
@@ -57,8 +52,19 @@ const generate = spawnSync("npx", ["prisma", "generate"], {
 });
 if (generate.status !== 0) process.exit(generate.status ?? 1);
 
+const seed = spawnSync("node", ["scripts/seed-owner.mjs"], {
+  cwd: root,
+  stdio: "inherit",
+  env: process.env,
+});
+if (seed.status !== 0) {
+  console.log("Owner seed skipped or failed (set ACCESS_CODE and a Postgres DATABASE_URL).");
+}
+
 console.log("\nSetup complete.");
 console.log("Next:");
-console.log("  1. Edit .env (ACCESS_CODE, SESSION_SECRET, OPENAI_API_KEY, APP_URL)");
+console.log("  1. Edit .env (ACCESS_CODE, SESSION_SECRET, OPENAI_API_KEY, APP_URL, DATABASE_URL)");
 console.log("  2. npm run generate-vapid  # then paste keys into .env");
-console.log("  3. npm run dev");
+console.log("  3. Optional: npm run db:import-sqlite  # copy data/dina.db into Postgres");
+console.log("  4. Optional: NAME=Alex USERNAME=alex TEMP_PASSWORD=... PROJECTS=4studentlives npm run user:add");
+console.log("  5. npm run dev");

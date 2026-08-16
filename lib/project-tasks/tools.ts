@@ -1,7 +1,16 @@
-import { displayProjectName, resolveProjectKey } from "@/lib/project-tasks/keys";
+import { getRequestUser } from "@/lib/auth/context";
+import {
+  displayProjectName,
+  type ProjectKey,
+} from "@/lib/project-tasks/keys";
+import {
+  assertUserCanAccessProject,
+  assertUserCanAccessProjectKey,
+} from "@/lib/project-tasks/membership";
 import {
   addProjectTask,
   completeProjectTask,
+  getProjectTask,
   listProjectTasks,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
@@ -10,6 +19,21 @@ import {
   type ProjectTaskStatus,
 } from "@/lib/project-tasks/types";
 import { logger } from "@/lib/logger";
+
+async function requireProjectAccess(project: string): Promise<ProjectKey> {
+  const user = getRequestUser();
+  if (!user) throw new Error("Not authenticated.");
+  return assertUserCanAccessProject(user, project);
+}
+
+async function requireTaskAccess(taskId: string) {
+  const task = await getProjectTask(taskId);
+  if (!task) throw new Error("Project task not found.");
+  const user = getRequestUser();
+  if (!user) throw new Error("Not authenticated.");
+  await assertUserCanAccessProjectKey(user, task.projectKey);
+  return task;
+}
 
 function ok(data: unknown) {
   return JSON.stringify({ ok: true, data });
@@ -38,14 +62,7 @@ const handlers: Record<
 > = {
   list_project_tasks: async (args) => {
     const project = String(args.project || "");
-    const key = resolveProjectKey(project);
-    if (!key) {
-      return fail(
-        new Error(
-          `Unknown project: "${project}". Use list_project_tasks with a known project name.`,
-        ),
-      );
-    }
+    const key = await requireProjectAccess(project);
     const status = asStatus(args.status);
     const includeDone = Boolean(args.includeDone);
     const tasks = await listProjectTasks({
@@ -71,17 +88,25 @@ const handlers: Record<
     });
   },
   add_project_task: async (args) => {
+    const project = await requireProjectAccess(String(args.project || ""));
+    const user = getRequestUser();
     const task = await addProjectTask({
-      project: String(args.project || ""),
+      project,
       title: String(args.title || ""),
       description:
         typeof args.description === "string" ? args.description : undefined,
       status: asStatus(args.status) === "in_progress" ? "in_progress" : "open",
       source: "chat",
+      createdByUserId: user?.id,
     });
     return ok({ task });
   },
   complete_project_task: async (args) => {
+    if (typeof args.taskId === "string" && args.taskId) {
+      await requireTaskAccess(args.taskId);
+    } else if (typeof args.project === "string") {
+      await requireProjectAccess(args.project);
+    }
     const task = await completeProjectTask({
       taskId: typeof args.taskId === "string" ? args.taskId : undefined,
       project: typeof args.project === "string" ? args.project : undefined,
@@ -92,6 +117,7 @@ const handlers: Record<
   update_project_task: async (args) => {
     const taskId = String(args.taskId || "");
     if (!taskId) return fail(new Error("taskId is required."));
+    await requireTaskAccess(taskId);
     const task = await updateProjectTask(taskId, {
       title: typeof args.title === "string" ? args.title : undefined,
       description:

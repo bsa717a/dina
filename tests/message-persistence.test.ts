@@ -41,12 +41,15 @@ describe("message persistence", () => {
     conversationFindFirst.mockResolvedValue(null);
     conversationCreate.mockResolvedValue({ id: "c1", title: "Dina" });
     const { getOrCreateDefaultConversation } = await import("@/lib/db/conversations");
-    const conversation = await getOrCreateDefaultConversation();
+    const conversation = await getOrCreateDefaultConversation("user-1", "Dina");
     expect(conversation.id).toBe("c1");
-    expect(conversationCreate).toHaveBeenCalled();
+    expect(conversationCreate).toHaveBeenCalledWith({
+      data: { userId: "user-1", title: "Dina" },
+    });
   });
 
   it("persists a message and links attachments", async () => {
+    conversationFindFirst.mockResolvedValue({ userId: "user-1" });
     messageCreate.mockResolvedValue({ id: "m1" });
     messageFindUniqueOrThrow.mockResolvedValue({
       id: "m1",
@@ -66,7 +69,11 @@ describe("message persistence", () => {
     expect(message.content).toBe("hello");
     expect(attachmentUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: ["a1"] }, messageId: null },
+        where: {
+          id: { in: ["a1"] },
+          messageId: null,
+          uploadedByUserId: "user-1",
+        },
         data: { messageId: "m1" },
       }),
     );

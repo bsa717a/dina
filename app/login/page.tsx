@@ -4,7 +4,8 @@ import { FormEvent, useState } from "react";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 
 export default function LoginPage() {
-  const [code, setCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,15 +17,13 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Login failed");
       }
-      // Full navigation so Safari sends the new session cookie (client
-      // router.replace can race before the cookie is stored).
-      window.location.assign("/");
+      window.location.assign(data.needsOnboarding ? "/onboarding" : "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -37,29 +36,44 @@ export default function LoginPage() {
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm"
-        autoComplete="current-password"
+        autoComplete="on"
       >
         <div className="flex flex-col items-start gap-4">
-          <DinaAvatar size="xl" className="dina-avatar-glow shadow-sm" />
+          <DinaAvatar size="xl" className="dina-avatar-glow" />
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Dina</h1>
             <p className="mt-1.5 text-sm leading-relaxed text-[var(--muted)]">
-              Your chief of staff. Enter your access code and we&apos;ll pick up
-              where things left off.
+              Sign in with your username and password.
             </p>
           </div>
         </div>
 
-        <label className="mt-8 block text-sm text-[var(--muted)]" htmlFor="access-code">
-          Access code
+        <label className="mt-8 block text-sm text-[var(--muted)]" htmlFor="username">
+          Username
         </label>
         <input
-          id="access-code"
-          type="password"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
+          id="username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 outline-none ring-[var(--accent)] focus:ring-2"
           autoFocus
+          required
+        />
+
+        <label className="mt-4 block text-sm text-[var(--muted)]" htmlFor="password">
+          Password
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 outline-none ring-[var(--accent)] focus:ring-2"
           required
         />
 
@@ -67,7 +81,7 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          disabled={loading || !code}
+          disabled={loading || !username || !password}
           className="mt-5 w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white disabled:opacity-50 dark:text-[#102019]"
         >
           {loading ? "Checking…" : "Continue"}

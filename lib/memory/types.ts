@@ -46,6 +46,8 @@ export type MemoryInput = {
   relatedIds?: string[];
   /** If set, correct/update this memory instead of creating a duplicate. */
   correctId?: string;
+  ownerUserId?: string | null;
+  projectKey?: string | null;
 };
 
 export type MemoryRecord = {
@@ -66,6 +68,8 @@ export type MemoryRecord = {
   createdAt: Date | string;
   updatedAt: Date | string;
   lastAccessedAt?: Date | string | null;
+  ownerUserId?: string | null;
+  projectKey?: string | null;
 };
 
 export function categoryLabel(category: string): string {

@@ -8,6 +8,10 @@ export function unauthorized(message = "Unauthorized") {
   return jsonError(message, 401);
 }
 
+export function forbidden(message = "Forbidden") {
+  return jsonError(message, 403);
+}
+
 export const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
