@@ -1,3 +1,11 @@
+export {
+  homepageInstallHelp,
+  promptAddToHomepage,
+  subscribeInstallState,
+  watchInstallPrompt,
+  isStandalonePwa,
+} from "@/lib/client/pwa-install";
+
 export async function registerServiceWorker() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
     return null;

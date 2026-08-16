@@ -7,7 +7,11 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUsage } from "@/components/chat/types";
-import { registerServiceWorker, subscribeToPush } from "@/lib/client/pwa";
+import {
+  registerServiceWorker,
+  subscribeToPush,
+  watchInstallPrompt,
+} from "@/lib/client/pwa";
 import { formatDayUsage } from "@/lib/client/usage-format";
 
 function dragEventHasFiles(
@@ -233,6 +237,7 @@ export function ChatApp() {
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
 
+    watchInstallPrompt();
     void (async () => {
       await registerServiceWorker();
       const supported =
