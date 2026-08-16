@@ -157,7 +157,7 @@ npx prisma migrate dev   # during schema changes
 npx prisma studio        # optional browser UI
 ```
 
-Add a teammate. They sign in with a temporary password, then set their own password and pick Nora, Mac, Penny, Addie, or Nate:
+Add a teammate from Dina (“invite Alex to 4StudentLives, email alex@…”) or from the CLI. They sign in with a temporary password, then set their own password and pick Nora, Mac, Penny, Addie, or Nate:
 
 ```bash
 NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" PROJECTS="4studentlives,metabolicos" npm run user:add

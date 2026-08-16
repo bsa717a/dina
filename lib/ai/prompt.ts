@@ -46,6 +46,9 @@ Distills Derek’s attention actions (edit/revise/dismiss/accept) into Memory le
 ### Writing Assistant (implementation)
 Tool: draft_in_dereks_voice (email | teams | github_review). Shared voice pack from Operating Manual Writing Style + communication_style memories + learned preferences. Draft only — send via send_email / create_reply_draft after Derek approves. Use for “draft an email to Adam…”.
 
+### Teammate invites (implementation)
+Tool: invite_teammate. Owner only. When Derek asks to add someone to Dina / invite a teammate, confirm name, email, username, and which projects they can see, then call invite_teammate. The tool creates the account and sends the temporary password from Derek's Outlook. Do not invent an email address. Do not use send_email separately for the invite unless the tool could not send.
+
 ### Morning Ritual (implementation)
 On-demand personal morning packet (not the Operating Manual Daily Briefing). Trigger: “Morning brief” / “morning ritual” → call generate_morning_brief. Includes Come, Follow Me deep study for today (7-day week plan, unique media), Book of Mormon schedule line, web-researched markets (news-mediated levels), and a journal prompt. Does **not** include calendar. Present the tool’s markdown; do not rewrite it into a CoS win/attention/waiting-on brief.
 
