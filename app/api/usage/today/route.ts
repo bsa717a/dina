@@ -4,12 +4,14 @@ import {
   formatUsageCompact,
   getTodayUsageTotals,
 } from "@/lib/ai/usage";
-import { unauthorized } from "@/lib/http";
+import { forbidden, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
 
   const totals = getTodayUsageTotals();
   return NextResponse.json({

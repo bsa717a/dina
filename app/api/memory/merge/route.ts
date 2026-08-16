@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { mergeMemories } from "@/lib/memory/store";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,9 @@ const schema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
   let json: unknown;
   try {
     json = await request.json();

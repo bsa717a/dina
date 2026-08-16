@@ -14,12 +14,20 @@ const PUBLIC_PATHS = new Set([
   "/file-drop-guard.js",
 ]);
 
+const ONBOARDING_PATHS = new Set([
+  "/onboarding",
+  "/api/auth/onboard",
+  "/api/assistants",
+  "/api/auth/logout",
+  "/api/config",
+]);
+
 function isPublic(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname.startsWith("/icons/")) return true;
+  if (pathname.startsWith("/assistants/")) return true;
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;
-  // Brand assets used on login / offline (no session yet).
   if (pathname === "/dina-avatar.jpg" || pathname.startsWith("/dina-")) return true;
   return false;
 }
@@ -38,7 +46,6 @@ export async function middleware(request: NextRequest) {
     return applyHeaders(NextResponse.next());
   }
 
-  // Cron / launchd can trigger scans with a shared secret (no browser session).
   if (pathname === "/api/attention/scan" && request.method === "POST") {
     const secret = process.env.ATTENTION_SCAN_SECRET?.trim();
     const provided = request.headers.get("x-attention-secret")?.trim();
@@ -75,12 +82,24 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  if (!session.authenticated) {
+  if (!session.authenticated || !session.userId) {
     if (pathname.startsWith("/api/")) {
       return applyHeaders(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     }
-    const loginUrl = new URL("/login", request.url);
-    return applyHeaders(NextResponse.redirect(loginUrl));
+    return applyHeaders(NextResponse.redirect(new URL("/login", request.url)));
+  }
+
+  if (session.needsOnboarding && !ONBOARDING_PATHS.has(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return applyHeaders(
+        NextResponse.json({ error: "Onboarding required." }, { status: 403 }),
+      );
+    }
+    return applyHeaders(NextResponse.redirect(new URL("/onboarding", request.url)));
+  }
+
+  if (!session.needsOnboarding && pathname === "/onboarding") {
+    return applyHeaders(NextResponse.redirect(new URL("/", request.url)));
   }
 
   return applyHeaders(response);

@@ -23,6 +23,8 @@ function toRecord(row: {
   status: string;
   sortOrder: number;
   source: string;
+  createdByUserId: string | null;
+  assigneeUserId: string | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +37,8 @@ function toRecord(row: {
     status: asStatus(row.status),
     sortOrder: row.sortOrder,
     source: row.source,
+    createdByUserId: row.createdByUserId,
+    assigneeUserId: row.assigneeUserId,
     completedAt: row.completedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -81,6 +85,8 @@ export async function addProjectTask(input: {
   description?: string;
   status?: ProjectTaskStatus;
   source?: string;
+  createdByUserId?: string;
+  assigneeUserId?: string;
 }): Promise<ProjectTaskRecord> {
   const projectKey = assertProjectKey(input.project);
   const title = input.title.trim();
@@ -101,6 +107,8 @@ export async function addProjectTask(input: {
       status,
       sortOrder,
       source: input.source || "chat",
+      createdByUserId: input.createdByUserId ?? null,
+      assigneeUserId: input.assigneeUserId ?? null,
       completedAt: status === "done" ? new Date() : null,
     },
   });

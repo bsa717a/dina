@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { upsertPushSubscription, deletePushSubscriptionByEndpoint } from "@/lib/db/push";
 import { getVapidConfig } from "@/lib/env";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -16,14 +16,18 @@ const subscribeSchema = z.object({
 });
 
 export async function GET() {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
   const config = getVapidConfig();
   if (!config) return jsonError("Push is not configured.", 503);
   return NextResponse.json({ publicKey: config.publicKey });
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
   if (!getVapidConfig()) return jsonError("Push is not configured.", 503);
 
   let json: unknown;
@@ -41,13 +45,16 @@ export async function POST(request: NextRequest) {
     p256dh: parsed.data.keys.p256dh,
     auth: parsed.data.keys.auth,
     userAgent: request.headers.get("user-agent"),
+    userId: user.id,
   });
 
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (user.role !== "owner") return forbidden();
 
   let json: unknown;
   try {
@@ -59,6 +66,9 @@ export async function DELETE(request: NextRequest) {
   const endpoint = z.object({ endpoint: z.string().url() }).safeParse(json);
   if (!endpoint.success) return jsonError("endpoint is required.");
 
-  await deletePushSubscriptionByEndpoint(endpoint.data.endpoint);
+  await deletePushSubscriptionByEndpoint(endpoint.data.endpoint, {
+    userId: user.id,
+    includeLegacy: true,
+  });
   return NextResponse.json({ ok: true });
 }

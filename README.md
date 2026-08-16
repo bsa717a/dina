@@ -8,6 +8,7 @@ Private, mobile-first AI chief-of-staff chat app. Runs locally on a Mac mini, re
 - npm
 - An OpenAI API key
 - Optional: ngrok for remote access from iPhone
+- PostgreSQL 16 (Homebrew `postgresql@16`, Postgres.app, or Docker)
 
 ## Quick start
 
@@ -25,7 +26,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL_CHAT=gpt-4.1-nano
 OPENAI_MODEL_RESEARCH=gpt-4.1
 APP_URL=http://localhost:8080
-DATABASE_URL="file:../data/dina.db"
+DATABASE_URL="postgresql://derekfowler@localhost:5432/dina"
 ```
 
 Generate Web Push keys and paste them into `.env`:
@@ -46,14 +47,14 @@ Open [http://localhost:8080](http://localhost:8080).
 
 | Variable | Required | Description |
 |---|---|---|
-| `ACCESS_CODE` | yes | Temporary login code (never put in the URL) |
+| `ACCESS_CODE` | yes | Derek's initial password (username `derek`; never put in the URL) |
 | `SESSION_SECRET` | yes | Cookie signing secret (32+ chars) |
 | `OPENAI_API_KEY` | yes | Server-only OpenAI key |
 | `OPENAI_MODEL_CHAT` | no | Routine chat model (default `gpt-4.1-nano`) |
 | `OPENAI_MODEL_RESEARCH` | no | Morning ritual / church search (default `gpt-4.1`) |
 | `OPENAI_MODEL` | no | Legacy alias for chat model if `OPENAI_MODEL_CHAT` unset |
 | `APP_URL` | yes | Absolute public URL (`http://localhost:8080` or your ngrok HTTPS URL) |
-| `DATABASE_URL` | yes | Prisma SQLite URL, e.g. `file:../data/dina.db` |
+| `DATABASE_URL` | yes | Prisma Postgres URL, e.g. `postgresql://derekfowler@localhost:5432/dina` |
 | `VAPID_PUBLIC_KEY` | for push | From `npm run generate-vapid` |
 | `VAPID_PRIVATE_KEY` | for push | From `npm run generate-vapid` |
 | `VAPID_SUBJECT` | for push | `mailto:you@example.com` |
@@ -137,13 +138,32 @@ Marketing/spam is triaged before CoS (shared header/label scoring). Derek can al
 
 ## Database
 
-SQLite file lives in `data/dina.db` (created by setup / Prisma).
+PostgreSQL is the system of record (users, conversations, project tasks, memory, Attention).
+
+Local Homebrew:
 
 ```bash
-npm run setup          # dirs + migrate/push + icons
-npx prisma migrate dev # during schema changes
-npx prisma studio      # optional browser UI
+brew install postgresql@16
+brew services start postgresql@16
+createdb dina
 ```
+
+Or Docker: `docker compose up -d postgres` with `DATABASE_URL=postgresql://dina:dina@localhost:5432/dina`.
+
+```bash
+npm run setup            # dirs + migrate + owner seed + icons
+npm run db:import-sqlite # one-time copy from data/dina.db if you still have it
+npx prisma migrate dev   # during schema changes
+npx prisma studio        # optional browser UI
+```
+
+Add a teammate. They sign in with a temporary password, then set their own password and pick Nora, Mac, Penny, Addie, or Nate:
+
+```bash
+NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" PROJECTS="4studentlives,metabolicos" npm run user:add
+```
+
+Derek signs in as `derek` with the `ACCESS_CODE` password and keeps Dina.
 
 Uploads are stored in `data/uploads/` (outside `public/`) and served only through authenticated `/api/attachments/[id]`.
 
@@ -151,7 +171,9 @@ Uploads are stored in `data/uploads/` (outside `public/`) and served only throug
 
 | Command | Purpose |
 |---|---|
-| `npm run setup` | Create data dirs, icons, apply DB schema |
+| `npm run setup` | Create data dirs, icons, apply DB schema, seed owner |
+| `npm run db:import-sqlite` | Copy `data/dina.db` into Postgres (once) |
+| `npm run user:add` | Add a teammate (`NAME`, `USERNAME`, `TEMP_PASSWORD`, `PROJECTS`) |
 | `npm run generate-vapid` | Print VAPID keys for `.env` |
 | `npm run generate-icons` | Regenerate PNG app icons |
 | `npm run dev` | Dev server on `0.0.0.0:8080` |

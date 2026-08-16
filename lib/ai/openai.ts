@@ -26,7 +26,7 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
-import { getDinaSystemPrompt } from "@/lib/ai/prompt";
+import { getDinaSystemPrompt, getMemberSystemPrompt } from "@/lib/ai/prompt";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -43,7 +43,10 @@ import { executeChurchTool, listChurchToolNames } from "@/lib/church/tools";
 import { logger } from "@/lib/logger";
 import { getGitHubToolDefinitions } from "@/lib/github/tool-definitions";
 import { executeGitHubTool, listGitHubToolNames } from "@/lib/github/tools";
-import { getMemoryToolDefinitions } from "@/lib/memory/tool-definitions";
+import {
+  getMemberMemoryToolDefinitions,
+  getMemoryToolDefinitions,
+} from "@/lib/memory/tool-definitions";
 import { executeMemoryTool, listMemoryToolNames } from "@/lib/memory/tools";
 import { isGoogleConfigured } from "@/lib/google/config";
 import { getGoogleToolDefinitions } from "@/lib/google/tool-definitions";
@@ -342,6 +345,7 @@ export class OpenAIProvider implements ModelProvider {
     messages: ProviderMessage[];
     signal?: AbortSignal;
     memoryBlock?: string;
+    actor?: import("@/lib/ai/provider").ChatActor;
   }): AsyncIterable<StreamEvent> {
     const apiKey = getOpenAIApiKey();
     if (!apiKey) {
@@ -356,15 +360,18 @@ export class OpenAIProvider implements ModelProvider {
 
     const client = new OpenAI({ apiKey, timeout: 120_000 });
     const model = getOpenAIChatModel();
-    const msTools = getMicrosoftToolDefinitions();
-    const googleTools = getGoogleToolDefinitions();
-    const ghTools = getGitHubToolDefinitions();
-    const memoryTools = getMemoryToolDefinitions();
-    const starTools = getStarToolDefinitions();
+    const isMember = input.actor?.role === "member";
+    const msTools = isMember ? [] : getMicrosoftToolDefinitions();
+    const googleTools = isMember ? [] : getGoogleToolDefinitions();
+    const ghTools = isMember ? [] : getGitHubToolDefinitions();
+    const memoryTools = isMember
+      ? getMemberMemoryToolDefinitions()
+      : getMemoryToolDefinitions();
+    const starTools = isMember ? [] : getStarToolDefinitions();
     const projectTaskTools = getProjectTaskToolDefinitions();
-    const writingTools = getWritingToolDefinitions();
-    const morningRitualTools = getMorningRitualToolDefinitions();
-    const churchTools = getChurchToolDefinitions();
+    const writingTools = isMember ? [] : getWritingToolDefinitions();
+    const morningRitualTools = isMember ? [] : getMorningRitualToolDefinitions();
+    const churchTools = isMember ? [] : getChurchToolDefinitions();
     const tools = [
       ...msTools,
       ...googleTools,
@@ -377,16 +384,34 @@ export class OpenAIProvider implements ModelProvider {
       ...churchTools,
     ];
     const toolNames = new Set(tools.map((t) => t.name));
-    const lessonsBlock = formatLessonsForPrompt(await listActiveLessons());
-    const instructions = buildInstructions(
-      isMicrosoftConfigured(),
-      isGoogleConfigured(),
-      msTools.length,
-      googleTools.length,
-      ghTools.length,
-      input.memoryBlock || "",
-      lessonsBlock,
-    );
+    const lessonsBlock = isMember
+      ? ""
+      : formatLessonsForPrompt(await listActiveLessons());
+    const instructions = isMember
+      ? [
+          getMemberSystemPrompt({
+            userName: input.actor?.name || "teammate",
+            assistantName: input.actor?.assistantName || "Assistant",
+            assistantPersona: input.actor?.assistantPersona || "",
+            projectNames: input.actor?.projectNames || [],
+          }),
+          input.memoryBlock || "",
+          "SESSION RUNTIME:",
+          "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
+          "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
+          "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : buildInstructions(
+          isMicrosoftConfigured(),
+          isGoogleConfigured(),
+          msTools.length,
+          googleTools.length,
+          ghTools.length,
+          input.memoryBlock || "",
+          lessonsBlock,
+        );
     logger.info("chat_model", { model });
 
     const turnRef: { current: StreamUsage } = {
@@ -404,8 +429,9 @@ export class OpenAIProvider implements ModelProvider {
         .reverse()
         .find((m) => m.role === "user")
         ?.content || "";
-      const forceCalendar = isCalendarQuestion(lastUserText);
-      const forceEmail = isEmailQuestion(lastUserText) && !forceCalendar;
+      const forceCalendar = !isMember && isCalendarQuestion(lastUserText);
+      const forceEmail =
+        !isMember && isEmailQuestion(lastUserText) && !forceCalendar;
       const forceGitHub =
         Boolean(ghTools.length) && isGitHubQuestion(lastUserText);
       const forceOneDrive =
@@ -422,10 +448,13 @@ export class OpenAIProvider implements ModelProvider {
         Boolean(msTools.length) &&
         isWordDocumentRequest(lastUserText) &&
         !forceSharePointList;
-      const forceMorningBrief = isMorningBriefRequest(lastUserText);
+      const forceMorningBrief =
+        !isMember && isMorningBriefRequest(lastUserText);
       const forceChurchCitation =
-        !forceMorningBrief && isChurchCitationQuestion(lastUserText);
-      const forceEvidenceAsk = requiresLiveEvidence(lastUserText);
+        !isMember &&
+        !forceMorningBrief &&
+        isChurchCitationQuestion(lastUserText);
+      const forceEvidenceAsk = !isMember && requiresLiveEvidence(lastUserText);
       const requiredEvidenceDomains = evidenceDomainsForQuestion(lastUserText);
       let stallNudgeUsed = false;
       let citationNudgeCount = 0;

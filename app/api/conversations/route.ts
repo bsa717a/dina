@@ -1,18 +1,27 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { getConversationWithMessages } from "@/lib/db/conversations";
+import { needsOnboarding } from "@/lib/auth/types";
+import {
+  DEFAULT_CONVERSATION_TITLE,
+  getConversationWithMessages,
+} from "@/lib/db/conversations";
 import { checkDatabase } from "@/lib/db/client";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (needsOnboarding(user)) return forbidden("Onboarding required.");
 
   const db = await checkDatabase();
   if (!db.ok) return jsonError("Database is unavailable.", 503);
 
-  const data = await getConversationWithMessages();
+  const data = await getConversationWithMessages({
+    userId: user.id,
+    title: user.assistantName || DEFAULT_CONVERSATION_TITLE,
+  });
   if (!data) return jsonError("Conversation not found.", 404);
 
   return NextResponse.json({

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { confidenceLabel } from "@/lib/memory/policy";
+import { memoryVisibilityWhere, type MemoryScope } from "@/lib/memory/scope";
 import { toMemoryRecord, touchMemoryAccess } from "@/lib/memory/store";
 import type { MemoryRecord } from "@/lib/memory/types";
 
@@ -10,10 +11,11 @@ import type { MemoryRecord } from "@/lib/memory/types";
  */
 export async function retrieveRelevantMemories(
   query: string,
-  options?: { limit?: number; categories?: string[] },
+  options?: { limit?: number; categories?: string[]; scope?: MemoryScope },
 ): Promise<MemoryRecord[]> {
   const limit = Math.min(Math.max(options?.limit ?? 12, 1), 50);
   const tokens = tokenize(query);
+  const visibility = memoryVisibilityWhere(options?.scope);
   if (!tokens.length) {
     const recent = await prisma.memoryItem.findMany({
       where: {
@@ -21,6 +23,7 @@ export async function retrieveRelevantMemories(
         ...(options?.categories?.length
           ? { category: { in: options.categories } }
           : {}),
+        ...visibility,
       },
       orderBy: { updatedAt: "desc" },
       take: limit,
@@ -36,6 +39,7 @@ export async function retrieveRelevantMemories(
       ...(options?.categories?.length
         ? { category: { in: options.categories } }
         : {}),
+      ...visibility,
     },
     take: 400,
     orderBy: { updatedAt: "desc" },
@@ -78,12 +82,23 @@ function tokenize(query: string): string[] {
 }
 
 /** Format memories for injection into the model system/runtime prompt. */
-export function formatMemoriesForPrompt(memories: MemoryRecord[]): string {
+export function formatMemoriesForPrompt(
+  memories: MemoryRecord[],
+  audience: "owner" | "member" = "owner",
+): string {
   if (!memories.length) return "";
   const lines = memories.map((m) => {
     const label = confidenceLabel(m.confidence);
-    return `- [${m.category}] ${m.title}: ${m.content} (confidence ${label}, id=${m.id})`;
+    const project = m.projectKey ? ` project=${m.projectKey}` : "";
+    return `- [${m.category}] ${m.title}: ${m.content} (confidence ${label}, id=${m.id}${project})`;
   });
+  if (audience === "member") {
+    return [
+      "SHARED PROJECT MEMORY (not chat history):",
+      "Use this as project context only. Prefer project task tools for live backlogs. Do not invent personal facts about anyone.",
+      ...lines,
+    ].join("\n");
+  }
   return [
     "STRUCTURED MEMORY (long-term knowledge — not chat history):",
     "Use this as durable understanding of Derek. Prefer correcting existing memories (by id) over inventing duplicates.",

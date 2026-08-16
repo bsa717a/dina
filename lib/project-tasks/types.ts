@@ -17,6 +17,8 @@ export type ProjectTaskRecord = {
   status: ProjectTaskStatus;
   sortOrder: number;
   source: string;
+  createdByUserId: string | null;
+  assigneeUserId: string | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

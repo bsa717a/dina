@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { runWithAuthUser } from "@/lib/auth/context";
 import { requireSession } from "@/lib/auth/session";
+import { needsOnboarding } from "@/lib/auth/types";
 import { getModelProvider } from "@/lib/ai/provider";
 import { checkDatabase } from "@/lib/db/client";
 import {
@@ -8,7 +10,10 @@ import {
   getOrCreateDefaultConversation,
   listMessagesForProvider,
 } from "@/lib/db/conversations";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError, unauthorized } from "@/lib/http";
+import { memoryScopeForUser } from "@/lib/memory/scope";
+import { displayProjectName } from "@/lib/project-tasks/keys";
+import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
 import { logger } from "@/lib/logger";
 import {
   formatMemoriesForPrompt,
@@ -35,7 +40,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const user = await requireSession();
+  if (!user) return unauthorized();
+  if (needsOnboarding(user)) return forbidden("Onboarding required.");
 
   const db = await checkDatabase();
   if (!db.ok) return jsonError("Database is unavailable.", 503);
@@ -57,17 +64,28 @@ export async function POST(request: NextRequest) {
     return jsonError("Message or attachment is required.");
   }
 
-  // Ensure foundational document memories + recovered project tasks exist (idempotent).
-  await Promise.all([
-    seedDerekProfileMemories().catch(() => undefined),
-    seedDerekProjectMemories().catch(() => undefined),
-    seedDinaMemoryRuleMemories().catch(() => undefined),
-    seedDinaOperatingManualMemories().catch(() => undefined),
-    seedDinaProjectTasks().catch(() => undefined),
-  ]);
+  if (user.role === "owner") {
+    // Ensure foundational document memories + recovered project tasks exist (idempotent).
+    await Promise.all([
+      seedDerekProfileMemories().catch(() => undefined),
+      seedDerekProjectMemories().catch(() => undefined),
+      seedDinaMemoryRuleMemories().catch(() => undefined),
+      seedDinaOperatingManualMemories().catch(() => undefined),
+      seedDinaProjectTasks().catch(() => undefined),
+    ]);
+  }
 
-  const conversation = await getOrCreateDefaultConversation();
-  const providerAttachments = await loadProviderAttachments(parsed.data.attachmentIds);
+  const conversation = await getOrCreateDefaultConversation(
+    user.id,
+    user.assistantName,
+  );
+  const providerAttachments = await loadProviderAttachments(
+    parsed.data.attachmentIds,
+    user.id,
+  );
+  if (providerAttachments.length !== parsed.data.attachmentIds.length) {
+    return jsonError("One or more attachments were not found.", 404);
+  }
 
   await createMessage({
     conversationId: conversation.id,
@@ -82,6 +100,7 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      await runWithAuthUser(user, async () => {
       const send = (payload: unknown) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
@@ -102,11 +121,18 @@ export async function POST(request: NextRequest) {
             }
           | undefined;
 
+        const scope = await memoryScopeForUser(user);
         const relevant = await retrieveRelevantMemories(
-          content || "derek preferences projects people",
-          { limit: 12 },
+          content ||
+            (user.role === "owner"
+              ? "derek preferences projects people"
+              : "project tasks decisions"),
+          { limit: 12, scope },
         );
-        const memoryBlock = formatMemoriesForPrompt(relevant);
+        const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
+        const projectNames = (await listMemberProjectKeys(user)).map(
+          displayProjectName,
+        );
 
         const messages = history.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
@@ -128,6 +154,14 @@ export async function POST(request: NextRequest) {
           messages,
           signal: request.signal,
           memoryBlock,
+          actor: {
+            id: user.id,
+            name: user.name,
+            role: user.role,
+            assistantName: user.assistantName,
+            assistantPersona: user.assistantPersona,
+            projectNames,
+          },
         })) {
           if (event.type === "status") {
             send({
@@ -159,7 +193,8 @@ export async function POST(request: NextRequest) {
         const { formatUsageCompact, getTodayUsageTotals } = await import(
           "@/lib/ai/usage"
         );
-        const dayTotals = getTodayUsageTotals();
+        const dayTotals =
+          user.role === "owner" ? getTodayUsageTotals() : null;
 
         send({
           type: "done",
@@ -172,8 +207,12 @@ export async function POST(request: NextRequest) {
             usage: turnUsage,
           },
           usage: turnUsage,
-          dayUsage: dayTotals,
-          dayUsageLabel: formatUsageCompact(dayTotals),
+          ...(dayTotals
+            ? {
+                dayUsage: dayTotals,
+                dayUsageLabel: formatUsageCompact(dayTotals),
+              }
+            : {}),
         });
       } catch (error) {
         logger.error("chat_stream_error", {
@@ -181,11 +220,12 @@ export async function POST(request: NextRequest) {
         });
         send({
           type: "error",
-          error: "Something went wrong while talking to Dina.",
+          error: `Something went wrong while talking to ${user.assistantName}.`,
         });
       } finally {
         controller.close();
       }
+      });
     },
   });
 

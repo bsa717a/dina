@@ -1,9 +1,16 @@
+import { getRequestUser } from "@/lib/auth/context";
 import {
   getStarredMessage,
   listStarredMessages,
   setMessageStarred,
   STAR_SOFT_CAP,
 } from "@/lib/stars/store";
+
+function requireUserId() {
+  const user = getRequestUser();
+  if (!user) throw new Error("Not authenticated.");
+  return user.id;
+}
 
 function ok(data: unknown) {
   return JSON.stringify({ ok: true, data });
@@ -22,7 +29,7 @@ type Handler = (args: Record<string, unknown>) => Promise<string>;
 const handlers: Record<string, Handler> = {
   list_starred_messages: async (args) => {
     const limit = typeof args.limit === "number" ? args.limit : STAR_SOFT_CAP;
-    const items = await listStarredMessages(limit);
+    const items = await listStarredMessages(requireUserId(), limit);
     return ok({
       count: items.length,
       cap: STAR_SOFT_CAP,
@@ -33,7 +40,7 @@ const handlers: Record<string, Handler> = {
   get_starred_message: async (args) => {
     const id = String(args.messageId || args.id || "").trim();
     if (!id) return fail(new Error("messageId is required."));
-    const item = await getStarredMessage(id);
+    const item = await getStarredMessage(id, requireUserId());
     if (!item) return fail(new Error("Starred message not found."));
     return ok({
       item,
@@ -43,7 +50,7 @@ const handlers: Record<string, Handler> = {
   unstar_message: async (args) => {
     const id = String(args.messageId || args.id || "").trim();
     if (!id) return fail(new Error("messageId is required."));
-    const result = await setMessageStarred(id, false);
+    const result = await setMessageStarred(id, false, requireUserId());
     if (!result.ok) return fail(new Error(result.error), { status: result.status });
     return ok({
       unstarred: true,

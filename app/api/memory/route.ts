@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { requireReadySession } from "@/lib/auth/session";
+import { canMemberWriteCategory, memoryScopeForUser } from "@/lib/memory/scope";
 import { createOrCorrectMemory, listMemories } from "@/lib/memory/store";
 import { MEMORY_CATEGORIES, MEMORY_IMPORTANCE } from "@/lib/memory/types";
-import { jsonError, unauthorized } from "@/lib/http";
+import { forbidden, jsonError } from "@/lib/http";
+import { resolveProjectKey } from "@/lib/project-tasks/keys";
+import { userCanAccessProject } from "@/lib/project-tasks/membership";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const ready = await requireReadySession();
+  if (!ready.ok) return ready.response;
+  const user = ready.user;
   const category = request.nextUrl.searchParams.get("category") || undefined;
   const status = request.nextUrl.searchParams.get("status") || "active";
-  const memories = await listMemories({ category, status, limit: 200 });
+  const memories = await listMemories({
+    category,
+    status,
+    limit: 200,
+    scope: await memoryScopeForUser(user),
+  });
   return NextResponse.json({
     memories,
     categories: MEMORY_CATEGORIES,
@@ -27,10 +37,13 @@ const createSchema = z.object({
   importance: z.enum(MEMORY_IMPORTANCE).default("normal"),
   relatedIds: z.array(z.string()).optional(),
   correctId: z.string().optional(),
+  project: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const ready = await requireReadySession();
+  if (!ready.ok) return ready.response;
+  const user = ready.user;
   let json: unknown;
   try {
     json = await request.json();
@@ -41,7 +54,35 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return jsonError("Invalid memory payload.");
 
   try {
-    const memory = await createOrCorrectMemory(parsed.data);
+    if (user.role === "member") {
+      if (!canMemberWriteCategory(parsed.data.category)) {
+        return forbidden(
+          "Members can only store project, decision, commitment, or people memories.",
+        );
+      }
+      const projectKey = parsed.data.project
+        ? await userCanAccessProject(user, parsed.data.project)
+        : null;
+      if (!projectKey || !(await userCanAccessProject(user, projectKey))) {
+        return forbidden("project is required and must be an assigned project.");
+      }
+      const memory = await createOrCorrectMemory(
+        {
+          ...parsed.data,
+          ownerUserId: user.id,
+          projectKey,
+        },
+        { scope: await memoryScopeForUser(user) },
+      );
+      return NextResponse.json({ memory });
+    }
+    const memory = await createOrCorrectMemory({
+      ...parsed.data,
+      ownerUserId: user.id,
+      projectKey: parsed.data.project
+        ? resolveProjectKey(parsed.data.project)
+        : null,
+    });
     return NextResponse.json({ memory });
   } catch (error) {
     return jsonError(

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { runWithAuthUser } from "@/lib/auth/context";
+import type { AuthUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db/client";
 import { resolveProjectKey } from "@/lib/project-tasks/keys";
 import {
@@ -79,15 +81,17 @@ describe("ProjectTask store", () => {
     expect(second.created).toBe(0);
     expect(second.updated).toBe(11);
 
-    const all = await listProjectTasks({
+    const all = (await listProjectTasks({
       project: "dina",
       includeDone: true,
-    });
+    })).filter((t) => t.source === "seed");
     expect(all).toHaveLength(11);
     const waiting = all.find((t) => t.title === "Waiting On Engine");
     expect(waiting?.status).toBe("done");
 
-    const remaining = await listProjectTasks({ project: "dina" });
+    const remaining = (await listProjectTasks({ project: "dina" })).filter(
+      (t) => t.source === "seed",
+    );
     expect(remaining).toHaveLength(10);
     expect(remaining.some((t) => t.title === "Waiting On Engine")).toBe(false);
     expect(
@@ -117,6 +121,21 @@ describe("ProjectTask store", () => {
   });
 });
 
+async function ownerUser(): Promise<AuthUser> {
+  const ownerRow = await prisma.user.findFirst({ where: { role: "owner" } });
+  if (!ownerRow) throw new Error("Owner must be seeded for project tool tests.");
+  return {
+    id: ownerRow.id,
+    name: ownerRow.name,
+    username: ownerRow.username,
+    role: "owner",
+    assistantName: ownerRow.assistantName,
+    assistantPersona: ownerRow.assistantPersona,
+    assistantKey: ownerRow.assistantKey,
+    mustChangePassword: ownerRow.mustChangePassword,
+  };
+}
+
 describe("project task tools", () => {
   it("list and complete via tool JSON", async () => {
     await addProjectTask({
@@ -130,28 +149,35 @@ describe("project task tools", () => {
       source: "test",
     });
 
+    const owner = await ownerUser();
     const listed = JSON.parse(
-      await executeProjectTaskTool(
-        "list_project_tasks",
-        JSON.stringify({ project: "Beacon" }),
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "list_project_tasks",
+          JSON.stringify({ project: "Beacon" }),
+        ),
       ),
     );
     expect(listed.ok).toBe(true);
     expect(listed.data.count).toBe(2);
 
     const completed = JSON.parse(
-      await executeProjectTaskTool(
-        "complete_project_task",
-        JSON.stringify({ project: "beacon", number: 1 }),
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "complete_project_task",
+          JSON.stringify({ project: "beacon", number: 1 }),
+        ),
       ),
     );
     expect(completed.ok).toBe(true);
     expect(completed.data.task.title).toBe("One");
 
     const after = JSON.parse(
-      await executeProjectTaskTool(
-        "list_project_tasks",
-        JSON.stringify({ project: "beacon" }),
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "list_project_tasks",
+          JSON.stringify({ project: "beacon" }),
+        ),
       ),
     );
     expect(after.data.tasks.map((t: { title: string }) => t.title)).toEqual([

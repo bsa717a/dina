@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { requireReadySession } from "@/lib/auth/session";
 import { checkDatabase } from "@/lib/db/client";
-import { jsonError, unauthorized } from "@/lib/http";
+import { jsonError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 import { storeUpload } from "@/lib/uploads/storage";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  if (!(await requireSession())) return unauthorized();
+  const ready = await requireReadySession();
+  if (!ready.ok) return ready.response;
+  const user = ready.user;
 
   const db = await checkDatabase();
   if (!db.ok) return jsonError("Database is unavailable.", 503);
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await storeUpload(file);
+    const result = await storeUpload(file, user.id);
     if (!result.ok) {
       return jsonError(result.error, 400);
     }

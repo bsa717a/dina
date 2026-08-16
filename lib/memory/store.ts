@@ -1,4 +1,9 @@
 import { prisma } from "@/lib/db/client";
+import {
+  memberCanWriteMemory,
+  memoryVisibilityWhere,
+  type MemoryScope,
+} from "@/lib/memory/scope";
 import { resolveMemoryStatus } from "@/lib/memory/policy";
 import {
   buildSearchText,
@@ -37,6 +42,8 @@ export function toMemoryRecord(row: {
   createdAt: Date;
   updatedAt: Date;
   lastAccessedAt: Date | null;
+  ownerUserId?: string | null;
+  projectKey?: string | null;
 }): MemoryRecord {
   return {
     id: row.id,
@@ -55,6 +62,8 @@ export function toMemoryRecord(row: {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastAccessedAt: row.lastAccessedAt,
+    ownerUserId: row.ownerUserId ?? null,
+    projectKey: row.projectKey ?? null,
   };
 }
 
@@ -66,6 +75,7 @@ function clampConfidence(value: number) {
 /** Create a memory, or correct an existing one when correctId is provided. */
 export async function createOrCorrectMemory(
   input: MemoryInput,
+  options?: { scope?: MemoryScope },
 ): Promise<MemoryRecord> {
   const confidence = clampConfidence(input.confidence);
   const importance = input.importance || "normal";
@@ -82,6 +92,12 @@ export async function createOrCorrectMemory(
       where: { id: input.correctId },
     });
     if (!existing || existing.status === "merged") {
+      throw new Error("Memory to correct was not found.");
+    }
+    if (
+      options?.scope?.role === "member" &&
+      !memberCanWriteMemory(existing, options.scope)
+    ) {
       throw new Error("Memory to correct was not found.");
     }
     const updated = await prisma.memoryItem.update({
@@ -108,9 +124,16 @@ export async function createOrCorrectMemory(
       status: { in: ["active", "pending_approval"] },
       category: input.category,
       title: { equals: input.title.trim() },
+      ...memoryVisibilityWhere(options?.scope),
     },
   });
-  if (duplicate) {
+  const canUpdateDuplicate =
+    duplicate &&
+    !(
+      options?.scope?.role === "member" &&
+      duplicate.ownerUserId !== options.scope.userId
+    );
+  if (duplicate && canUpdateDuplicate) {
     const nextStatus =
       duplicate.status === "active" ? "active" : status;
     const updated = await prisma.memoryItem.update({
@@ -145,6 +168,8 @@ export async function createOrCorrectMemory(
       relatedIdsJson: JSON.stringify(relatedIds),
       searchText,
       embeddingStatus: "pending",
+      ownerUserId: input.ownerUserId ?? null,
+      projectKey: input.projectKey ?? null,
     },
   });
   return toMemoryRecord(created);
@@ -292,11 +317,13 @@ export async function listMemories(options?: {
   category?: string;
   status?: string;
   limit?: number;
+  scope?: MemoryScope;
 }): Promise<MemoryRecord[]> {
   const rows = await prisma.memoryItem.findMany({
     where: {
       status: options?.status || "active",
       ...(options?.category ? { category: options.category } : {}),
+      ...memoryVisibilityWhere(options?.scope),
     },
     orderBy: [{ importance: "asc" }, { updatedAt: "desc" }],
     take: Math.min(Math.max(options?.limit ?? 100, 1), 500),

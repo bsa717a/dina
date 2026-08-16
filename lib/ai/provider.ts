@@ -37,6 +37,15 @@ export type StreamEvent =
     }
   | { type: "error"; message: string };
 
+export type ChatActor = {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+  assistantName: string;
+  assistantPersona: string;
+  projectNames: string[];
+};
+
 export interface ModelProvider {
   readonly name: string;
   streamChat(input: {
@@ -44,6 +53,7 @@ export interface ModelProvider {
     signal?: AbortSignal;
     /** Structured memory block injected into runtime instructions. */
     memoryBlock?: string;
+    actor?: ChatActor;
   }): AsyncIterable<StreamEvent>;
 }
 

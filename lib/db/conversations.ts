@@ -2,20 +2,33 @@ import { prisma } from "@/lib/db/client";
 
 export const DEFAULT_CONVERSATION_TITLE = "Dina";
 
-export async function getOrCreateDefaultConversation() {
+export async function getOrCreateDefaultConversation(
+  userId: string,
+  title = DEFAULT_CONVERSATION_TITLE,
+) {
   const existing = await prisma.conversation.findFirst({
+    where: { userId },
     orderBy: { createdAt: "asc" },
   });
   if (existing) return existing;
   return prisma.conversation.create({
-    data: { title: DEFAULT_CONVERSATION_TITLE },
+    data: { userId, title },
   });
 }
 
-export async function getConversationWithMessages(conversationId?: string) {
-  const conversation = conversationId
-    ? await prisma.conversation.findUnique({ where: { id: conversationId } })
-    : await getOrCreateDefaultConversation();
+export async function getConversationWithMessages(input: {
+  userId: string;
+  conversationId?: string;
+  title?: string;
+}) {
+  const conversation = input.conversationId
+    ? await prisma.conversation.findFirst({
+        where: { id: input.conversationId, userId: input.userId },
+      })
+    : await getOrCreateDefaultConversation(
+        input.userId,
+        input.title ?? DEFAULT_CONVERSATION_TITLE,
+      );
 
   if (!conversation) return null;
 
@@ -45,8 +58,16 @@ export async function createMessage(input: {
   });
 
   if (input.attachmentIds?.length) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: input.conversationId },
+      select: { userId: true },
+    });
     await prisma.attachment.updateMany({
-      where: { id: { in: input.attachmentIds }, messageId: null },
+      where: {
+        id: { in: input.attachmentIds },
+        messageId: null,
+        uploadedByUserId: conversation?.userId ?? "",
+      },
       data: { messageId: message.id },
     });
   }
@@ -68,4 +89,15 @@ export async function listMessagesForProvider(conversationId: string) {
     orderBy: { createdAt: "asc" },
     include: { attachments: true },
   });
+}
+
+export async function conversationOwnedByUser(
+  conversationId: string,
+  userId: string,
+): Promise<boolean> {
+  const row = await prisma.conversation.findFirst({
+    where: { id: conversationId, userId },
+    select: { id: true },
+  });
+  return Boolean(row);
 }

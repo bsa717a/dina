@@ -130,3 +130,36 @@ export function getMemoryToolDefinitions(): FunctionTool[] {
     ),
   ];
 }
+
+const MEMBER_MEMORY_TOOLS = new Set([
+  "search_memory",
+  "list_memories",
+  "remember",
+  "correct_memory",
+]);
+
+export function getMemberMemoryToolDefinitions(): FunctionTool[] {
+  return getMemoryToolDefinitions()
+    .filter((tool) => MEMBER_MEMORY_TOOLS.has(tool.name))
+    .map((tool) => {
+      if (tool.name === "remember") {
+        return {
+          ...tool,
+          description:
+            "Store shared project context (projects, decisions, commitments, people) for an assigned project. Pass project as the project name or key.",
+          parameters: {
+            ...tool.parameters,
+            properties: {
+              ...(tool.parameters as { properties?: Record<string, unknown> })
+                .properties,
+              project: {
+                type: "string",
+                description: "Project name or key this memory belongs to",
+              },
+            },
+          },
+        };
+      }
+      return tool;
+    });
+}

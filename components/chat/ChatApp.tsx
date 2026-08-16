@@ -68,6 +68,11 @@ export function ChatApp() {
   const [starBusyId, setStarBusyId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [dayUsageLabel, setDayUsageLabel] = useState<string | null>(null);
+  const [assistantName, setAssistantName] = useState("Dina");
+  const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(
+    null,
+  );
+  const [userRole, setUserRole] = useState<"owner" | "member" | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
@@ -242,6 +247,13 @@ export function ChatApp() {
         setVapidPublicKey(data.vapidPublicKey);
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
         setGoogleEnabled(Boolean(data.googleEnabled));
+        if (data.user?.assistantName) setAssistantName(data.user.assistantName);
+        if (typeof data.user?.avatarUrl === "string") {
+          setAssistantAvatarUrl(data.user.avatarUrl);
+        }
+        if (data.user?.role === "owner" || data.user?.role === "member") {
+          setUserRole(data.user.role);
+        }
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
           const reg = await navigator.serviceWorker.ready;
           const existing = await reg.pushManager.getSubscription();
@@ -435,11 +447,18 @@ export function ChatApp() {
         </div>
       )}
       <ChatHeader
+        assistantName={assistantName}
+        assistantSubtitle={
+          userRole === "member" ? "Project assistant" : "Chief of staff"
+        }
+        avatarUrl={assistantAvatarUrl}
         status={status}
         microsoftEnabled={microsoftEnabled}
         googleEnabled={googleEnabled}
         dayUsageLabel={dayUsageLabel}
-        pushSupported={pushSupported && Boolean(vapidPublicKey)}
+        pushSupported={
+          userRole !== "member" && pushSupported && Boolean(vapidPublicKey)
+        }
         pushEnabled={pushEnabled}
         pushBusy={pushBusy}
         onEnablePush={() => void enablePush()}
@@ -453,14 +472,18 @@ export function ChatApp() {
           </div>
         </div>
       )}
-      <AttentionPanel
-        highlightId={attentionHighlight}
-        onError={(message) => setError(message)}
-      />
+      {userRole === "owner" && (
+        <AttentionPanel
+          highlightId={attentionHighlight}
+          onError={(message) => setError(message)}
+        />
+      )}
       <MessageList
         messages={messages}
         thinking={thinking}
         thinkingLabel={thinkingLabel}
+        assistantName={assistantName}
+        avatarUrl={assistantAvatarUrl}
         onToggleStar={handleToggleStar}
         starBusyId={starBusyId}
       />
