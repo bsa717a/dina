@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useId, useRef, useState } from "react";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 
 type Status = "online" | "offline" | "degraded" | "checking";
@@ -96,23 +97,95 @@ export function ChatHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <HeaderActions
+          pushSupported={pushSupported}
+          pushEnabled={pushEnabled}
+          pushBusy={pushBusy}
+          onEnablePush={onEnablePush}
+          onTestPush={onTestPush}
+          onSignOut={onSignOut}
+        />
+      </div>
+    </header>
+  );
+}
+
+function HeaderActions({
+  pushSupported,
+  pushEnabled,
+  pushBusy,
+  onEnablePush,
+  onTestPush,
+  onSignOut,
+}: {
+  pushSupported: boolean;
+  pushEnabled: boolean;
+  pushBusy: boolean;
+  onEnablePush: () => void;
+  onTestPush: () => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function run(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => setOpen((value) => !value)}
+        className="rounded-lg px-2.5 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--surface)]"
+      >
+        Actions
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          role="menu"
+          className="absolute right-0 z-30 mt-1 min-w-48 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] py-1 shadow-lg"
+        >
           {pushSupported && (
             <>
               <button
                 type="button"
-                onClick={onEnablePush}
+                role="menuitem"
                 disabled={pushBusy || pushEnabled}
-                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-50"
+                onClick={() => run(onEnablePush)}
+                className="block w-full px-3 py-2 text-left text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-50"
               >
                 {pushEnabled ? "Notifications on" : "Enable notifications"}
               </button>
               {pushEnabled && (
                 <button
                   type="button"
-                  onClick={onTestPush}
+                  role="menuitem"
                   disabled={pushBusy}
-                  className="hidden rounded-lg px-2.5 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--surface)] sm:inline"
+                  onClick={() => run(onTestPush)}
+                  className="block w-full px-3 py-2 text-left text-xs text-[var(--muted)] hover:bg-[var(--background)] disabled:opacity-50"
                 >
                   Test push
                 </button>
@@ -121,13 +194,14 @@ export function ChatHeader({
           )}
           <button
             type="button"
-            onClick={onSignOut}
-            className="rounded-lg px-2.5 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--surface)]"
+            role="menuitem"
+            onClick={() => run(onSignOut)}
+            className="block w-full px-3 py-2 text-left text-xs text-[var(--muted)] hover:bg-[var(--background)]"
           >
             Sign out
           </button>
         </div>
-      </div>
-    </header>
+      )}
+    </div>
   );
 }

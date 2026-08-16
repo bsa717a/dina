@@ -70,6 +70,8 @@ import {
 } from "@/lib/writing/tools";
 import { getStarToolDefinitions } from "@/lib/stars/tool-definitions";
 import { executeStarTool, listStarToolNames } from "@/lib/stars/tools";
+import { getTeamToolDefinitions } from "@/lib/team/tool-definitions";
+import { executeTeamTool, listTeamToolNames } from "@/lib/team/tools";
 import { getMorningRitualToolDefinitions } from "@/lib/morning-ritual/tool-definitions";
 import {
   executeMorningRitualTool,
@@ -249,6 +251,7 @@ function buildInstructions(
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
     "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
     "Morning Ritual tool enabled: generate_morning_brief. When Derek asks for morning brief / morning ritual, call it and present the returned markdown. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
+    "Team invite tool enabled: invite_teammate. When Derek asks to add/invite a teammate, confirm name, email, username, and projects, then call invite_teammate. That sends the login from his Outlook. Do not invent an email address.",
   );
   parts.push(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,
@@ -335,6 +338,9 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
   if (listGoogleToolNames().includes(name)) {
     return executeGoogleTool(name, argsJson);
   }
+  if (listTeamToolNames().includes(name)) {
+    return executeTeamTool(name, argsJson);
+  }
   return JSON.stringify({ ok: false, error: `Unknown tool: ${name}` });
 }
 
@@ -372,6 +378,7 @@ export class OpenAIProvider implements ModelProvider {
     const writingTools = isMember ? [] : getWritingToolDefinitions();
     const morningRitualTools = isMember ? [] : getMorningRitualToolDefinitions();
     const churchTools = isMember ? [] : getChurchToolDefinitions();
+    const teamTools = isMember ? [] : getTeamToolDefinitions();
     const tools = [
       ...msTools,
       ...googleTools,
@@ -382,6 +389,7 @@ export class OpenAIProvider implements ModelProvider {
       ...writingTools,
       ...morningRitualTools,
       ...churchTools,
+      ...teamTools,
     ];
     const toolNames = new Set(tools.map((t) => t.name));
     const lessonsBlock = isMember

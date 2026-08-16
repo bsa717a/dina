@@ -12,6 +12,7 @@ export const MUTATING_TOOLS = new Set([
   "archive_memory",
   "merge_memories",
   "unstar_message",
+  "invite_teammate",
   "add_project_task",
   "complete_project_task",
   "update_project_task",

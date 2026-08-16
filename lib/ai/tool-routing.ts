@@ -176,6 +176,7 @@ export function friendlyToolStatus(toolName: string) {
     block_attention_sender: "Blocking Attention sender…",
     list_attention_blocks: "Listing Attention blocks…",
     generate_morning_brief: "Preparing morning brief…",
+    invite_teammate: "Inviting teammate…",
     search_church_site: "Verifying on ChurchofJesusChrist.org…",
     fetch_church_url: "Reading Church page…",
   };
