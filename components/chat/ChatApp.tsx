@@ -77,6 +77,7 @@ export function ChatApp() {
     null,
   );
   const [userRole, setUserRole] = useState<"owner" | "member" | null>(null);
+  const [projects, setProjects] = useState<{ key: string; name: string }[]>([]);
   const composerRef = useRef<ComposerHandle>(null);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
@@ -258,6 +259,14 @@ export function ChatApp() {
         }
         if (data.user?.role === "owner" || data.user?.role === "member") {
           setUserRole(data.user.role);
+        }
+        if (Array.isArray(data.projects)) {
+          setProjects(
+            data.projects.filter(
+              (project: { key?: unknown; name?: unknown }) =>
+                typeof project?.key === "string" && typeof project?.name === "string",
+            ),
+          );
         }
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
           const reg = await navigator.serviceWorker.ready;
@@ -492,7 +501,12 @@ export function ChatApp() {
         onToggleStar={handleToggleStar}
         starBusyId={starBusyId}
       />
-      <Composer ref={composerRef} disabled={thinking} onSend={handleSend} />
+      <Composer
+        ref={composerRef}
+        disabled={thinking}
+        projects={projects}
+        onSend={handleSend}
+      />
     </div>
   );
 }
