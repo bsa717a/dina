@@ -41,8 +41,11 @@ function buildComponents(isUser: boolean): Components {
         {children}
       </ul>
     ),
-    ol: ({ children }) => (
-      <ol className="my-1.5 list-decimal space-y-1 pl-5 first:mt-0 last:mb-0">
+    ol: ({ children, start }) => (
+      <ol
+        start={typeof start === "number" && start > 1 ? start : undefined}
+        className="my-1.5 list-decimal space-y-1 pl-5 first:mt-0 last:mb-0"
+      >
         {children}
       </ol>
     ),
