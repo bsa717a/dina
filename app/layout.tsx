@@ -51,6 +51,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         {/* Must run before React so drops never navigate to the file URL. */}
         <Script src="/file-drop-guard.js" strategy="beforeInteractive" />
+        {/* Capture Chrome's install event before React hydrates. */}
+        <Script src="/pwa-install-capture.js" strategy="beforeInteractive" />
       </head>
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
         {children}

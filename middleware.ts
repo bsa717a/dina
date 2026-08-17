@@ -12,6 +12,7 @@ const PUBLIC_PATHS = new Set([
   "/manifest.webmanifest",
   "/sw.js",
   "/file-drop-guard.js",
+  "/pwa-install-capture.js",
 ]);
 
 const ONBOARDING_PATHS = new Set([
