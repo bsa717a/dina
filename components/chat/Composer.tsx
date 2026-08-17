@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
 type PendingFile = {
@@ -44,9 +45,10 @@ export const Composer = forwardRef<
   ComposerHandle,
   {
     disabled?: boolean;
+    projects?: UserProject[];
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
->(function Composer({ disabled, onSend }, ref) {
+>(function Composer({ disabled, projects = [], onSend }, ref) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [listening, setListening] = useState(false);
@@ -306,6 +308,8 @@ export const Composer = forwardRef<
             Send
           </button>
         </div>
+
+        <ProjectsPill projects={projects} />
 
         <input
           ref={fileRef}
