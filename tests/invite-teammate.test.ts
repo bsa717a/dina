@@ -80,11 +80,14 @@ describe("invite helpers", () => {
       projectKeys: ["4studentlives"],
       appUrl: "https://dina.example",
     });
-    expect(message.subject).toBe("Your Dina login");
+    expect(message.subject).toBe("Derek said I should introduce myself");
+    expect(message.body).toContain("I'm Dina, Derek's assistant.");
     expect(message.body).toContain("Username: alex");
     expect(message.body).toContain("Temporary password: temp-pass-word");
     expect(message.body).toContain("https://dina.example/login");
     expect(message.body).toContain("4StudentLives");
+    expect(message.body).toContain("What you can do once you're in:");
+    expect(message.body).toContain("— Dina");
   });
 });
 

@@ -45,11 +45,11 @@ export function buildInviteEmail(input: {
   const loginUrl = `${input.appUrl}/login`;
   const projectList = input.projectKeys.map(displayProjectName).join(", ");
   return {
-    subject: "Your Dina login",
+    subject: "Derek said I should introduce myself",
     body: [
-      `Hi ${input.name.split(" ")[0] || input.name},`,
+      "I'm Dina, Derek's assistant.",
       "",
-      "Derek set up an account for you.",
+      "He asked me to get you in. I don't do small talk in doorways, so here are the keys:",
       "",
       `Sign in: ${loginUrl}`,
       `Username: ${input.username}`,
@@ -57,9 +57,17 @@ export function buildInviteEmail(input: {
       "",
       `Projects: ${projectList}`,
       "",
-      "On first login you'll choose your own password and pick who you'll work with. The temporary password only works once for that setup.",
+      "First login is a one-time setup: pick a password that isn't this one, then choose who you'll work with. The temp password is a one-hit wonder. After that, it's yours.",
       "",
-      "— Derek",
+      "What you can do once you're in:",
+      "- Chat with your own assistant (not me — I'm Derek's, and I don't share)",
+      "- See the projects you were invited to",
+      "- Track backlogs, status, decisions, and blockers",
+      "- Keep shared project notes so \"what did we decide?\" has an actual answer",
+      "",
+      "If the URL looks like a raccoon walked across the keyboard, that's Cloudflare. It still works.",
+      "",
+      "— Dina",
     ].join("\n"),
   };
 }
