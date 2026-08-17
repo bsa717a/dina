@@ -1,5 +1,4 @@
 import type OpenAI from "openai";
-import { PROJECT_KEYS } from "@/lib/project-tasks/keys";
 import { PROJECT_TASK_STATUSES } from "@/lib/project-tasks/types";
 
 type FunctionTool = OpenAI.Responses.FunctionTool;
@@ -31,7 +30,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
         properties: {
           project: {
             type: "string",
-            description: `Project name or key. Known: ${PROJECT_KEYS.join(", ")}`,
+            description: "Project name or key. Use list_projects if you are unsure of the current list.",
           },
           status: {
             type: "string",

@@ -11,12 +11,21 @@ import { getTeamToolDefinitions } from "@/lib/team/tool-definitions";
 import { executeTeamTool } from "@/lib/team/tools";
 
 const createMember = vi.fn();
+const findUserByUsername = vi.fn();
+const listTeammates = vi.fn();
+const addTeammateToProjects = vi.fn();
 const graphRequest = vi.fn();
 const isMicrosoftConfigured = vi.fn();
 const getMicrosoftConfig = vi.fn();
 
 vi.mock("@/lib/auth/users", () => ({
   createMember: (...args: unknown[]) => createMember(...args),
+  findUserByUsername: (...args: unknown[]) => findUserByUsername(...args),
+}));
+
+vi.mock("@/lib/team/members", () => ({
+  listTeammates: (...args: unknown[]) => listTeammates(...args),
+  addTeammateToProjects: (...args: unknown[]) => addTeammateToProjects(...args),
 }));
 
 vi.mock("@/lib/microsoft/graph", () => ({
@@ -65,11 +74,10 @@ describe("invite helpers", () => {
     expect(isValidInviteEmail("not-an-email")).toBe(false);
   });
 
-  it("resolves project names to keys", () => {
-    expect(resolveInviteProjects(["4StudentLives", "Dina"])).toEqual([
-      "4studentlives",
-      "dina",
-    ]);
+  it("resolves project names to keys", async () => {
+    await expect(
+      resolveInviteProjects(["4StudentLives", "Dina", "Reggie"]),
+    ).resolves.toEqual(["4studentlives", "dina", "regi"]);
   });
 
   it("writes a login email with the temp password", () => {
@@ -94,9 +102,13 @@ describe("invite helpers", () => {
 describe("invite_teammate tool", () => {
   beforeEach(() => {
     createMember.mockReset();
+    findUserByUsername.mockReset();
+    listTeammates.mockReset();
+    addTeammateToProjects.mockReset();
     graphRequest.mockReset();
     isMicrosoftConfigured.mockReset();
     getMicrosoftConfig.mockReset();
+    findUserByUsername.mockResolvedValue(null);
     isMicrosoftConfigured.mockReturnValue(true);
     getMicrosoftConfig.mockReturnValue({ userEmail: "derek@4studentlives.com" });
     createMember.mockResolvedValue({
@@ -114,6 +126,11 @@ describe("invite_teammate tool", () => {
 
   it("is registered", () => {
     expect(getTeamToolDefinitions().map((tool) => tool.name)).toEqual([
+      "list_projects",
+      "create_project",
+      "archive_project",
+      "list_teammates",
+      "add_teammate_to_project",
       "invite_teammate",
     ]);
   });
@@ -191,5 +208,70 @@ describe("invite_teammate tool", () => {
     expect(result.data.emailed).toBe(false);
     expect(result.data.emailError).toMatch(/403/);
     expect(result.data.temporaryPassword).toBeTruthy();
+  });
+
+  it("refuses a second invite and points at add_teammate_to_project", async () => {
+    findUserByUsername.mockResolvedValue({
+      id: "u1",
+      name: "Adam Bangerter",
+      username: "adam_bangerter",
+      role: "member",
+    });
+    const result = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeTeamTool(
+          "invite_teammate",
+          JSON.stringify({
+            name: "Adam Bangerter",
+            email: "adam@4studentlives.com",
+            username: "adam_bangerter",
+            projects: ["regi"],
+          }),
+        ),
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/add_teammate_to_project/);
+    expect(createMember).not.toHaveBeenCalled();
+  });
+
+  it("adds an existing teammate to a project without email", async () => {
+    addTeammateToProjects.mockResolvedValue({
+      user: { id: "u1", name: "Adam Bangerter", username: "adam_bangerter" },
+      added: ["Regi"],
+      alreadyHad: [],
+      projects: ["4StudentLives", "Regi"],
+    });
+    const result = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeTeamTool(
+          "add_teammate_to_project",
+          JSON.stringify({ person: "Adam", projects: ["Regi"] }),
+        ),
+      ),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data.added).toEqual(["Regi"]);
+    expect(result.data.note).toMatch(/No invite was sent/);
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
+
+  it("lists teammates for the owner", async () => {
+    listTeammates.mockResolvedValue([
+      {
+        id: "u1",
+        name: "Adam Bangerter",
+        username: "adam_bangerter",
+        assistantName: "Penny",
+        projectKeys: ["4studentlives"],
+        projects: ["4StudentLives"],
+      },
+    ]);
+    const result = JSON.parse(
+      await runWithAuthUser(owner, () => executeTeamTool("list_teammates", "{}")),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data.count).toBe(1);
+    expect(result.data.teammates[0].username).toBe("adam_bangerter");
   });
 });

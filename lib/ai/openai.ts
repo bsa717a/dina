@@ -251,7 +251,7 @@ function buildInstructions(
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
     "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
     "Morning Ritual tool enabled: generate_morning_brief. When Derek asks for morning brief / morning ritual, call it and present the returned markdown. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
-    "Team invite tool enabled: invite_teammate. When Derek asks to add/invite a teammate, confirm name, email, username, and projects, then call invite_teammate. That sends the login from his Outlook. Do not invent an email address.",
+    "Team tools enabled: list_projects, create_project, archive_project, list_teammates, add_teammate_to_project, invite_teammate. New project → create_project (not Memory alone). New login → invite_teammate. Existing teammate / add to a project / no second invite → add_teammate_to_project. Do not invent an email address.",
   );
   parts.push(
     `Current datetime (${getDefaultTimeZone()}): ${denverNowLabel()}.`,

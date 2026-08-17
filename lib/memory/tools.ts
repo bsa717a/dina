@@ -19,7 +19,7 @@ import {
 } from "@/lib/memory/scope";
 import { MEMORY_CATEGORIES, MEMORY_IMPORTANCE } from "@/lib/memory/types";
 import { logger } from "@/lib/logger";
-import { resolveProjectKey } from "@/lib/project-tasks/keys";
+import { ensureProjectCatalog, resolveProjectKey } from "@/lib/project-tasks/keys";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
 
 async function currentScope(): Promise<MemoryScope> {
@@ -242,6 +242,7 @@ export async function executeMemoryTool(
     return fail(new Error("Invalid JSON arguments."));
   }
   try {
+    await ensureProjectCatalog();
     return await handler(args);
   } catch (error) {
     logger.error("memory_tool_failed", {

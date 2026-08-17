@@ -13,7 +13,11 @@ import {
   type AuthUser,
   type UserRole,
 } from "@/lib/auth/types";
-import { PROJECT_KEYS } from "@/lib/project-tasks/keys";
+import {
+  ensureProjectCatalog,
+  listKnownProjectKeys,
+  resolveProjectKey,
+} from "@/lib/project-tasks/keys";
 import { getAccessCode } from "@/lib/env";
 
 const OWNER_NAME = "Derek";
@@ -80,8 +84,9 @@ export async function seedOwner(input?: {
     },
   });
 
+  await ensureProjectCatalog();
   await prisma.projectMember.createMany({
-    data: PROJECT_KEYS.map((projectKey) => ({
+    data: listKnownProjectKeys().map((projectKey) => ({
       userId: user.id,
       projectKey,
       role: "owner",
@@ -114,12 +119,17 @@ export async function createMember(input: {
     throw new Error("Password must be at least 10 characters.");
   }
 
-  const keys = input.projectKeys
-    .map((key) => key.trim().toLowerCase())
-    .filter((key) => PROJECT_KEYS.includes(key as (typeof PROJECT_KEYS)[number]));
+  await ensureProjectCatalog();
+  const keys = [
+    ...new Set(
+      input.projectKeys
+        .map((key) => resolveProjectKey(key))
+        .filter((key): key is string => Boolean(key)),
+    ),
+  ];
   if (!keys.length) {
     throw new Error(
-      `At least one known project is required. Known: ${PROJECT_KEYS.join(", ")}`,
+      `At least one known project is required. Known: ${listKnownProjectKeys().join(", ")}`,
     );
   }
 

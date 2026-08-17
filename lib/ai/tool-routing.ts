@@ -177,6 +177,11 @@ export function friendlyToolStatus(toolName: string) {
     list_attention_blocks: "Listing Attention blocks…",
     generate_morning_brief: "Preparing morning brief…",
     invite_teammate: "Inviting teammate…",
+    list_teammates: "Listing teammates…",
+    add_teammate_to_project: "Adding teammate to project…",
+    list_projects: "Listing projects…",
+    create_project: "Creating project…",
+    archive_project: "Archiving project…",
     search_church_site: "Verifying on ChurchofJesusChrist.org…",
     fetch_church_url: "Reading Church page…",
   };
