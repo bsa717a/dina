@@ -5,6 +5,12 @@ export type AddToHomepageResult =
   | { kind: "help"; platform: InstallPlatform }
   | { kind: "installed" };
 
+export type InstallPath =
+  | "installed"
+  | "deferredPrompt"
+  | "navigatorInstall"
+  | "help";
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -12,12 +18,31 @@ type BeforeInstallPromptEvent = Event & {
 
 type InstallStateListener = () => void;
 
+type NavigatorWithInstall = Navigator & {
+  standalone?: boolean;
+  install?: (...args: unknown[]) => Promise<unknown>;
+};
+
+declare global {
+  interface Window {
+    __dinaDeferredInstall?: BeforeInstallPromptEvent | null;
+  }
+}
+
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let watching = false;
 const listeners = new Set<InstallStateListener>();
 
 function notifyInstallState() {
   for (const listener of listeners) listener();
+}
+
+function adoptDeferredPrompt(event: BeforeInstallPromptEvent | null | undefined) {
+  if (!event) return;
+  deferredPrompt = event;
+  if (typeof window !== "undefined") {
+    window.__dinaDeferredInstall = event;
+  }
 }
 
 export function detectInstallPlatform(input: {
@@ -50,6 +75,17 @@ export function isStandaloneDisplay(input: {
     Boolean(input.windowControlsOverlay) ||
     Boolean(input.iosStandalone)
   );
+}
+
+export function chooseInstallPath(input: {
+  standalone: boolean;
+  hasDeferredPrompt: boolean;
+  hasNavigatorInstall: boolean;
+}): InstallPath {
+  if (input.standalone) return "installed";
+  if (input.hasDeferredPrompt) return "deferredPrompt";
+  if (input.hasNavigatorInstall) return "navigatorInstall";
+  return "help";
 }
 
 export function homepageInstallHelp(platform: InstallPlatform): {
@@ -107,7 +143,7 @@ export function currentInstallPlatform(): InstallPlatform {
 
 export function isStandalonePwa(): boolean {
   if (typeof window === "undefined") return false;
-  const nav = window.navigator as Navigator & { standalone?: boolean };
+  const nav = window.navigator as NavigatorWithInstall;
   return isStandaloneDisplay({
     standaloneMedia: window.matchMedia("(display-mode: standalone)").matches,
     fullscreenMedia: window.matchMedia("(display-mode: fullscreen)").matches,
@@ -120,7 +156,12 @@ export function isStandalonePwa(): boolean {
 }
 
 export function hasDeferredInstallPrompt() {
-  return deferredPrompt !== null;
+  if (deferredPrompt) return true;
+  if (typeof window !== "undefined" && window.__dinaDeferredInstall) {
+    adoptDeferredPrompt(window.__dinaDeferredInstall);
+    return true;
+  }
+  return false;
 }
 
 export function subscribeInstallState(listener: InstallStateListener) {
@@ -131,37 +172,92 @@ export function subscribeInstallState(listener: InstallStateListener) {
 }
 
 export function watchInstallPrompt() {
-  if (typeof window === "undefined" || watching) return;
+  if (typeof window === "undefined") return;
+  adoptDeferredPrompt(window.__dinaDeferredInstall);
+  if (watching) return;
   watching = true;
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
-    deferredPrompt = event as BeforeInstallPromptEvent;
+    adoptDeferredPrompt(event as BeforeInstallPromptEvent);
     notifyInstallState();
   });
 
   window.addEventListener("appinstalled", () => {
     deferredPrompt = null;
+    window.__dinaDeferredInstall = null;
     notifyInstallState();
   });
 }
 
-export async function promptAddToHomepage(): Promise<AddToHomepageResult> {
-  if (isStandalonePwa()) return { kind: "installed" };
+async function promptWithDeferredEvent(): Promise<AddToHomepageResult | null> {
+  const promptEvent = deferredPrompt || window.__dinaDeferredInstall || null;
+  if (!promptEvent) return null;
+  try {
+    await promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
+    deferredPrompt = null;
+    window.__dinaDeferredInstall = null;
+    notifyInstallState();
+    return { kind: "prompted", outcome };
+  } catch {
+    deferredPrompt = null;
+    window.__dinaDeferredInstall = null;
+    notifyInstallState();
+    return null;
+  }
+}
 
-  if (deferredPrompt) {
-    const promptEvent = deferredPrompt;
+async function promptWithNavigatorInstall(): Promise<AddToHomepageResult | null> {
+  const nav = window.navigator as NavigatorWithInstall;
+  if (typeof nav.install !== "function") return null;
+  try {
+    await nav.install();
+    notifyInstallState();
+    return { kind: "prompted", outcome: "accepted" };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return { kind: "prompted", outcome: "dismissed" };
+    }
     try {
-      await promptEvent.prompt();
-      const { outcome } = await promptEvent.userChoice;
-      deferredPrompt = null;
+      await nav.install({
+        manifest: "/manifest.webmanifest",
+        manifestId: "/",
+      });
       notifyInstallState();
-      return { kind: "prompted", outcome };
-    } catch {
-      deferredPrompt = null;
-      notifyInstallState();
+      return { kind: "prompted", outcome: "accepted" };
+    } catch (retryError) {
+      if (retryError instanceof DOMException && retryError.name === "AbortError") {
+        return { kind: "prompted", outcome: "dismissed" };
+      }
+      return null;
     }
   }
+}
 
-  return { kind: "help", platform: currentInstallPlatform() };
+export async function promptAddToHomepage(): Promise<AddToHomepageResult> {
+  watchInstallPrompt();
+  const platform = currentInstallPlatform();
+  const path = chooseInstallPath({
+    standalone: isStandalonePwa(),
+    hasDeferredPrompt: hasDeferredInstallPrompt(),
+    hasNavigatorInstall:
+      typeof (window.navigator as NavigatorWithInstall).install === "function",
+  });
+
+  if (path === "installed") return { kind: "installed" };
+
+  if (path === "deferredPrompt") {
+    const prompted = await promptWithDeferredEvent();
+    if (prompted) return prompted;
+    const installed = await promptWithNavigatorInstall();
+    if (installed) return installed;
+  }
+
+  if (path === "navigatorInstall") {
+    const installed = await promptWithNavigatorInstall();
+    if (installed) return installed;
+  }
+
+  return { kind: "help", platform };
 }

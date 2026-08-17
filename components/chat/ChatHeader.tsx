@@ -233,7 +233,10 @@ function HeaderActions({
             <button
               type="button"
               role="menuitem"
-              onClick={() => run(() => void addToHomepage())}
+              onClick={() => {
+                void addToHomepage();
+                setOpen(false);
+              }}
               className="block w-full px-3 py-2 text-left text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"
             >
               Add to Homepage

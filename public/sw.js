@@ -1,5 +1,5 @@
 /* Dina service worker — offline shell + web push */
-const CACHE = "dina-shell-v3";
+const CACHE = "dina-shell-v4";
 const SHELL = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -25,7 +25,13 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
   // Never cache hashed app bundles — stale JS breaks drag/drop and other UX.
   if (url.pathname.startsWith("/_next/")) return;
-  if (url.pathname === "/file-drop-guard.js" || url.pathname === "/sw.js") return;
+  if (
+    url.pathname === "/file-drop-guard.js" ||
+    url.pathname === "/pwa-install-capture.js" ||
+    url.pathname === "/sw.js"
+  ) {
+    return;
+  }
 
   // Network-first for navigations and shell assets only.
   if (request.mode === "navigate" || SHELL.includes(url.pathname)) {

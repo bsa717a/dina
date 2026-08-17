@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseInstallPath,
   detectInstallPlatform,
   homepageInstallHelp,
   isStandaloneDisplay,
@@ -80,5 +81,27 @@ describe("homepageInstallHelp", () => {
     const help = homepageInstallHelp("mac");
     expect(help.title).toMatch(/Dock/);
     expect(help.steps.join(" ")).toMatch(/Add to Dock/);
+  });
+});
+
+describe("chooseInstallPath", () => {
+  it("uses the native Chrome prompt when the browser offered one", () => {
+    expect(
+      chooseInstallPath({
+        standalone: false,
+        hasDeferredPrompt: true,
+        hasNavigatorInstall: false,
+      }),
+    ).toBe("deferredPrompt");
+  });
+
+  it("falls back to help when the browser cannot install", () => {
+    expect(
+      chooseInstallPath({
+        standalone: false,
+        hasDeferredPrompt: false,
+        hasNavigatorInstall: false,
+      }),
+    ).toBe("help");
   });
 });
