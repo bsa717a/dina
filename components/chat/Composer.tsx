@@ -243,6 +243,17 @@ export const Composer = forwardRef<
 
         {error && <p className="mb-2 text-xs text-[var(--danger)]">{error}</p>}
 
+        <ProjectsPill
+          projects={projects}
+          disabled={disabled}
+          onSelectProject={(project) => {
+            void onSend({
+              content: `Show remaining tasks for ${project.name}`,
+              attachmentIds: [],
+            });
+          }}
+        />
+
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-[var(--shadow)]">
           <div className="flex shrink-0 gap-1 pb-0.5">
             <button
@@ -308,8 +319,6 @@ export const Composer = forwardRef<
             Send
           </button>
         </div>
-
-        <ProjectsPill projects={projects} />
 
         <input
           ref={fileRef}
