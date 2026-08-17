@@ -1,6 +1,13 @@
 import { getRequestUser } from "@/lib/auth/context";
 import { logger } from "@/lib/logger";
+import {
+  archiveProject,
+  createProject,
+  ensureProjectCatalog,
+  listKnownProjects,
+} from "@/lib/projects/catalog";
 import { inviteTeammate } from "@/lib/team/invite";
+import { addTeammateToProjects, listTeammates } from "@/lib/team/members";
 
 function ok(data: unknown) {
   return JSON.stringify({ ok: true, data });
@@ -17,6 +24,73 @@ const handlers: Record<
   string,
   (args: Record<string, unknown>) => Promise<string>
 > = {
+  list_projects: async () => {
+    const user = getRequestUser();
+    if (!user || user.role !== "owner") {
+      return fail(new Error("Only Derek can list the full project registry."));
+    }
+    await ensureProjectCatalog();
+    const projects = listKnownProjects().map((project) => ({
+      key: project.key,
+      name: project.name,
+      aliases: project.aliases,
+    }));
+    return ok({ projects, count: projects.length });
+  },
+  create_project: async (args) => {
+    const user = getRequestUser();
+    if (!user || user.role !== "owner") {
+      return fail(new Error("Only Derek can create projects."));
+    }
+    const aliases = Array.isArray(args.aliases)
+      ? args.aliases.filter((value): value is string => typeof value === "string")
+      : [];
+    const project = await createProject({
+      name: String(args.name || ""),
+      key: typeof args.key === "string" ? args.key : undefined,
+      aliases,
+    });
+    return ok({
+      project,
+      note: `Project ${project.name} is live. Add teammates with add_teammate_to_project. No invite was sent.`,
+    });
+  },
+  archive_project: async (args) => {
+    const user = getRequestUser();
+    if (!user || user.role !== "owner") {
+      return fail(new Error("Only Derek can archive projects."));
+    }
+    const project = await archiveProject(String(args.project || ""));
+    return ok({
+      project,
+      note: `${project.name} is archived. Tasks and memory remain, but it is no longer on the live project list.`,
+    });
+  },
+  list_teammates: async () => {
+    const user = getRequestUser();
+    if (!user || user.role !== "owner") {
+      return fail(new Error("Only Derek can list teammates."));
+    }
+    const teammates = await listTeammates();
+    return ok({ teammates, count: teammates.length });
+  },
+  add_teammate_to_project: async (args) => {
+    const user = getRequestUser();
+    if (!user || user.role !== "owner") {
+      return fail(new Error("Only Derek can add teammates to projects."));
+    }
+    const person = String(args.person || "").trim();
+    const projects = Array.isArray(args.projects)
+      ? args.projects.filter((value): value is string => typeof value === "string")
+      : [];
+    const result = await addTeammateToProjects({ query: person, projects });
+    return ok({
+      ...result,
+      note: result.added.length
+        ? `Granted ${result.added.join(", ")} to ${result.user.name}. No invite was sent.`
+        : `${result.user.name} already had ${result.alreadyHad.join(", ")}. No invite was sent.`,
+    });
+  },
   invite_teammate: async (args) => {
     const user = getRequestUser();
     if (!user || user.role !== "owner") {

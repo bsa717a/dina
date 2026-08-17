@@ -8,6 +8,7 @@ import {
   getOrCreateDefaultConversation,
 } from "@/lib/db/conversations";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
+import { executeTeamTool } from "@/lib/team/tools";
 import { memberCanAccessMemory, memoryScopeForUser } from "@/lib/memory/scope";
 import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
 import { createOrCorrectMemory } from "@/lib/memory/store";
@@ -55,6 +56,21 @@ describe("project membership", () => {
     );
     expect(await userCanAccessProject(member, "dina")).toBeNull();
     expect(await userCanAccessProject(owner, "dina")).toBe("dina");
+  });
+
+  it("lets the owner add an existing teammate to another project", async () => {
+    expect(await userCanAccessProject(member, "regi")).toBeNull();
+    const result = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeTeamTool(
+          "add_teammate_to_project",
+          JSON.stringify({ person: member.username, projects: ["Regi"] }),
+        ),
+      ),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data.added).toContain("Regi");
+    expect(await userCanAccessProject(member, "regi")).toBe("regi");
   });
 
   it("gates project task tools for members", async () => {

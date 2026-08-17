@@ -1,4 +1,5 @@
 import { getRequestUser } from "@/lib/auth/context";
+import { ensureProjectCatalog } from "@/lib/projects/catalog";
 import {
   displayProjectName,
   type ProjectKey,
@@ -145,6 +146,7 @@ export async function executeProjectTaskTool(
     return fail(new Error("Invalid JSON arguments."));
   }
   try {
+    await ensureProjectCatalog();
     return await handler(args);
   } catch (error) {
     logger.error("project_task_tool_failed", {

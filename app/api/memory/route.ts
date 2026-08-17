@@ -5,7 +5,7 @@ import { canMemberWriteCategory, memoryScopeForUser } from "@/lib/memory/scope";
 import { createOrCorrectMemory, listMemories } from "@/lib/memory/store";
 import { MEMORY_CATEGORIES, MEMORY_IMPORTANCE } from "@/lib/memory/types";
 import { forbidden, jsonError } from "@/lib/http";
-import { resolveProjectKey } from "@/lib/project-tasks/keys";
+import { ensureProjectCatalog, resolveProjectKey } from "@/lib/project-tasks/keys";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
 
 export const runtime = "nodejs";
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
   }
   const parsed = createSchema.safeParse(json);
   if (!parsed.success) return jsonError("Invalid memory payload.");
+  await ensureProjectCatalog();
 
   try {
     if (user.role === "member") {

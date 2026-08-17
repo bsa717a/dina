@@ -33,6 +33,7 @@ describe("project key resolution", () => {
     expect(resolveProjectKey("four student lives")).toBe("4studentlives");
     expect(resolveProjectKey("MetabolicOS")).toBe("metabolicos");
     expect(resolveProjectKey("Hidden Guardians")).toBe("hidden_guardians");
+    expect(resolveProjectKey("Reggie")).toBe("regi");
     expect(resolveProjectKey("not-a-real-project")).toBeNull();
   });
 });

@@ -64,6 +64,8 @@ export const EVIDENCE_TOOLS = new Set([
   "list_starred_messages",
   "get_starred_message",
   "list_project_tasks",
+  "list_teammates",
+  "list_projects",
   // Church + morning
   "search_church_site",
   "fetch_church_url",

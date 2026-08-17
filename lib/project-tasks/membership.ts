@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/db/client";
 import type { AuthUser } from "@/lib/auth/types";
 import {
-  PROJECT_KEYS,
   assertProjectKey,
   displayProjectName,
+  ensureProjectCatalog,
+  listKnownProjectKeys,
   resolveProjectKey,
   type ProjectKey,
 } from "@/lib/project-tasks/keys";
@@ -11,7 +12,8 @@ import {
 export async function listMemberProjectKeys(
   user: AuthUser,
 ): Promise<ProjectKey[]> {
-  if (user.role === "owner") return [...PROJECT_KEYS];
+  await ensureProjectCatalog();
+  if (user.role === "owner") return listKnownProjectKeys();
   const rows = await prisma.projectMember.findMany({
     where: { userId: user.id },
     select: { projectKey: true },
@@ -28,6 +30,7 @@ export async function userCanAccessProject(
   user: AuthUser,
   project: string,
 ): Promise<ProjectKey | null> {
+  await ensureProjectCatalog();
   const key = resolveProjectKey(project);
   if (!key) return null;
   if (user.role === "owner") return key;

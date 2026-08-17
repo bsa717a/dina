@@ -1,11 +1,12 @@
 import { generateTempPassword, isValidUsername, normalizeUsername } from "@/lib/auth/password";
-import { createMember } from "@/lib/auth/users";
+import { createMember, findUserByUsername } from "@/lib/auth/users";
 import { getAppUrl } from "@/lib/env";
 import { getMicrosoftConfig, isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 import {
-  PROJECT_KEYS,
   displayProjectName,
+  ensureProjectCatalog,
+  listKnownProjects,
   resolveProjectKey,
   type ProjectKey,
 } from "@/lib/project-tasks/keys";
@@ -26,7 +27,8 @@ export function usernameFromName(name: string): string {
   return slug;
 }
 
-export function resolveInviteProjects(projects: string[]): ProjectKey[] {
+export async function resolveInviteProjects(projects: string[]): Promise<ProjectKey[]> {
+  await ensureProjectCatalog();
   const keys = new Set<ProjectKey>();
   for (const raw of projects) {
     const key = resolveProjectKey(raw);
@@ -112,9 +114,18 @@ export async function inviteTeammate(input: {
     );
   }
 
-  const projectKeys = resolveInviteProjects(input.projects);
+  const projectKeys = await resolveInviteProjects(input.projects);
   if (!projectKeys.length) {
-    throw new Error(`At least one known project is required. Known: ${PROJECT_KEYS.join(", ")}`);
+    throw new Error(
+      `At least one known project is required. Known: ${listKnownProjects().map((p) => p.name).join(", ")}`,
+    );
+  }
+
+  const existing = await findUserByUsername(username);
+  if (existing) {
+    throw new Error(
+      `Username "${username}" already has an account. Use add_teammate_to_project to grant more projects without sending another invite.`,
+    );
   }
 
   const password = generateTempPassword();
