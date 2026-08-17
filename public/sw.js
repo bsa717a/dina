@@ -1,5 +1,5 @@
 /* Dina service worker — offline shell + web push */
-const CACHE = "dina-shell-v4";
+const CACHE = "dina-shell-v5";
 const SHELL = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
