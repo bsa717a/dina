@@ -16,6 +16,8 @@ import {
   resolveActiveProjectForUser,
   runWithActiveProject,
 } from "@/lib/chat/active-project";
+import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
+import { loadRemainingTasksBlock } from "@/lib/project-tasks/runtime";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
 import { logger } from "@/lib/logger";
@@ -141,18 +143,29 @@ export async function POST(request: NextRequest) {
           user.role === "owner"
             ? "derek preferences projects people"
             : "project tasks decisions";
-        const relevant = await retrieveRelevantMemories(
-          [content || fallbackQuery, activeProject?.name]
-            .filter(Boolean)
-            .join(" "),
-          { limit: 12, scope },
-        );
+        const [relevant, projectKeys] = await Promise.all([
+          retrieveRelevantMemories(
+            [content || fallbackQuery, activeProject?.name]
+              .filter(Boolean)
+              .join(" "),
+            { limit: 12, scope },
+          ),
+          listMemberProjectKeys(user),
+        ]);
         const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
-        const projectNames = (await listMemberProjectKeys(user)).map(
-          displayProjectName,
-        );
+        const projectNames = projectKeys.map(displayProjectName);
+        const tasksBlock = activeProject
+          ? await loadRemainingTasksBlock(activeProject.key)
+          : "";
 
-        const messages = history.map((m) => ({
+        const currentMessageId = history[history.length - 1]?.id;
+        const messages = history
+          .filter(
+            (m) =>
+              m.id === currentMessageId ||
+              !isRemainingTasksChatContent(m.role, m.content),
+          )
+          .map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
           attachments:
@@ -172,6 +185,7 @@ export async function POST(request: NextRequest) {
           messages,
           signal: request.signal,
           memoryBlock,
+          tasksBlock,
           actor: {
             id: user.id,
             name: user.name,

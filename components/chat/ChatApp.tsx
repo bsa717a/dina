@@ -14,6 +14,7 @@ import {
   watchInstallPrompt,
 } from "@/lib/client/pwa";
 import { formatDayUsage } from "@/lib/client/usage-format";
+import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
 
 function dragEventHasFiles(
   e: Pick<DragEvent, "dataTransfer"> | Pick<React.DragEvent, "dataTransfer">,
@@ -44,6 +45,14 @@ type StreamEvent = {
   dayUsage?: ChatUsage;
   dayUsageLabel?: string;
 };
+
+function isRemainingTasksChatMessage(message: ChatMessage) {
+  return (
+    message.id.startsWith("tasks-") ||
+    (message.role === "assistant" &&
+      isRemainingTasksChatContent(message.role, message.content))
+  );
+}
 
 function activeProjectStorageKey(userId: string) {
   return `dina.activeProject.${userId}`;
@@ -113,6 +122,13 @@ export function ChatApp() {
   const [sending, setSending] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const sendingRef = useRef(false);
+  const remainingTasksRequestRef = useRef(0);
+  const remainingTasksAbortRef = useRef<AbortController | null>(null);
+  const selectedProjectRef = useRef<UserProject | null>(null);
+  const showRemainingTasksRef = useRef<
+    (project: UserProject, options?: { quiet?: boolean }) => Promise<void>
+  >(async () => undefined);
+  selectedProjectRef.current = selectedProject;
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
   const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
@@ -196,17 +212,28 @@ export function ChatApp() {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load conversation");
-      setMessages(
-        (data.messages || []).map((m: ChatMessage & { starredAt?: string | null }) => ({
-          ...m,
-          starred: Boolean(m.starred ?? m.starredAt),
-          createdAt:
-            typeof m.createdAt === "string"
-              ? m.createdAt
-              : new Date(m.createdAt).toISOString(),
-          usage: usageByMessageIdRef.current.get(m.id),
-        })),
-      );
+      setMessages((prev) => {
+        const mapped = (data.messages || []).map(
+          (m: ChatMessage & { starredAt?: string | null }) => ({
+            ...m,
+            starred: Boolean(m.starred ?? m.starredAt),
+            createdAt:
+              typeof m.createdAt === "string"
+                ? m.createdAt
+                : new Date(m.createdAt).toISOString(),
+            usage: usageByMessageIdRef.current.get(m.id),
+          }),
+        );
+        const localTasks = prev.filter((message) =>
+          message.id.startsWith("tasks-"),
+        );
+        return [
+          ...mapped.filter((message) => !isRemainingTasksChatMessage(message)),
+          ...localTasks,
+        ];
+      });
+      const project = selectedProjectRef.current;
+      if (project) void showRemainingTasksRef.current(project, { quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
@@ -303,7 +330,10 @@ export function ChatApp() {
           );
           setProjects(next);
           if (typeof data.user?.id === "string") {
-            setSelectedProject(readStoredActiveProject(data.user.id, next));
+            const stored = readStoredActiveProject(data.user.id, next);
+            selectedProjectRef.current = stored;
+            setSelectedProject(stored);
+            if (stored) void showRemainingTasksRef.current(stored);
           }
         }
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
@@ -321,12 +351,75 @@ export function ChatApp() {
     };
   }, [loadConversation, refreshHealth, refreshDayUsage]);
 
+  function clearRemainingTasksBubble(options?: { keepRequest?: boolean }) {
+    if (!options?.keepRequest) {
+      remainingTasksAbortRef.current?.abort();
+      remainingTasksRequestRef.current += 1;
+    }
+    setMessages((prev) =>
+      prev.filter((message) => !isRemainingTasksChatMessage(message)),
+    );
+  }
+
   useEffect(() => {
     if (!selectedProject) return;
     if (projects.some((project) => project.key === selectedProject.key)) return;
+    selectedProjectRef.current = null;
     setSelectedProject(null);
     if (userId) writeStoredActiveProject(userId, null);
+    clearRemainingTasksBubble();
   }, [projects, selectedProject, userId]);
+
+  async function showRemainingTasks(
+    project: UserProject,
+    options?: { quiet?: boolean },
+  ) {
+    const requestId = ++remainingTasksRequestRef.current;
+    remainingTasksAbortRef.current?.abort();
+    const controller = new AbortController();
+    remainingTasksAbortRef.current = controller;
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/project-tasks?project=${encodeURIComponent(project.key)}`,
+        { signal: controller.signal },
+      );
+      if (requestId !== remainingTasksRequestRef.current) return;
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        markdown?: string;
+      };
+      if (requestId !== remainingTasksRequestRef.current) return;
+      if (!res.ok || !data.markdown) {
+        if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          selectedProjectRef.current = null;
+          setSelectedProject(null);
+          if (userId) writeStoredActiveProject(userId, null);
+          clearRemainingTasksBubble({ keepRequest: true });
+        }
+        throw new Error(data.error || "Could not load tasks.");
+      }
+      setMessages((prev) => [
+        ...prev.filter((message) => !isRemainingTasksChatMessage(message)),
+        {
+          id: `tasks-${project.key}`,
+          role: "assistant",
+          content: data.markdown,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (requestId !== remainingTasksRequestRef.current) return;
+      if (options?.quiet) return;
+      setError(err instanceof Error ? err.message : "Could not load tasks.");
+    }
+  }
+  showRemainingTasksRef.current = showRemainingTasks;
 
   async function handleSend(input: {
     content: string;
@@ -380,8 +473,10 @@ export function ChatApp() {
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
+          clearRemainingTasksBubble();
         }
         throw new Error(data.error || "Chat request failed");
       }
@@ -574,14 +669,13 @@ export function ChatApp() {
         onSelectProject={(project) => {
           if (sendingRef.current) return;
           const changed = project?.key !== selectedProject?.key;
+          selectedProjectRef.current = project;
           setSelectedProject(project);
           if (userId) writeStoredActiveProject(userId, project);
           if (project && changed) {
-            void handleSend({
-              content: `Show remaining tasks for ${project.name}`,
-              attachmentIds: [],
-              project,
-            });
+            void showRemainingTasks(project);
+          } else if (!project && changed) {
+            clearRemainingTasksBubble();
           }
         }}
         onSend={handleSend}

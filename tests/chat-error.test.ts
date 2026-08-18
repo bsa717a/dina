@@ -28,6 +28,10 @@ vi.mock("@/lib/project-tasks/membership", () => ({
   ),
 }));
 
+vi.mock("@/lib/project-tasks/store", () => ({
+  listProjectTasks: vi.fn(async () => []),
+}));
+
 vi.mock("@/lib/db/client", () => ({
   checkDatabase: vi.fn(async () => ({ ok: true })),
 }));
@@ -109,9 +113,15 @@ describe("POST /api/chat error path", () => {
 
     expect(streamChat).toHaveBeenCalled();
     const [input] = (streamChat.mock.calls as unknown as Array<
-      [{ actor?: { activeProject?: { key: string; name: string } | null } }]
+      [
+        {
+          tasksBlock?: string;
+          actor?: { activeProject?: { key: string; name: string } | null };
+        },
+      ]
     >)[0] ?? [];
     expect(input?.actor?.activeProject).toEqual({ key: "dina", name: "Dina" });
+    expect(input?.tasksBlock).toMatch(/already loaded|none remaining/);
   });
 
   it("rejects an unknown selected project", async () => {
@@ -133,5 +143,51 @@ describe("POST /api/chat error path", () => {
     expect(streamChat).not.toHaveBeenCalled();
     const conversations = await import("@/lib/db/conversations");
     expect(conversations.createMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current remaining-task ask but drops leftover list messages", async () => {
+    const conversations = await import("@/lib/db/conversations");
+    vi.mocked(conversations.listMessagesForProvider).mockResolvedValueOnce([
+      {
+        id: "old-user",
+        role: "user",
+        content: "Show remaining tasks for Dina",
+        attachments: [],
+      },
+      {
+        id: "old-assistant",
+        role: "assistant",
+        content: "Remaining tasks for Dina:\n\n1. Old item",
+        attachments: [],
+      },
+      {
+        id: "current",
+        role: "user",
+        content: "Show remaining tasks for Dina",
+        attachments: [],
+      },
+    ] as never);
+
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "Show remaining tasks for Dina",
+        attachmentIds: [],
+        project: "dina",
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    await res.text();
+
+    const [input] = (streamChat.mock.calls as unknown as Array<
+      [{ messages?: Array<{ id?: string; content: string }> }]
+    >)[0] ?? [];
+    expect(input?.messages?.map((message) => message.content)).toEqual([
+      "Show remaining tasks for Dina",
+    ]);
   });
 });

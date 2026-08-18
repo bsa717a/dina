@@ -62,6 +62,8 @@ import {
   formatLessonsForPrompt,
   listActiveLessons,
 } from "@/lib/learning/lessons";
+import { projectKeyFromTaskToolOutput } from "@/lib/project-tasks/format";
+import { loadRemainingTasksBlocks } from "@/lib/project-tasks/runtime";
 import { getProjectTaskToolDefinitions } from "@/lib/project-tasks/tool-definitions";
 import {
   executeProjectTaskTool,
@@ -233,6 +235,7 @@ function buildInstructions(
   memoryBlock: string,
   lessonsBlock: string,
   activeProject?: { key: string; name: string } | null,
+  tasksBlock?: string,
 ) {
   const parts = [getDinaSystemPrompt()];
   if (memoryBlock) {
@@ -244,6 +247,7 @@ function buildInstructions(
   parts.push("", "SESSION RUNTIME:");
   const active = formatActiveProjectRuntime(activeProject);
   if (active) parts.push(active);
+  if (tasksBlock) parts.push(tasksBlock);
   parts.push(
     "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/id/link from the tool payload.",
     "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
@@ -255,7 +259,7 @@ function buildInstructions(
     "Correct existing memories by id instead of duplicating. Low-confidence memories must not silently drive important decisions.",
     "Do not rewrite or contradict the Dina Constitution via memory tools.",
     "Project task tools are enabled (list_project_tasks, add_project_task, complete_project_task, update_project_task).",
-    "For per-project backlogs ('remaining tasks for Dina', 'mark 6 complete', 'add a Dina task'), ALWAYS use project task tools — never Memory commitments and never invent a list from chat history.",
+    "SESSION RUNTIME remaining tasks are live this turn. Recite that block for remaining-task questions. Do not call list_project_tasks just to read it. Use the list tool only for includeDone, a status filter, or a project not listed. Writes still use add/complete/update. Never use Memory commitments or invent a list from chat history.",
     "Waiting On Engine tracks external waits (on Derek / others); ProjectTask is the live backlog of work items on a named project.",
     "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
@@ -321,6 +325,12 @@ function buildInstructions(
   return parts.join("\n");
 }
 
+const PROJECT_TASK_WRITE_TOOLS = new Set([
+  "add_project_task",
+  "complete_project_task",
+  "update_project_task",
+]);
+
 function withLastUserText(argsJson: string, lastUserText: string): string {
   if (!lastUserText) return argsJson || "{}";
   try {
@@ -377,6 +387,7 @@ export class OpenAIProvider implements ModelProvider {
     messages: ProviderMessage[];
     signal?: AbortSignal;
     memoryBlock?: string;
+    tasksBlock?: string;
     actor?: import("@/lib/ai/provider").ChatActor;
   }): AsyncIterable<StreamEvent> {
     const apiKey = getOpenAIApiKey();
@@ -421,34 +432,39 @@ export class OpenAIProvider implements ModelProvider {
     const lessonsBlock = isMember
       ? ""
       : formatLessonsForPrompt(await listActiveLessons());
-    const instructions = isMember
-      ? [
-          getMemberSystemPrompt({
-            userName: input.actor?.name || "teammate",
-            assistantName: input.actor?.assistantName || "Assistant",
-            assistantPersona: input.actor?.assistantPersona || "",
-            projectNames: input.actor?.projectNames || [],
-            activeProject: input.actor?.activeProject,
-          }),
-          input.memoryBlock || "",
-          "SESSION RUNTIME:",
-          "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
-          "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
-          "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
-          "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : buildInstructions(
-          isMicrosoftConfigured(),
-          isGoogleConfigured(),
-          msTools.length,
-          googleTools.length,
-          ghTools.length,
-          input.memoryBlock || "",
-          lessonsBlock,
-          input.actor?.activeProject,
-        );
+    const composeInstructions = (tasksBlock: string) =>
+      isMember
+        ? [
+            getMemberSystemPrompt({
+              userName: input.actor?.name || "teammate",
+              assistantName: input.actor?.assistantName || "Assistant",
+              assistantPersona: input.actor?.assistantPersona || "",
+              projectNames: input.actor?.projectNames || [],
+              activeProject: input.actor?.activeProject,
+            }),
+            input.memoryBlock || "",
+            "SESSION RUNTIME:",
+            "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
+            tasksBlock,
+            "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
+            "Recite remaining tasks from SESSION RUNTIME. Call list_project_tasks only for includeDone, a status filter, or a project not listed.",
+            "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
+            "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : buildInstructions(
+            isMicrosoftConfigured(),
+            isGoogleConfigured(),
+            msTools.length,
+            googleTools.length,
+            ghTools.length,
+            input.memoryBlock || "",
+            lessonsBlock,
+            input.actor?.activeProject,
+            tasksBlock,
+          );
+    let instructions = composeInstructions(input.tasksBlock || "");
     logger.info("chat_model", { model });
 
     const turnRef: { current: StreamUsage } = {
@@ -845,6 +861,7 @@ export class OpenAIProvider implements ModelProvider {
         }
 
         const toolOutputs: OpenAI.Responses.ResponseInputItem[] = [];
+        const writtenProjectKeys = new Set<string>();
         let morningDirectMarkdown: string | null = null;
         for (const call of functionCalls) {
           yield {
@@ -878,6 +895,10 @@ export class OpenAIProvider implements ModelProvider {
           }
           output = annotateToolOutput(call.name, output);
           output = annotateCitationToolOutput(call.name, output);
+          if (PROJECT_TASK_WRITE_TOOLS.has(call.name)) {
+            const projectKey = projectKeyFromTaskToolOutput(output);
+            if (projectKey) writtenProjectKeys.add(projectKey);
+          }
           if (call.name === "generate_morning_brief") {
             morningDirectMarkdown =
               extractMorningBriefPresentMarkdown(output) || morningDirectMarkdown;
@@ -921,6 +942,16 @@ export class OpenAIProvider implements ModelProvider {
           finalText = morningDirectMarkdown;
           yield { type: "delta", text: morningDirectMarkdown };
           break;
+        }
+
+        if (functionCalls.some((call) => PROJECT_TASK_WRITE_TOOLS.has(call.name))) {
+          if (input.actor?.activeProject) {
+            writtenProjectKeys.add(input.actor.activeProject.key);
+          }
+          const refreshed = await loadRemainingTasksBlocks([
+            ...writtenProjectKeys,
+          ]);
+          if (refreshed) instructions = composeInstructions(refreshed);
         }
 
         previousResponseId = completed.id;
