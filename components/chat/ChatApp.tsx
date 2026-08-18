@@ -45,6 +45,15 @@ type StreamEvent = {
   dayUsageLabel?: string;
 };
 
+function isRemainingTasksChatMessage(message: ChatMessage) {
+  if (message.id.startsWith("tasks-")) return true;
+  const text = message.content.trim();
+  if (message.role === "user") {
+    return /^Show remaining tasks for /i.test(text);
+  }
+  return /^(Remaining tasks for |No remaining tasks for )/i.test(text);
+}
+
 function activeProjectStorageKey(userId: string) {
   return `dina.activeProject.${userId}`;
 }
@@ -312,7 +321,9 @@ export function ChatApp() {
           );
           setProjects(next);
           if (typeof data.user?.id === "string") {
-            setSelectedProject(readStoredActiveProject(data.user.id, next));
+            const stored = readStoredActiveProject(data.user.id, next);
+            setSelectedProject(stored);
+            if (stored) void showRemainingTasksRef.current(stored);
           }
         }
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
@@ -366,7 +377,7 @@ export function ChatApp() {
         throw new Error(data.error || "Could not load tasks.");
       }
       setMessages((prev) => [
-        ...prev.filter((message) => !message.id.startsWith("tasks-")),
+        ...prev.filter((message) => !isRemainingTasksChatMessage(message)),
         {
           id: `tasks-${project.key}`,
           role: "assistant",
