@@ -348,7 +348,7 @@ export function ChatApp() {
       remainingTasksRequestRef.current += 1;
     }
     setMessages((prev) =>
-      prev.filter((message) => !message.id.startsWith("tasks-")),
+      prev.filter((message) => !isRemainingTasksChatMessage(message)),
     );
   }
 
