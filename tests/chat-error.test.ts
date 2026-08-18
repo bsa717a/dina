@@ -144,4 +144,50 @@ describe("POST /api/chat error path", () => {
     const conversations = await import("@/lib/db/conversations");
     expect(conversations.createMessage).not.toHaveBeenCalled();
   });
+
+  it("keeps the current remaining-task ask but drops leftover list messages", async () => {
+    const conversations = await import("@/lib/db/conversations");
+    vi.mocked(conversations.listMessagesForProvider).mockResolvedValueOnce([
+      {
+        id: "old-user",
+        role: "user",
+        content: "Show remaining tasks for Dina",
+        attachments: [],
+      },
+      {
+        id: "old-assistant",
+        role: "assistant",
+        content: "Remaining tasks for Dina:\n\n1. Old item",
+        attachments: [],
+      },
+      {
+        id: "current",
+        role: "user",
+        content: "Show remaining tasks for Dina",
+        attachments: [],
+      },
+    ] as never);
+
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "Show remaining tasks for Dina",
+        attachmentIds: [],
+        project: "dina",
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    await res.text();
+
+    const [input] = (streamChat.mock.calls as unknown as Array<
+      [{ messages?: Array<{ id?: string; content: string }> }]
+    >)[0] ?? [];
+    expect(input?.messages?.map((message) => message.content)).toEqual([
+      "Show remaining tasks for Dina",
+    ]);
+  });
 });

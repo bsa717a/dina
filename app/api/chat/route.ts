@@ -158,8 +158,13 @@ export async function POST(request: NextRequest) {
           ? await loadRemainingTasksBlock(activeProject.key)
           : "";
 
+        const currentMessageId = history[history.length - 1]?.id;
         const messages = history
-          .filter((m) => !isRemainingTasksChatContent(m.role, m.content))
+          .filter(
+            (m) =>
+              m.id === currentMessageId ||
+              !isRemainingTasksChatContent(m.role, m.content),
+          )
           .map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
