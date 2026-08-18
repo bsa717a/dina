@@ -1,4 +1,5 @@
 import { getRequestUser } from "@/lib/auth/context";
+import { projectArgOrActive } from "@/lib/chat/active-project";
 import { ensureProjectCatalog } from "@/lib/projects/catalog";
 import {
   displayProjectName,
@@ -62,7 +63,7 @@ const handlers: Record<
   (args: Record<string, unknown>) => Promise<string>
 > = {
   list_project_tasks: async (args) => {
-    const project = String(args.project || "");
+    const project = projectArgOrActive(args);
     const key = await requireProjectAccess(project);
     const status = asStatus(args.status);
     const includeDone = Boolean(args.includeDone);
@@ -89,7 +90,7 @@ const handlers: Record<
     });
   },
   add_project_task: async (args) => {
-    const project = await requireProjectAccess(String(args.project || ""));
+    const project = await requireProjectAccess(projectArgOrActive(args));
     const user = getRequestUser();
     const task = await addProjectTask({
       project,
@@ -105,12 +106,13 @@ const handlers: Record<
   complete_project_task: async (args) => {
     if (typeof args.taskId === "string" && args.taskId) {
       await requireTaskAccess(args.taskId);
-    } else if (typeof args.project === "string") {
-      await requireProjectAccess(args.project);
+      const task = await completeProjectTask({ taskId: args.taskId });
+      return ok({ task, completed: true });
     }
+    const project = projectArgOrActive(args);
+    await requireProjectAccess(project);
     const task = await completeProjectTask({
-      taskId: typeof args.taskId === "string" ? args.taskId : undefined,
-      project: typeof args.project === "string" ? args.project : undefined,
+      project,
       number: typeof args.number === "number" ? args.number : undefined,
     });
     return ok({ task, completed: true });

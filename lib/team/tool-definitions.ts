@@ -85,10 +85,11 @@ export function getTeamToolDefinitions(): FunctionTool[] {
           projects: {
             type: "array",
             items: { type: "string" },
-            description: "Projects to grant. Use list_projects if you are unsure of current names.",
+            description:
+              "Projects to grant. Optional when SESSION RUNTIME names an Active project. Use list_projects if you are unsure of current names.",
           },
         },
-        required: ["person", "projects"],
+        required: ["person"],
       },
     ),
     fn(
@@ -111,14 +112,15 @@ export function getTeamToolDefinitions(): FunctionTool[] {
           projects: {
             type: "array",
             items: { type: "string" },
-            description: "Projects they can access. Use list_projects if you are unsure of current names.",
+            description:
+              "Projects they can access. Optional when SESSION RUNTIME names an Active project. Use list_projects if you are unsure of current names.",
           },
           sendEmail: {
             type: "boolean",
             description: "Send the Outlook invite. Default true. Set false to create the account only.",
           },
         },
-        required: ["name", "email", "projects"],
+        required: ["name", "email"],
       },
     ),
   ];

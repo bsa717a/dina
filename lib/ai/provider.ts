@@ -44,6 +44,7 @@ export type ChatActor = {
   assistantName: string;
   assistantPersona: string;
   projectNames: string[];
+  activeProject?: { key: string; name: string } | null;
 };
 
 export interface ModelProvider {

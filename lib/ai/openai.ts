@@ -26,7 +26,11 @@ import {
   markOpenAICreditsExhausted,
   openAICreditsUserMessage,
 } from "@/lib/ai/openai-errors";
-import { getDinaSystemPrompt, getMemberSystemPrompt } from "@/lib/ai/prompt";
+import {
+  formatActiveProjectRuntime,
+  getDinaSystemPrompt,
+  getMemberSystemPrompt,
+} from "@/lib/ai/prompt";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -228,6 +232,7 @@ function buildInstructions(
   ghCount: number,
   memoryBlock: string,
   lessonsBlock: string,
+  activeProject?: { key: string; name: string } | null,
 ) {
   const parts = [getDinaSystemPrompt()];
   if (memoryBlock) {
@@ -237,6 +242,8 @@ function buildInstructions(
     parts.push("", lessonsBlock);
   }
   parts.push("", "SESSION RUNTIME:");
+  const active = formatActiveProjectRuntime(activeProject);
+  if (active) parts.push(active);
   parts.push(
     "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/id/link from the tool payload.",
     "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
@@ -421,6 +428,7 @@ export class OpenAIProvider implements ModelProvider {
             assistantName: input.actor?.assistantName || "Assistant",
             assistantPersona: input.actor?.assistantPersona || "",
             projectNames: input.actor?.projectNames || [],
+            activeProject: input.actor?.activeProject,
           }),
           input.memoryBlock || "",
           "SESSION RUNTIME:",
@@ -439,6 +447,7 @@ export class OpenAIProvider implements ModelProvider {
           ghTools.length,
           input.memoryBlock || "",
           lessonsBlock,
+          input.actor?.activeProject,
         );
     logger.info("chat_model", { model });
 

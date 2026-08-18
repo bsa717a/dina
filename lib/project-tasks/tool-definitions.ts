@@ -25,12 +25,13 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
   return [
     fn(
       "list_project_tasks",
-      "List the live backlog for a project. Returns 1-based numbers for the filtered list so Derek can say 'mark 6 complete'. Default: remaining tasks (open + in_progress). Use includeDone=true to show completed items too. Do NOT use Memory commitments for project task lists.",
+      "List the live backlog for a project. Returns 1-based numbers for the filtered list so Derek can say 'mark 6 complete'. Default: remaining tasks (open + in_progress). Use includeDone=true to show completed items too. Do NOT use Memory commitments for project task lists. Omit project when the user has a selected/active project.",
       {
         properties: {
           project: {
             type: "string",
-            description: "Project name or key. Use list_projects if you are unsure of the current list.",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project. Use list_projects if you are unsure of the current list.",
           },
           status: {
             type: "string",
@@ -42,15 +43,19 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             description: "Include done/cancelled in the numbered list",
           },
         },
-        required: ["project"],
+        required: [],
       },
     ),
     fn(
       "add_project_task",
-      "Append a task to a project's live backlog. Use for 'add to Dina tasks' / project commitments that are work items — not for Waiting On external waits, and not for Memory.",
+      "Append a task to a project's live backlog. Use for 'add to Dina tasks' / project commitments that are work items — not for Waiting On external waits, and not for Memory. Omit project when the user has a selected/active project.",
       {
         properties: {
-          project: { type: "string" },
+          project: {
+            type: "string",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project.",
+          },
           title: { type: "string" },
           description: { type: "string" },
           status: {
@@ -58,15 +63,19 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             enum: ["open", "in_progress"],
           },
         },
-        required: ["project", "title"],
+        required: ["title"],
       },
     ),
     fn(
       "complete_project_task",
-      "Mark a project task done. Prefer project + number from the latest list_project_tasks remaining list (e.g. project='Dina', number=6). Or pass taskId.",
+      "Mark a project task done. Prefer project + number from the latest list_project_tasks remaining list (e.g. project='Dina', number=6). Or pass taskId. Omit project when the user has a selected/active project.",
       {
         properties: {
-          project: { type: "string" },
+          project: {
+            type: "string",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project.",
+          },
           number: {
             type: "number",
             description: "1-based number from list_project_tasks remaining list",

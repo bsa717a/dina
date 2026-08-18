@@ -83,6 +83,11 @@ export function getMemoryToolDefinitions(): FunctionTool[] {
             type: "array",
             items: { type: "string" },
           },
+          project: {
+            type: "string",
+            description:
+              "Project name or key for shared project context. Optional when SESSION RUNTIME names an Active project.",
+          },
         },
         required: ["category", "title", "content"],
       },
@@ -146,7 +151,7 @@ export function getMemberMemoryToolDefinitions(): FunctionTool[] {
         return {
           ...tool,
           description:
-            "Store shared project context (projects, decisions, commitments, people) for an assigned project. Pass project as the project name or key.",
+            "Store shared project context (projects, decisions, commitments, people) for an assigned project. Pass project as the project name or key, or omit it when SESSION RUNTIME names an Active project.",
           parameters: {
             ...tool.parameters,
             properties: {

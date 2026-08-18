@@ -1,4 +1,5 @@
 import { getRequestUser } from "@/lib/auth/context";
+import { getActiveProject } from "@/lib/chat/active-project";
 import {
   approveMemory,
   archiveMemory,
@@ -12,12 +13,17 @@ import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
 import { confidenceFromLabel } from "@/lib/memory/policy";
 import {
   canMemberWriteCategory,
+  MEMBER_MEMORY_CATEGORIES,
   memberCanAccessMemory,
   memberCanWriteMemory,
   memoryScopeForUser,
   type MemoryScope,
 } from "@/lib/memory/scope";
-import { MEMORY_CATEGORIES, MEMORY_IMPORTANCE } from "@/lib/memory/types";
+import {
+  MEMORY_CATEGORIES,
+  MEMORY_IMPORTANCE,
+  type MemoryCategory,
+} from "@/lib/memory/types";
 import { logger } from "@/lib/logger";
 import { ensureProjectCatalog, resolveProjectKey } from "@/lib/project-tasks/keys";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
@@ -97,17 +103,24 @@ const handlers: Record<
         ),
       );
     }
+    const projectRelated = MEMBER_MEMORY_CATEGORIES.includes(
+      category as MemoryCategory,
+    );
     let projectKey =
-      typeof args.project === "string"
+      typeof args.project === "string" && args.project.trim()
         ? resolveProjectKey(args.project)
-        : null;
+        : projectRelated
+          ? getActiveProject()?.key ?? null
+          : null;
+    if (projectKey && user) {
+      const allowed = await userCanAccessProject(user, projectKey);
+      if (!allowed) return fail(new Error(`No access to project "${projectKey}".`));
+      projectKey = allowed;
+    }
     if (user?.role === "member") {
       if (!projectKey) {
         return fail(new Error("project is required for shared project memory."));
       }
-      const allowed = await userCanAccessProject(user, projectKey);
-      if (!allowed) return fail(new Error(`No access to project "${projectKey}".`));
-      projectKey = allowed;
     }
     const memory = await createOrCorrectMemory(
       {

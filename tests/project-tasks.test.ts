@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { runWithAuthUser } from "@/lib/auth/context";
+import { runWithActiveProject } from "@/lib/chat/active-project";
 import type { AuthUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db/client";
 import { resolveProjectKey } from "@/lib/project-tasks/keys";
@@ -184,5 +185,68 @@ describe("project task tools", () => {
     expect(after.data.tasks.map((t: { title: string }) => t.title)).toEqual([
       "Two",
     ]);
+  });
+
+  it("defaults list/add/complete to the selected project", async () => {
+    await addProjectTask({
+      project: "beacon",
+      title: "Sticky one",
+      source: "test",
+    });
+    await addProjectTask({
+      project: "beacon",
+      title: "Sticky two",
+      source: "test",
+    });
+
+    const owner = await ownerUser();
+    const listed = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        runWithActiveProject({ key: "beacon", name: "Beacon" }, () =>
+          executeProjectTaskTool("list_project_tasks", "{}"),
+        ),
+      ),
+    );
+    expect(listed.ok).toBe(true);
+    expect(listed.data.projectKey).toBe("beacon");
+    expect(listed.data.count).toBe(2);
+
+    const added = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        runWithActiveProject({ key: "beacon", name: "Beacon" }, () =>
+          executeProjectTaskTool(
+            "add_project_task",
+            JSON.stringify({ title: "Sticky three" }),
+          ),
+        ),
+      ),
+    );
+    expect(added.ok).toBe(true);
+    expect(added.data.task.projectKey).toBe("beacon");
+    expect(added.data.task.title).toBe("Sticky three");
+
+    const completed = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        runWithActiveProject({ key: "beacon", name: "Beacon" }, () =>
+          executeProjectTaskTool(
+            "complete_project_task",
+            JSON.stringify({ number: 1 }),
+          ),
+        ),
+      ),
+    );
+    expect(completed.ok).toBe(true);
+
+    const missing = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool("list_project_tasks", "{}"),
+      ),
+    );
+    expect(missing.ok).toBe(false);
+    expect(String(missing.error)).toMatch(/select a project/i);
+
+    await prisma.projectTask.deleteMany({
+      where: { title: { in: ["Sticky one", "Sticky two", "Sticky three"] } },
+    });
   });
 });

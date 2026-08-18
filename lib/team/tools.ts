@@ -1,4 +1,5 @@
 import { getRequestUser } from "@/lib/auth/context";
+import { projectNamesFromArgsOrActive } from "@/lib/chat/active-project";
 import { logger } from "@/lib/logger";
 import {
   archiveProject,
@@ -80,9 +81,7 @@ const handlers: Record<
       return fail(new Error("Only Derek can add teammates to projects."));
     }
     const person = String(args.person || "").trim();
-    const projects = Array.isArray(args.projects)
-      ? args.projects.filter((value): value is string => typeof value === "string")
-      : [];
+    const projects = projectNamesFromArgsOrActive(args);
     const result = await addTeammateToProjects({ query: person, projects });
     return ok({
       ...result,
@@ -100,9 +99,7 @@ const handlers: Record<
     const email = String(args.email || "").trim();
     const username =
       typeof args.username === "string" ? args.username : undefined;
-    const projects = Array.isArray(args.projects)
-      ? args.projects.filter((value): value is string => typeof value === "string")
-      : [];
+    const projects = projectNamesFromArgsOrActive(args);
     const sendEmail =
       typeof args.sendEmail === "boolean" ? args.sendEmail : undefined;
 

@@ -38,7 +38,7 @@ Verbatim collaborative content (critical):
 - create_word_document paragraphs may be long; prefer completeness over brevity for lesson materials.
 
 ### Project Task Ledger (implementation)
-Live per-project backlog (not Memory, not Waiting On). Tools: list_project_tasks, add_project_task, complete_project_task, update_project_task. Use for "remaining tasks for Dina", "mark N complete", and adding project work items. Numbers are 1-based from the filtered remaining list. Do not store numbered project backlogs in Memory commitments.
+Live per-project backlog (not Memory, not Waiting On). Tools: list_project_tasks, add_project_task, complete_project_task, update_project_task. Use for "remaining tasks for Dina", "mark N complete", and adding project work items. Numbers are 1-based from the filtered remaining list. Do not store numbered project backlogs in Memory commitments. If SESSION RUNTIME names an Active project, default those tools (and shared project memory) to it unless the user names a different project this turn.
 
 ### Learning Engine (implementation)
 Distills Derek’s attention actions (edit/revise/dismiss/accept) into Memory lessons under learned_preferences / decisions. Apply active lessons when recommending or drafting. Explicit revise notes may activate immediately; inferred lessons may need approve_memory. Chat: “What have you learned?” → list_memories / search_memory on learned_preferences.
@@ -187,11 +187,23 @@ export function getDinaSystemPrompt(): string {
   ].join("\n");
 }
 
+export function formatActiveProjectRuntime(
+  project?: { key: string; name: string } | null,
+): string {
+  if (!project) return "";
+  return [
+    `Active project: ${project.name} (key: ${project.key}).`,
+    "The user selected this in the project selector. For remaining tasks, add/complete/update task, shared project memory, and phrases like 'this project', default to this project unless they name a different one this turn.",
+    "Mail, calendar, morning ritual, and other non-project work are unchanged.",
+  ].join("\n");
+}
+
 export function getMemberSystemPrompt(input: {
   userName: string;
   assistantName: string;
   assistantPersona: string;
   projectNames: string[];
+  activeProject?: { key: string; name: string } | null;
 }): string {
   const persona = input.assistantPersona.trim();
   const projects = input.projectNames.length
@@ -205,10 +217,12 @@ export function getMemberSystemPrompt(input: {
     persona ? `Personality: ${persona}` : "",
     "",
     `Assigned projects: ${projects}`,
+    formatActiveProjectRuntime(input.activeProject),
     "",
     "Rules:",
     "- Use project task tools for live backlogs. Never invent a task list from chat history.",
     "- You may search and store shared project memory (projects, decisions, commitments, people) for assigned projects only.",
+    "- When an Active project is set, default project tools and shared memory to it unless they name another project.",
     "- Morning brief: when they say Morning brief, call generate_morning_brief and pass userText. Never invent the picker. Show the tool's numbered list verbatim. After they pick, call the tool again.",
     "- Do not access or discuss Derek's personal mail, calendar, Attention, family, church, health, or private memory.",
     "- Never invent people, status, or completed work. If a tool fails or you lack access, say so.",
