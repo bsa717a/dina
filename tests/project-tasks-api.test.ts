@@ -45,6 +45,12 @@ vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks,
 }));
 
+const seedDinaProjectTasks = vi.fn(async () => ({ created: 0, updated: 0 }));
+
+vi.mock("@/lib/project-tasks/seed-dina-tasks", () => ({
+  seedDinaProjectTasks,
+}));
+
 const createMessage = vi.fn(async () => ({
   id: "m-tasks",
   role: "assistant",
@@ -63,6 +69,7 @@ describe("GET/POST /api/project-tasks", () => {
   beforeEach(() => {
     listProjectTasks.mockClear();
     createMessage.mockClear();
+    seedDinaProjectTasks.mockClear();
   });
 
   it("returns remaining tasks without a model", async () => {
@@ -75,6 +82,7 @@ describe("GET/POST /api/project-tasks", () => {
     expect(data.tasks).toHaveLength(1);
     expect(data.markdown).toContain("1. Ship the selector");
     expect(createMessage).not.toHaveBeenCalled();
+    expect(seedDinaProjectTasks).toHaveBeenCalled();
   });
 
   it("persists the remaining list as an assistant message", async () => {

@@ -16,13 +16,9 @@ import {
   resolveActiveProjectForUser,
   runWithActiveProject,
 } from "@/lib/chat/active-project";
-import {
-  formatRemainingTasksRuntime,
-  remainingTaskGroupsFromLists,
-} from "@/lib/project-tasks/format";
+import { loadRemainingTasksBlock } from "@/lib/project-tasks/format";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
-import { listProjectTasks } from "@/lib/project-tasks/store";
 import { logger } from "@/lib/logger";
 import {
   formatMemoriesForPrompt,
@@ -157,15 +153,8 @@ export async function POST(request: NextRequest) {
         ]);
         const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
         const projectNames = projectKeys.map(displayProjectName);
-        const remaining = activeProject
-          ? await listProjectTasks({ project: activeProject.key })
-          : [];
         const tasksBlock = activeProject
-          ? formatRemainingTasksRuntime(
-              remainingTaskGroupsFromLists([
-                { projectKey: activeProject.key, tasks: remaining },
-              ]),
-            )
+          ? await loadRemainingTasksBlock(activeProject.key)
           : "";
 
         const messages = history.map((m) => ({

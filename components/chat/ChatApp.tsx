@@ -113,6 +113,7 @@ export function ChatApp() {
   const [sending, setSending] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const sendingRef = useRef(false);
+  const remainingTasksRequestRef = useRef(0);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
   const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
@@ -329,6 +330,7 @@ export function ChatApp() {
   }, [projects, selectedProject, userId]);
 
   async function showRemainingTasks(project: UserProject) {
+    const requestId = ++remainingTasksRequestRef.current;
     setError(null);
     try {
       const res = await fetch("/api/project-tasks", {
@@ -344,6 +346,7 @@ export function ChatApp() {
         error?: string;
         message?: ChatMessage;
       };
+      if (requestId !== remainingTasksRequestRef.current) return;
       if (!res.ok || !data.message) {
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
           setSelectedProject(null);
@@ -366,6 +369,7 @@ export function ChatApp() {
         },
       ]);
     } catch (err) {
+      if (requestId !== remainingTasksRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Could not load tasks.");
     }
   }

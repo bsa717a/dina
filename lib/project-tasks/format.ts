@@ -1,4 +1,5 @@
 import { displayProjectName } from "@/lib/project-tasks/keys";
+import { listProjectTasks } from "@/lib/project-tasks/store";
 import type { NumberedProjectTask } from "@/lib/project-tasks/types";
 
 export type RemainingTaskGroup = {
@@ -44,6 +45,15 @@ export function formatRemainingTasksRuntime(
     "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
   );
   return lines.join("\n");
+}
+
+export async function loadRemainingTasksBlock(
+  projectKey: string,
+): Promise<string> {
+  const tasks = await listProjectTasks({ project: projectKey });
+  return formatRemainingTasksRuntime(
+    remainingTaskGroupsFromLists([{ projectKey, tasks }]),
+  );
 }
 
 /** User-facing remaining list. No model involved. */

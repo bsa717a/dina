@@ -11,6 +11,7 @@ import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { formatRemainingTasksMessage } from "@/lib/project-tasks/format";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
+import { seedDinaProjectTasks } from "@/lib/project-tasks/seed-dina-tasks";
 import { listProjectTasks } from "@/lib/project-tasks/store";
 
 export const runtime = "nodejs";
@@ -20,6 +21,9 @@ const projectSchema = z.object({
 });
 
 async function remainingForProject(user: AuthUser, rawProject: string) {
+  if (user.role === "owner") {
+    await seedDinaProjectTasks().catch(() => undefined);
+  }
   const key = await userCanAccessProject(user, rawProject);
   if (!key) return null;
   const tasks = await listProjectTasks({ project: key });

@@ -62,6 +62,7 @@ import {
   formatLessonsForPrompt,
   listActiveLessons,
 } from "@/lib/learning/lessons";
+import { loadRemainingTasksBlock } from "@/lib/project-tasks/format";
 import { getProjectTaskToolDefinitions } from "@/lib/project-tasks/tool-definitions";
 import {
   executeProjectTaskTool,
@@ -323,6 +324,12 @@ function buildInstructions(
   return parts.join("\n");
 }
 
+const PROJECT_TASK_WRITE_TOOLS = new Set([
+  "add_project_task",
+  "complete_project_task",
+  "update_project_task",
+]);
+
 function withLastUserText(argsJson: string, lastUserText: string): string {
   if (!lastUserText) return argsJson || "{}";
   try {
@@ -424,37 +431,39 @@ export class OpenAIProvider implements ModelProvider {
     const lessonsBlock = isMember
       ? ""
       : formatLessonsForPrompt(await listActiveLessons());
-    const instructions = isMember
-      ? [
-          getMemberSystemPrompt({
-            userName: input.actor?.name || "teammate",
-            assistantName: input.actor?.assistantName || "Assistant",
-            assistantPersona: input.actor?.assistantPersona || "",
-            projectNames: input.actor?.projectNames || [],
-            activeProject: input.actor?.activeProject,
-          }),
-          input.memoryBlock || "",
-          "SESSION RUNTIME:",
-          "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
-          input.tasksBlock || "",
-          "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
-          "Recite remaining tasks from SESSION RUNTIME. Call list_project_tasks only for includeDone, a status filter, or a project not listed.",
-          "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
-          "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : buildInstructions(
-          isMicrosoftConfigured(),
-          isGoogleConfigured(),
-          msTools.length,
-          googleTools.length,
-          ghTools.length,
-          input.memoryBlock || "",
-          lessonsBlock,
-          input.actor?.activeProject,
-          input.tasksBlock,
-        );
+    const composeInstructions = (tasksBlock: string) =>
+      isMember
+        ? [
+            getMemberSystemPrompt({
+              userName: input.actor?.name || "teammate",
+              assistantName: input.actor?.assistantName || "Assistant",
+              assistantPersona: input.actor?.assistantPersona || "",
+              projectNames: input.actor?.projectNames || [],
+              activeProject: input.actor?.activeProject,
+            }),
+            input.memoryBlock || "",
+            "SESSION RUNTIME:",
+            "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
+            tasksBlock,
+            "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
+            "Recite remaining tasks from SESSION RUNTIME. Call list_project_tasks only for includeDone, a status filter, or a project not listed.",
+            "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
+            "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : buildInstructions(
+            isMicrosoftConfigured(),
+            isGoogleConfigured(),
+            msTools.length,
+            googleTools.length,
+            ghTools.length,
+            input.memoryBlock || "",
+            lessonsBlock,
+            input.actor?.activeProject,
+            tasksBlock,
+          );
+    let instructions = composeInstructions(input.tasksBlock || "");
     logger.info("chat_model", { model });
 
     const turnRef: { current: StreamUsage } = {
@@ -927,6 +936,16 @@ export class OpenAIProvider implements ModelProvider {
           finalText = morningDirectMarkdown;
           yield { type: "delta", text: morningDirectMarkdown };
           break;
+        }
+
+        if (
+          input.actor?.activeProject &&
+          functionCalls.some((call) => PROJECT_TASK_WRITE_TOOLS.has(call.name))
+        ) {
+          const refreshed = await loadRemainingTasksBlock(
+            input.actor.activeProject.key,
+          );
+          instructions = composeInstructions(refreshed);
         }
 
         previousResponseId = completed.id;
