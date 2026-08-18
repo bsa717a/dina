@@ -47,8 +47,7 @@ async function handleGenerateMorningBrief(args: Record<string, unknown>) {
   if (!user) return fail(new Error("Not authenticated."));
 
   const userText = String(args.userText || args.note || "").trim();
-  const setupRequested =
-    Boolean(args.setup) || isMorningBriefSetupRequest(userText);
+  const setupRequested = isMorningBriefSetupRequest(userText);
   const pref = await getMorningBriefPreference(user.id);
   const parsedArgs = asStringArray(args.sections);
   const parsedText = userText ? parseSectionSelection(userText) : { kind: "unparsed" as const };
@@ -169,6 +168,27 @@ type Handler = (args: Record<string, unknown>) => Promise<string>;
 const handlers: Record<string, Handler> = {
   generate_morning_brief: handleGenerateMorningBrief,
 };
+
+export function extractMorningBriefPresentMarkdown(
+  output: string,
+): string | null {
+  try {
+    const parsed = JSON.parse(output) as {
+      ok?: boolean;
+      data?: { markdown?: unknown };
+    };
+    if (
+      parsed.ok &&
+      typeof parsed.data?.markdown === "string" &&
+      parsed.data.markdown.trim()
+    ) {
+      return parsed.data.markdown.trim();
+    }
+  } catch {
+    // keep going
+  }
+  return null;
+}
 
 export function listMorningRitualToolNames() {
   return Object.keys(handlers);
