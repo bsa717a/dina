@@ -12,6 +12,7 @@ import {
   generateMorningBriefMarkdown,
   stripValidationGateSection,
 } from "@/lib/morning-ritual/compose";
+import { extractMorningBriefPresentMarkdown } from "@/lib/morning-ritual/tools";
 import { needsMorningBriefSetup } from "@/lib/morning-ritual/preferences";
 import { formatTodaysWinContext } from "@/lib/morning-ritual/win-context";
 import {
@@ -65,6 +66,16 @@ describe("morning ritual routing and helpers", () => {
         },
       ),
     ).toBe(true);
+  });
+
+  it("extracts morning brief markdown for direct presentation", () => {
+    const list = formatSetupMarkdown();
+    expect(
+      extractMorningBriefPresentMarkdown(
+        JSON.stringify({ ok: true, data: { mode: "setup", markdown: list } }),
+      ),
+    ).toContain("1. **Book of Mormon**");
+    expect(extractMorningBriefPresentMarkdown('{"ok":false}')).toBeNull();
   });
 
   it("formats the user-facing Morning brief setup list", () => {

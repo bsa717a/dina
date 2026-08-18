@@ -24,7 +24,7 @@ export function getMorningRitualToolDefinitions(): FunctionTool[] {
   return [
     fn(
       "generate_morning_brief",
-      "Generate or set up the user's Morning Ritual brief. First use (or “Morning brief setup”) returns the section picker — present that list and wait. After they pick numbers/names, call again with userText or sections so their brief is saved. When they already have a saved brief and ask for Morning brief, generate it. This is NOT the Chief of Staff Daily Briefing and does not include calendar. Present returned markdown as-is.",
+      "Generate or set up the user's Morning Ritual brief. Call this and pass userText. Members without saved sections get a numbered picker in data.markdown — that list must be shown verbatim. “Morning brief setup” also returns the picker. After they pick numbers, call again with userText. When they already have a saved brief and ask for Morning brief, generate it. Do not set setup=true unless they said Morning brief setup. This is NOT the CoS Daily Briefing. Present returned markdown as-is.",
       {
         properties: {
           userText: {

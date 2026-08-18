@@ -77,6 +77,7 @@ import { getMorningBriefPreference } from "@/lib/morning-ritual/preferences";
 import { looksLikeSectionSelection } from "@/lib/morning-ritual/sections";
 import {
   executeMorningRitualTool,
+  extractMorningBriefPresentMarkdown,
   listMorningRitualToolNames,
 } from "@/lib/morning-ritual/tools";
 import {
@@ -253,7 +254,7 @@ function buildInstructions(
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
     "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
-    "Morning Ritual tool enabled: generate_morning_brief. When Derek (or anyone) asks for morning brief / morning ritual, call it and pass userText. First-time users and “Morning brief setup” get a section picker — present that list and wait. After they pick, call the tool again with their reply so it saves and/or generates. Present returned markdown as-is. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
+    "Morning Ritual tool enabled: generate_morning_brief. When anyone asks for morning brief / morning ritual, call it and pass userText. Never invent the section picker yourself — only show what the tool returns. If the tool returns a numbered list, every item must appear. After they pick, call the tool again with their reply. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
     "Team tools enabled: list_projects, create_project, archive_project, list_teammates, add_teammate_to_project, invite_teammate. New project → create_project (not Memory alone). New login → invite_teammate. Existing teammate / add to a project / no second invite → add_teammate_to_project. Do not invent an email address.",
   );
   parts.push(
@@ -426,7 +427,7 @@ export class OpenAIProvider implements ModelProvider {
           "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
           "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
           "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
-          "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. First time (or Morning brief setup) returns a section picker — show that list and wait. After they pick numbers, call it again with their reply.",
+          "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
         ]
           .filter(Boolean)
           .join("\n")
@@ -835,6 +836,7 @@ export class OpenAIProvider implements ModelProvider {
         }
 
         const toolOutputs: OpenAI.Responses.ResponseInputItem[] = [];
+        let morningDirectMarkdown: string | null = null;
         for (const call of functionCalls) {
           yield {
             type: "status",
@@ -867,6 +869,10 @@ export class OpenAIProvider implements ModelProvider {
           }
           output = annotateToolOutput(call.name, output);
           output = annotateCitationToolOutput(call.name, output);
+          if (call.name === "generate_morning_brief") {
+            morningDirectMarkdown =
+              extractMorningBriefPresentMarkdown(output) || morningDirectMarkdown;
+          }
           if (
             isChurchCitationTool(call.name) &&
             churchToolSucceeded(output)
@@ -897,6 +903,15 @@ export class OpenAIProvider implements ModelProvider {
             call_id: call.call_id,
             output,
           });
+        }
+
+        if (
+          morningDirectMarkdown &&
+          functionCalls.every((call) => call.name === "generate_morning_brief")
+        ) {
+          finalText = morningDirectMarkdown;
+          yield { type: "delta", text: morningDirectMarkdown };
+          break;
         }
 
         previousResponseId = completed.id;
