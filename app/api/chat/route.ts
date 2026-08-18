@@ -16,7 +16,8 @@ import {
   resolveActiveProjectForUser,
   runWithActiveProject,
 } from "@/lib/chat/active-project";
-import { loadRemainingTasksBlock } from "@/lib/project-tasks/format";
+import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
+import { loadRemainingTasksBlock } from "@/lib/project-tasks/runtime";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
 import { logger } from "@/lib/logger";
@@ -157,7 +158,9 @@ export async function POST(request: NextRequest) {
           ? await loadRemainingTasksBlock(activeProject.key)
           : "";
 
-        const messages = history.map((m) => ({
+        const messages = history
+          .filter((m) => !isRemainingTasksChatContent(m.role, m.content))
+          .map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
           attachments:

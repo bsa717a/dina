@@ -9,6 +9,8 @@ import { formatActiveProjectRuntime, getMemberSystemPrompt } from "@/lib/ai/prom
 import {
   formatRemainingTasksMessage,
   formatRemainingTasksRuntime,
+  isRemainingTasksChatContent,
+  projectKeyFromTaskToolOutput,
 } from "@/lib/project-tasks/format";
 
 describe("active project context", () => {
@@ -89,5 +91,23 @@ describe("remaining task runtime", () => {
         tasks: [],
       }),
     ).toBe("No remaining tasks for Dina.");
+  });
+
+  it("recognizes leftover remaining-task chat and written project keys", () => {
+    expect(
+      isRemainingTasksChatContent("user", "Show remaining tasks for Dina"),
+    ).toBe(true);
+    expect(
+      isRemainingTasksChatContent(
+        "assistant",
+        "Remaining tasks for Dina:\n\n1. Ship the selector",
+      ),
+    ).toBe(true);
+    expect(isRemainingTasksChatContent("user", "mark 2 complete")).toBe(false);
+    expect(
+      projectKeyFromTaskToolOutput(
+        JSON.stringify({ ok: true, data: { task: { projectKey: "beacon" } } }),
+      ),
+    ).toBe("beacon");
   });
 });

@@ -14,6 +14,7 @@ import {
   watchInstallPrompt,
 } from "@/lib/client/pwa";
 import { formatDayUsage } from "@/lib/client/usage-format";
+import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
 
 function dragEventHasFiles(
   e: Pick<DragEvent, "dataTransfer"> | Pick<React.DragEvent, "dataTransfer">,
@@ -46,12 +47,10 @@ type StreamEvent = {
 };
 
 function isRemainingTasksChatMessage(message: ChatMessage) {
-  if (message.id.startsWith("tasks-")) return true;
-  const text = message.content.trim();
-  if (message.role === "user") {
-    return /^Show remaining tasks for /i.test(text);
-  }
-  return /^(Remaining tasks for |No remaining tasks for )/i.test(text);
+  return (
+    message.id.startsWith("tasks-") ||
+    isRemainingTasksChatContent(message.role, message.content)
+  );
 }
 
 function activeProjectStorageKey(userId: string) {

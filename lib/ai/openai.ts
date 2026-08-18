@@ -62,7 +62,8 @@ import {
   formatLessonsForPrompt,
   listActiveLessons,
 } from "@/lib/learning/lessons";
-import { loadRemainingTasksBlock } from "@/lib/project-tasks/format";
+import { projectKeyFromTaskToolOutput } from "@/lib/project-tasks/format";
+import { loadRemainingTasksBlocks } from "@/lib/project-tasks/runtime";
 import { getProjectTaskToolDefinitions } from "@/lib/project-tasks/tool-definitions";
 import {
   executeProjectTaskTool,
@@ -860,6 +861,7 @@ export class OpenAIProvider implements ModelProvider {
         }
 
         const toolOutputs: OpenAI.Responses.ResponseInputItem[] = [];
+        const writtenProjectKeys = new Set<string>();
         let morningDirectMarkdown: string | null = null;
         for (const call of functionCalls) {
           yield {
@@ -893,6 +895,10 @@ export class OpenAIProvider implements ModelProvider {
           }
           output = annotateToolOutput(call.name, output);
           output = annotateCitationToolOutput(call.name, output);
+          if (PROJECT_TASK_WRITE_TOOLS.has(call.name)) {
+            const projectKey = projectKeyFromTaskToolOutput(output);
+            if (projectKey) writtenProjectKeys.add(projectKey);
+          }
           if (call.name === "generate_morning_brief") {
             morningDirectMarkdown =
               extractMorningBriefPresentMarkdown(output) || morningDirectMarkdown;
@@ -938,14 +944,14 @@ export class OpenAIProvider implements ModelProvider {
           break;
         }
 
-        if (
-          input.actor?.activeProject &&
-          functionCalls.some((call) => PROJECT_TASK_WRITE_TOOLS.has(call.name))
-        ) {
-          const refreshed = await loadRemainingTasksBlock(
-            input.actor.activeProject.key,
-          );
-          instructions = composeInstructions(refreshed);
+        if (functionCalls.some((call) => PROJECT_TASK_WRITE_TOOLS.has(call.name))) {
+          if (input.actor?.activeProject) {
+            writtenProjectKeys.add(input.actor.activeProject.key);
+          }
+          const refreshed = await loadRemainingTasksBlocks([
+            ...writtenProjectKeys,
+          ]);
+          if (refreshed) instructions = composeInstructions(refreshed);
         }
 
         previousResponseId = completed.id;

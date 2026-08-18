@@ -1,5 +1,4 @@
 import { displayProjectName } from "@/lib/project-tasks/keys";
-import { listProjectTasks } from "@/lib/project-tasks/store";
 import type { NumberedProjectTask } from "@/lib/project-tasks/types";
 
 export type RemainingTaskGroup = {
@@ -47,13 +46,28 @@ export function formatRemainingTasksRuntime(
   return lines.join("\n");
 }
 
-export async function loadRemainingTasksBlock(
-  projectKey: string,
-): Promise<string> {
-  const tasks = await listProjectTasks({ project: projectKey });
-  return formatRemainingTasksRuntime(
-    remainingTaskGroupsFromLists([{ projectKey, tasks }]),
-  );
+export function isRemainingTasksChatContent(
+  role: string,
+  content: string,
+): boolean {
+  const text = content.trim();
+  if (role === "user") return /^Show remaining tasks for /i.test(text);
+  if (role === "assistant") {
+    return /^(Remaining tasks for |No remaining tasks for )/i.test(text);
+  }
+  return false;
+}
+
+export function projectKeyFromTaskToolOutput(output: string): string | null {
+  try {
+    const parsed = JSON.parse(output) as {
+      data?: { task?: { projectKey?: unknown }; projectKey?: unknown };
+    };
+    const key = parsed.data?.task?.projectKey ?? parsed.data?.projectKey;
+    return typeof key === "string" && key.trim() ? key.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** User-facing remaining list. No model involved. */
