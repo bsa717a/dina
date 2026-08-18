@@ -125,9 +125,9 @@ export function ChatApp() {
   const remainingTasksRequestRef = useRef(0);
   const remainingTasksAbortRef = useRef<AbortController | null>(null);
   const selectedProjectRef = useRef<UserProject | null>(null);
-  const showRemainingTasksRef = useRef<(project: UserProject) => Promise<void>>(
-    async () => undefined,
-  );
+  const showRemainingTasksRef = useRef<
+    (project: UserProject, options?: { quiet?: boolean }) => Promise<void>
+  >(async () => undefined);
   selectedProjectRef.current = selectedProject;
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
@@ -224,7 +224,7 @@ export function ChatApp() {
         })),
       );
       const project = selectedProjectRef.current;
-      if (project) void showRemainingTasksRef.current(project);
+      if (project) void showRemainingTasksRef.current(project, { quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
@@ -359,7 +359,10 @@ export function ChatApp() {
     clearRemainingTasksBubble();
   }, [projects, selectedProject, userId]);
 
-  async function showRemainingTasks(project: UserProject) {
+  async function showRemainingTasks(
+    project: UserProject,
+    options?: { quiet?: boolean },
+  ) {
     const requestId = ++remainingTasksRequestRef.current;
     remainingTasksAbortRef.current?.abort();
     const controller = new AbortController();
@@ -382,6 +385,7 @@ export function ChatApp() {
       if (requestId !== remainingTasksRequestRef.current) return;
       if (!res.ok || !data.markdown) {
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
         }
@@ -399,6 +403,7 @@ export function ChatApp() {
     } catch (err) {
       if (controller.signal.aborted) return;
       if (requestId !== remainingTasksRequestRef.current) return;
+      if (options?.quiet) return;
       setError(err instanceof Error ? err.message : "Could not load tasks.");
     }
   }
@@ -456,6 +461,7 @@ export function ChatApp() {
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
         }
