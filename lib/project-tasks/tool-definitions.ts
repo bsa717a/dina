@@ -25,7 +25,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
   return [
     fn(
       "list_project_tasks",
-      "List the live backlog for a project. Returns 1-based numbers for the filtered list so Derek can say 'mark 6 complete'. Default: remaining tasks (open + in_progress). Use includeDone=true to show completed items too. Do NOT use Memory commitments for project task lists. Omit project when the user has a selected/active project.",
+      "List the live backlog for a project. Prefer the remaining-task block already in SESSION RUNTIME — do not call this just to recite that list. Use this for includeDone, a status filter, or a project not already listed. Returns 1-based numbers so Derek can say 'mark 6 complete'. Default: remaining tasks (open + in_progress). Do NOT use Memory commitments for project task lists. Omit project when the user has a selected/active project.",
       {
         properties: {
           project: {

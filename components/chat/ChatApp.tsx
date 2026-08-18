@@ -328,6 +328,48 @@ export function ChatApp() {
     if (userId) writeStoredActiveProject(userId, null);
   }, [projects, selectedProject, userId]);
 
+  async function showRemainingTasks(project: UserProject) {
+    setError(null);
+    try {
+      const res = await fetch("/api/project-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: project.key }),
+      });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: ChatMessage;
+      };
+      if (!res.ok || !data.message) {
+        if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          setSelectedProject(null);
+          if (userId) writeStoredActiveProject(userId, null);
+        }
+        throw new Error(data.error || "Could not load tasks.");
+      }
+      const next = data.message;
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== next.id),
+        {
+          id: next.id,
+          role: next.role,
+          content: next.content,
+          createdAt:
+            typeof next.createdAt === "string"
+              ? next.createdAt
+              : new Date(next.createdAt).toISOString(),
+          attachments: next.attachments ?? [],
+        },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load tasks.");
+    }
+  }
+
   async function handleSend(input: {
     content: string;
     attachmentIds: string[];
@@ -577,11 +619,7 @@ export function ChatApp() {
           setSelectedProject(project);
           if (userId) writeStoredActiveProject(userId, project);
           if (project && changed) {
-            void handleSend({
-              content: `Show remaining tasks for ${project.name}`,
-              attachmentIds: [],
-              project,
-            });
+            void showRemainingTasks(project);
           }
         }}
         onSend={handleSend}

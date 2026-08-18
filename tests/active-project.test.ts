@@ -6,6 +6,10 @@ import {
   runWithActiveProject,
 } from "@/lib/chat/active-project";
 import { formatActiveProjectRuntime, getMemberSystemPrompt } from "@/lib/ai/prompt";
+import {
+  formatRemainingTasksMessage,
+  formatRemainingTasksRuntime,
+} from "@/lib/project-tasks/format";
 
 describe("active project context", () => {
   it("defaults tool args to the selected project and allows an override", () => {
@@ -39,5 +43,51 @@ describe("active project context", () => {
     });
     expect(member).toContain("Assigned projects: Dina, Beacon");
     expect(member).toContain("Active project: Dina");
+    expect(member).toContain("Remaining tasks in SESSION RUNTIME");
+  });
+});
+
+describe("remaining task runtime", () => {
+  const task = {
+    id: "t1",
+    projectKey: "dina",
+    title: "Ship the selector",
+    description: "",
+    status: "open" as const,
+    sortOrder: 0,
+    source: "test",
+    createdByUserId: null,
+    assigneeUserId: null,
+    completedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    number: 1,
+  };
+
+  it("puts remaining tasks in session runtime so the model can recite them", () => {
+    const runtime = formatRemainingTasksRuntime([
+      { projectKey: "dina", projectName: "Dina", tasks: [task] },
+    ]);
+    expect(runtime).toContain("already loaded");
+    expect(runtime).toContain("1. [open] Ship the selector");
+    expect(runtime).toContain("Do not call list_project_tasks just to read it");
+    expect(formatRemainingTasksRuntime([])).toBe("");
+  });
+
+  it("formats a user-facing remaining list without a model", () => {
+    expect(
+      formatRemainingTasksMessage({
+        projectKey: "dina",
+        projectName: "Dina",
+        tasks: [task],
+      }),
+    ).toBe("Remaining tasks for Dina:\n\n1. Ship the selector");
+    expect(
+      formatRemainingTasksMessage({
+        projectKey: "dina",
+        projectName: "Dina",
+        tasks: [],
+      }),
+    ).toBe("No remaining tasks for Dina.");
   });
 });

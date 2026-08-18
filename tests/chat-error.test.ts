@@ -28,6 +28,10 @@ vi.mock("@/lib/project-tasks/membership", () => ({
   ),
 }));
 
+vi.mock("@/lib/project-tasks/store", () => ({
+  listProjectTasks: vi.fn(async () => []),
+}));
+
 vi.mock("@/lib/db/client", () => ({
   checkDatabase: vi.fn(async () => ({ ok: true })),
 }));
@@ -109,9 +113,15 @@ describe("POST /api/chat error path", () => {
 
     expect(streamChat).toHaveBeenCalled();
     const [input] = (streamChat.mock.calls as unknown as Array<
-      [{ actor?: { activeProject?: { key: string; name: string } | null } }]
+      [
+        {
+          tasksBlock?: string;
+          actor?: { activeProject?: { key: string; name: string } | null };
+        },
+      ]
     >)[0] ?? [];
     expect(input?.actor?.activeProject).toEqual({ key: "dina", name: "Dina" });
+    expect(input?.tasksBlock).toMatch(/already loaded|none remaining/);
   });
 
   it("rejects an unknown selected project", async () => {

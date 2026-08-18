@@ -54,6 +54,8 @@ export interface ModelProvider {
     signal?: AbortSignal;
     /** Structured memory block injected into runtime instructions. */
     memoryBlock?: string;
+    /** Live remaining project tasks injected into SESSION RUNTIME. */
+    tasksBlock?: string;
     actor?: ChatActor;
   }): AsyncIterable<StreamEvent>;
 }
