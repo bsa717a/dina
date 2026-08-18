@@ -49,7 +49,8 @@ type StreamEvent = {
 function isRemainingTasksChatMessage(message: ChatMessage) {
   return (
     message.id.startsWith("tasks-") ||
-    isRemainingTasksChatContent(message.role, message.content)
+    (message.role === "assistant" &&
+      isRemainingTasksChatContent(message.role, message.content))
   );
 }
 
@@ -642,6 +643,12 @@ export function ChatApp() {
           if (userId) writeStoredActiveProject(userId, project);
           if (project && changed) {
             void showRemainingTasks(project);
+          } else if (!project && changed) {
+            remainingTasksAbortRef.current?.abort();
+            remainingTasksRequestRef.current += 1;
+            setMessages((prev) =>
+              prev.filter((message) => !message.id.startsWith("tasks-")),
+            );
           }
         }}
         onSend={handleSend}
