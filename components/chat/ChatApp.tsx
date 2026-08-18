@@ -213,7 +213,7 @@ export function ChatApp() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load conversation");
       setMessages((prev) => {
-        const mapped = (data.messages || []).map(
+        const mapped: ChatMessage[] = (data.messages || []).map(
           (m: ChatMessage & { starredAt?: string | null }) => ({
             ...m,
             starred: Boolean(m.starred ?? m.starredAt),
@@ -394,7 +394,8 @@ export function ChatApp() {
         markdown?: string;
       };
       if (requestId !== remainingTasksRequestRef.current) return;
-      if (!res.ok || !data.markdown) {
+      const markdown = data.markdown;
+      if (!res.ok || !markdown) {
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
           selectedProjectRef.current = null;
           setSelectedProject(null);
@@ -408,7 +409,7 @@ export function ChatApp() {
         {
           id: `tasks-${project.key}`,
           role: "assistant",
-          content: data.markdown,
+          content: markdown,
           createdAt: new Date().toISOString(),
         },
       ]);
