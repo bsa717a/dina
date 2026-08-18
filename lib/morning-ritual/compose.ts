@@ -18,11 +18,29 @@ import {
 } from "@/lib/morning-ritual/dates";
 import { gatherMarketResearch, type MarketResearch } from "@/lib/morning-ritual/markets";
 import {
+  formatNewsSection,
+  gatherTopNews,
+  upsertTopStoriesSection,
+  type NewsResearch,
+} from "@/lib/morning-ritual/news";
+import {
   findBomReadingForDate,
   findCfmLessonForDate,
 } from "@/lib/morning-ritual/schedules";
+import type { AuthUser } from "@/lib/auth/types";
 import type { MorningRitualContext, WeekPlan } from "@/lib/morning-ritual/types";
 import { getOrCreateWeekPlan } from "@/lib/morning-ritual/week-plan";
+import {
+  DEFAULT_OWNER_SECTIONS,
+  hasSection,
+  wantsMarketResearch,
+  wantsNewsResearch,
+  type MorningBriefSectionId,
+} from "@/lib/morning-ritual/sections";
+import {
+  formatTodaysWinContext,
+  gatherTodaysWinContext,
+} from "@/lib/morning-ritual/win-context";
 import { logger } from "@/lib/logger";
 
 export async function buildMorningRitualContext(
@@ -128,25 +146,177 @@ export function stripValidationGateSection(markdown: string): string {
   return out.join("\n").replace(/^\n+/, "").trim();
 }
 
-export async function generateMorningBriefMarkdown(
-  at: Date = new Date(),
-): Promise<{ ok: boolean; markdown: string; error?: string }> {
-  // Run CFM week-plan work and market research in parallel so worst-case time
-  // is ~max(weekPlan, markets) + compose, not the sum of all three.
-  const [ctx, marketsResult] = await Promise.all([
-    buildMorningRitualContext(at),
-    gatherMarketResearch(at).catch(
-      (error): MarketResearch => ({
-        ok: false,
-        dateAnchor: denverSearchDateAnchor(at),
-        queries: [],
-        notes: "",
-        fetched: [],
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    ),
+function emptyMarkets(at: Date, error: string): MarketResearch {
+  return {
+    ok: false,
+    dateAnchor: denverSearchDateAnchor(at),
+    queries: [],
+    notes: "",
+    fetched: [],
+    error,
+  };
+}
+
+function emptyNews(at: Date, error: string): NewsResearch {
+  return {
+    ok: false,
+    dateAnchor: denverSearchDateAnchor(at),
+    windowStart: "",
+    queries: [],
+    articles: [],
+    notes: "",
+    error,
+  };
+}
+
+export function buildSelectedStructure(
+  sections: readonly MorningBriefSectionId[],
+): string {
+  const blocks: string[] = [
+    "# Morning brief — {weekday}, {longDate}",
+    "",
+  ];
+  if (hasSection(sections, "book_of_mormon")) {
+    blocks.push(
+      "## Book of Mormon",
+      "Day N of Total — Reading. Include the Read link.",
+      "",
+    );
+  }
+  if (hasSection(sections, "come_follow_me")) {
+    blocks.push(
+      "## COME, FOLLOW ME — DEEP STUDY",
+      "For TODAY's scriptureFocus only:",
+      "- Passage heading",
+      "- Summary",
+      "- Deep Insight (substantive, not shallow)",
+      "- Application (Personal / Leadership-Business / Adversity when natural)",
+      "- Reflective Question",
+      "",
+      "If today has assigned media, include a short \"Today's media\" subsection with titles/links.",
+      "If dayIndex===1, include the supplemental inventory section provided.",
+      "If dayIndex>1, do NOT repeat the full week supplemental dump.",
+      "Media types in the context are authoritative:",
+      "- (art) = artwork/painting — say \"View\" / \"See\", never \"Watch\", never call it a talk.",
+      "- (talk) = an actual talk — Read/Watch only if the URL is a real talk page.",
+      "- (video) = video — Watch is OK.",
+      "Never invent a talk title, speaker, or watch link that is not in the provided media list.",
+      "",
+    );
+  }
+  if (hasSection(sections, "market_brief")) {
+    blocks.push("## Market brief (~150 words)", "");
+  }
+  if (hasSection(sections, "market_intelligence")) {
+    blocks.push("## Business / Market Intelligence (bullets)", "");
+  }
+  if (hasSection(sections, "stock_movers")) {
+    blocks.push("## Big Stock Movers", "");
+  }
+  if (hasSection(sections, "trader_edge")) {
+    blocks.push("## Two Minute Trader Edge", "");
+  }
+  if (wantsMarketResearch(sections)) {
+    blocks.push(
+      "Market rules:",
+      "- Levels are news-article-mediated (as of sources), not live ticks. Prefer fetched excerpts over vague memory.",
+      "- Prefer wire desks / primary sources; skip Motley Fool/Zacks/Reddit style junk unless sentiment is the story.",
+      "- Do not invent prints. If research failed, say so briefly and skip fabricated movers.",
+      "- End market section with: Not financial advice.",
+      "",
+    );
+  }
+  if (hasSection(sections, "top_stories") || hasSection(sections, "st_george_news")) {
+    blocks.push(
+      "## Top stories / St. George",
+      "Include the provided newsSection verbatim. Keep every markdown link exactly as given so titles stay clickable. Do not invent articles or URLs. Do not rewrite titles into unlinked text.",
+      "",
+    );
+  }
+  if (hasSection(sections, "todays_win")) {
+    blocks.push(
+      "## Today's Win",
+      "Recommend one meaningful outcome — the thing that would make today count. Not a task list.",
+      "- Ground it in todaysWinContext (open attention, remaining project work, durable commitments).",
+      "- One sentence in this shape: Today's win is {outcome}.",
+      "- Add one short line on why it matters when natural.",
+      "- Do not invent a win from Come, Follow Me or markets.",
+      "- If context is empty or unavailable, ask: What would make today a win?",
+      "- Do not add Calendar, Waiting On, Needs Your Attention, or other CoS briefing sections.",
+      "",
+    );
+  }
+  if (hasSection(sections, "journal_prompt")) {
+    blocks.push(
+      "## Journal Prompt",
+      hasSection(sections, "come_follow_me")
+        ? "One prompt derived from today's CFM deep study."
+        : "One thoughtful morning journal prompt. Do not invent a scripture lesson.",
+      "",
+    );
+  }
+  return blocks.join("\n").trim();
+}
+
+export async function generateMorningBriefMarkdown(input?: {
+  at?: Date;
+  sections?: MorningBriefSectionId[];
+  user?: AuthUser | null;
+}): Promise<{ ok: boolean; markdown: string; error?: string }> {
+  const at = input?.at ?? new Date();
+  if (input && Array.isArray(input.sections) && input.sections.length === 0) {
+    return { ok: false, markdown: "", error: "No morning brief sections selected." };
+  }
+  const sections = input?.sections?.length
+    ? input.sections
+    : [...DEFAULT_OWNER_SECTIONS];
+  const user = input?.user ?? null;
+  const userName = user?.name || "Derek";
+  const includeStGeorge = hasSection(sections, "st_george_news");
+  const localOnly =
+    includeStGeorge && !hasSection(sections, "top_stories");
+  const newsOptions = { includeStGeorge, localOnly };
+
+  const needCfm = hasSection(sections, "come_follow_me") || hasSection(sections, "book_of_mormon") || hasSection(sections, "journal_prompt");
+  const needMarkets = wantsMarketResearch(sections);
+  const needNews = wantsNewsResearch(sections);
+  const needWin = hasSection(sections, "todays_win");
+
+  const [ctx, marketsResult, winContext, newsResult] = await Promise.all([
+    needCfm
+      ? buildMorningRitualContext(at)
+      : Promise.resolve({
+          date: denverDateString(at),
+          longDate: denverLongDate(at),
+          weekday: denverWeekdayLong(at),
+          cfm: null,
+          bom: null,
+          dayIndex: dayIndexMon1(denverDateString(at)),
+          todayPlan: null,
+          weekPlan: null,
+          validationNotes: [],
+        } satisfies MorningRitualContext),
+    needMarkets
+      ? gatherMarketResearch(at).catch((error): MarketResearch =>
+          emptyMarkets(at, error instanceof Error ? error.message : String(error)),
+        )
+      : Promise.resolve(emptyMarkets(at, "skipped")),
+    needWin
+      ? gatherTodaysWinContext(user)
+      : Promise.resolve({
+          userName,
+          attention: [],
+          remainingTasks: [],
+          commitments: [],
+        }),
+    needNews
+      ? gatherTopNews(at, newsOptions).catch((error): NewsResearch =>
+          emptyNews(at, error instanceof Error ? error.message : String(error)),
+        )
+      : Promise.resolve(emptyNews(at, "skipped")),
   ]);
   const markets = marketsResult;
+  const newsSection = needNews ? formatNewsSection(newsResult, newsOptions) : "";
 
   if (isOpenAICreditsBlocked()) {
     return { ok: false, markdown: "", error: openAICreditsUserMessage() };
@@ -156,18 +326,20 @@ export async function generateMorningBriefMarkdown(
     return { ok: false, markdown: "", error: "OpenAI is not configured." };
   }
 
-  const marketBlock = markets.ok
-    ? [
-        markets.notes,
-        "",
-        "Fetched article excerpts (prefer these for levels):",
-        ...markets.fetched.map((f) =>
-          f.ok
-            ? `URL: ${f.url}\n${f.excerpt || ""}`
-            : `URL: ${f.url} (fetch failed: ${f.error})`,
-        ),
-      ].join("\n")
-    : `Market research failed: ${markets.error || "unknown"}. Soft-degrade: omit invented numbers; say research was unavailable.`;
+  const marketBlock = !needMarkets
+    ? "Markets not selected."
+    : markets.ok
+      ? [
+          markets.notes,
+          "",
+          "Fetched article excerpts (prefer these for levels):",
+          ...markets.fetched.map((f) =>
+            f.ok
+              ? `URL: ${f.url}\n${f.excerpt || ""}`
+              : `URL: ${f.url} (fetch failed: ${f.error})`,
+          ),
+        ].join("\n")
+      : `Market research failed: ${markets.error || "unknown"}. Soft-degrade: omit invented numbers; say research was unavailable.`;
 
   try {
     // Budget: parallel prep ≤ ~85s + compose ≤ 90s ≪ chat maxDuration 300s.
@@ -177,49 +349,14 @@ export async function generateMorningBriefMarkdown(
       model: researchModel,
       ...withTemperature(researchModel, 0.55),
       max_output_tokens: 4500,
-      instructions: `You write Derek's Morning Ritual brief (personal spiritual + markets packet). This is NOT the Chief of Staff Daily Briefing (no Today's Win / Waiting On / calendar).
+      instructions: `You write ${userName}'s Morning Ritual brief. This is NOT the Chief of Staff Daily Briefing (no Waiting On / calendar / Needs Your Attention).
 
-Output markdown with this structure and tone (match quality of a thoughtful study journal + desk note):
+Output markdown with ONLY these selected sections (omit everything else) and a thoughtful, concise tone:
 
-# Morning brief — {weekday}, {longDate}
-
-## Book of Mormon
-Day N of Total — Reading. Include the Read link.
-
-## COME, FOLLOW ME — DEEP STUDY
-For TODAY's scriptureFocus only:
-- Passage heading
-- Summary
-- Deep Insight (substantive, not shallow)
-- Application (Personal / Leadership-Business / Adversity when natural)
-- Reflective Question
-
-If today has assigned media, include a short "Today's media" subsection with titles/links.
-If dayIndex===1, include the supplemental inventory section provided.
-If dayIndex>1, do NOT repeat the full week supplemental dump.
-Media types in the context are authoritative:
-- (art) = artwork/painting — say "View" / "See", never "Watch", never call it a talk.
-- (talk) = an actual talk — Read/Watch only if the URL is a real talk page.
-- (video) = video — Watch is OK.
-Never invent a talk title, speaker, or watch link that is not in the provided media list.
-
-## Market brief (~150 words)
-Then:
-## Business / Market Intelligence (bullets)
-## Big Stock Movers
-## Two Minute Trader Edge
-
-Market rules:
-- Levels are news-article-mediated (as of sources), not live ticks. Prefer fetched excerpts over vague memory.
-- Prefer wire desks / primary sources; skip Motley Fool/Zacks/Reddit style junk unless sentiment is the story.
-- Do not invent prints. If research failed, say so briefly and skip fabricated movers.
-- End market section with: Not financial advice.
-
-## Journal Prompt
-One prompt derived from today's CFM deep study.
+${buildSelectedStructure(sections)}
 
 Do NOT include a Validation Gate section (or similar meta/debug bullets). Use schedule/context silently.
-Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
+Write in a concise, confident, warm, direct voice. No corporate fluff.`,
       input: [
         {
           role: "user",
@@ -231,6 +368,8 @@ Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
             bom: ctx.bom,
             todayPlan: ctx.todayPlan,
             supplementalSection: formatSupplemental(ctx.weekPlan, ctx.dayIndex),
+            todaysWinContext: formatTodaysWinContext(winContext),
+            newsSection,
             marketResearch: marketBlock,
             marketDateAnchor: markets.dateAnchor,
             marketQueries: markets.queries,
@@ -249,7 +388,9 @@ Write in Derek's voice: concise, confident, warm, direct. No corporate fluff.`,
     if (!markdown) {
       return { ok: false, markdown: "", error: "Model returned empty morning brief." };
     }
-    const cleaned = stripValidationGateSection(markdown);
+    const cleaned = newsSection
+      ? upsertTopStoriesSection(stripValidationGateSection(markdown), newsSection)
+      : stripValidationGateSection(markdown);
     if (!cleaned) {
       return {
         ok: false,

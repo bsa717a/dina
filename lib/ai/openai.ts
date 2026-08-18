@@ -73,6 +73,8 @@ import { executeStarTool, listStarToolNames } from "@/lib/stars/tools";
 import { getTeamToolDefinitions } from "@/lib/team/tool-definitions";
 import { executeTeamTool, listTeamToolNames } from "@/lib/team/tools";
 import { getMorningRitualToolDefinitions } from "@/lib/morning-ritual/tool-definitions";
+import { getMorningBriefPreference } from "@/lib/morning-ritual/preferences";
+import { looksLikeSectionSelection } from "@/lib/morning-ritual/sections";
 import {
   executeMorningRitualTool,
   listMorningRitualToolNames,
@@ -84,6 +86,7 @@ import {
   isEmailQuestion,
   isGitHubQuestion,
   isMorningBriefRequest,
+  isMorningBriefSetupRequest,
   isOneDriveQuestion,
   isPlannerQuestion,
   isSharePointListQuestion,
@@ -250,7 +253,7 @@ function buildInstructions(
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
     "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
-    "Morning Ritual tool enabled: generate_morning_brief. When Derek asks for morning brief / morning ritual, call it and present the returned markdown. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
+    "Morning Ritual tool enabled: generate_morning_brief. When Derek (or anyone) asks for morning brief / morning ritual, call it and pass userText. First-time users and “Morning brief setup” get a section picker — present that list and wait. After they pick, call the tool again with their reply so it saves and/or generates. Present returned markdown as-is. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
     "Team tools enabled: list_projects, create_project, archive_project, list_teammates, add_teammate_to_project, invite_teammate. New project → create_project (not Memory alone). New login → invite_teammate. Existing teammate / add to a project / no second invite → add_teammate_to_project. Do not invent an email address.",
   );
   parts.push(
@@ -310,7 +313,22 @@ function buildInstructions(
   return parts.join("\n");
 }
 
-async function executeTool(name: string, argsJson: string): Promise<string> {
+function withLastUserText(argsJson: string, lastUserText: string): string {
+  if (!lastUserText) return argsJson || "{}";
+  try {
+    const args = JSON.parse(argsJson || "{}") as Record<string, unknown>;
+    if (!args.userText) args.userText = lastUserText;
+    return JSON.stringify(args);
+  } catch {
+    return argsJson;
+  }
+}
+
+async function executeTool(
+  name: string,
+  argsJson: string,
+  lastUserText = "",
+): Promise<string> {
   if (listMemoryToolNames().includes(name)) {
     return executeMemoryTool(name, argsJson);
   }
@@ -318,7 +336,7 @@ async function executeTool(name: string, argsJson: string): Promise<string> {
     return executeStarTool(name, argsJson);
   }
   if (listMorningRitualToolNames().includes(name)) {
-    return executeMorningRitualTool(name, argsJson);
+    return executeMorningRitualTool(name, withLastUserText(argsJson, lastUserText));
   }
   if (listChurchToolNames().includes(name)) {
     return executeChurchTool(name, argsJson);
@@ -376,7 +394,7 @@ export class OpenAIProvider implements ModelProvider {
     const starTools = isMember ? [] : getStarToolDefinitions();
     const projectTaskTools = getProjectTaskToolDefinitions();
     const writingTools = isMember ? [] : getWritingToolDefinitions();
-    const morningRitualTools = isMember ? [] : getMorningRitualToolDefinitions();
+    const morningRitualTools = getMorningRitualToolDefinitions();
     const churchTools = isMember ? [] : getChurchToolDefinitions();
     const teamTools = isMember ? [] : getTeamToolDefinitions();
     const tools = [
@@ -408,6 +426,7 @@ export class OpenAIProvider implements ModelProvider {
           "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
           "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
           "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
+          "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. First time (or Morning brief setup) returns a section picker — show that list and wait. After they pick numbers, call it again with their reply.",
         ]
           .filter(Boolean)
           .join("\n")
@@ -456,8 +475,18 @@ export class OpenAIProvider implements ModelProvider {
         Boolean(msTools.length) &&
         isWordDocumentRequest(lastUserText) &&
         !forceSharePointList;
+      const maybeMorningReply =
+        isMorningBriefRequest(lastUserText) ||
+        looksLikeSectionSelection(lastUserText);
+      const morningPref =
+        maybeMorningReply && input.actor?.id
+          ? await getMorningBriefPreference(input.actor.id)
+          : null;
       const forceMorningBrief =
-        !isMember && isMorningBriefRequest(lastUserText);
+        toolNames.has("generate_morning_brief") &&
+        (isMorningBriefRequest(lastUserText) ||
+          (morningPref?.status === "pending" &&
+            looksLikeSectionSelection(lastUserText)));
       const forceChurchCitation =
         !isMember &&
         !forceMorningBrief &&
@@ -485,7 +514,10 @@ export class OpenAIProvider implements ModelProvider {
           detail:
             round === 0
               ? forceMorningBrief
-                ? "Preparing morning brief…"
+                ? isMorningBriefSetupRequest(lastUserText) ||
+                  morningPref?.status === "pending"
+                  ? "Setting up morning brief…"
+                  : "Preparing morning brief…"
                 : forceChurchCitation
                   ? "Verifying Church sources…"
                   : forceEmail
@@ -810,7 +842,11 @@ export class OpenAIProvider implements ModelProvider {
             detail: friendlyToolStatus(call.name),
           };
           logger.info("tool_call", { tool: call.name });
-          let output = await executeTool(call.name, call.arguments || "{}");
+          let output = await executeTool(
+            call.name,
+            call.arguments || "{}",
+            lastUserText,
+          );
           if (call.name === "list_calendar_events") {
             try {
               const parsed = JSON.parse(output) as {

@@ -3,6 +3,7 @@ import {
   friendlyToolStatus,
   isChurchCitationQuestion,
   isMorningBriefRequest,
+  isMorningBriefSetupRequest,
   isSharePointListQuestion,
   isWordDocumentRequest,
   looksLikeStallingFiller,
@@ -36,6 +37,8 @@ describe("tool routing helpers", () => {
   it("detects Morning Ritual requests", () => {
     expect(isMorningBriefRequest("Morning brief")).toBe(true);
     expect(isMorningBriefRequest("daily briefing win")).toBe(false);
+    expect(isMorningBriefSetupRequest("Morning brief setup")).toBe(true);
+    expect(isMorningBriefSetupRequest("Morning brief")).toBe(false);
   });
 
   it("detects Church citation questions and excludes morning brief", () => {
