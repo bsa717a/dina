@@ -388,6 +388,7 @@ export function ChatApp() {
           selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
+          clearRemainingTasksBubble();
         }
         throw new Error(data.error || "Could not load tasks.");
       }
@@ -464,6 +465,7 @@ export function ChatApp() {
           selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
+          clearRemainingTasksBubble();
         }
         throw new Error(data.error || "Chat request failed");
       }
