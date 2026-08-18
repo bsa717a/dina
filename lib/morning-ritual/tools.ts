@@ -12,6 +12,7 @@ import {
   DEFAULT_OWNER_SECTIONS,
   formatSavedSetupMarkdown,
   formatSetupMarkdown,
+  normalizeSectionIds,
   parseSectionSelection,
   sectionTitles,
 } from "@/lib/morning-ritual/sections";
@@ -56,7 +57,7 @@ async function handleGenerateMorningBrief(args: Record<string, unknown>) {
     if (parsedArgs.length) {
       return saveMorningBriefSections({
         userId: user.id,
-        sections: parsedArgs,
+        sections: normalizeSectionIds(parsedArgs),
       });
     }
     if (parsedText.kind === "all") {
