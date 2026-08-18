@@ -114,6 +114,7 @@ export function ChatApp() {
   const composerRef = useRef<ComposerHandle>(null);
   const sendingRef = useRef(false);
   const remainingTasksRequestRef = useRef(0);
+  const remainingTasksAbortRef = useRef<AbortController | null>(null);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
   const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
@@ -331,44 +332,43 @@ export function ChatApp() {
 
   async function showRemainingTasks(project: UserProject) {
     const requestId = ++remainingTasksRequestRef.current;
+    remainingTasksAbortRef.current?.abort();
+    const controller = new AbortController();
+    remainingTasksAbortRef.current = controller;
     setError(null);
     try {
-      const res = await fetch("/api/project-tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: project.key }),
-      });
+      const res = await fetch(
+        `/api/project-tasks?project=${encodeURIComponent(project.key)}`,
+        { signal: controller.signal },
+      );
+      if (requestId !== remainingTasksRequestRef.current) return;
       if (res.status === 401) {
         router.replace("/login");
         return;
       }
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
-        message?: ChatMessage;
+        markdown?: string;
       };
       if (requestId !== remainingTasksRequestRef.current) return;
-      if (!res.ok || !data.message) {
+      if (!res.ok || !data.markdown) {
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
         }
         throw new Error(data.error || "Could not load tasks.");
       }
-      const next = data.message;
       setMessages((prev) => [
-        ...prev.filter((message) => message.id !== next.id),
+        ...prev.filter((message) => !message.id.startsWith("tasks-")),
         {
-          id: next.id,
-          role: next.role,
-          content: next.content,
-          createdAt:
-            typeof next.createdAt === "string"
-              ? next.createdAt
-              : new Date(next.createdAt).toISOString(),
-          attachments: next.attachments ?? [],
+          id: `tasks-${project.key}`,
+          role: "assistant",
+          content: data.markdown,
+          createdAt: new Date().toISOString(),
         },
       ]);
     } catch (err) {
+      if (controller.signal.aborted) return;
       if (requestId !== remainingTasksRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Could not load tasks.");
     }
