@@ -212,17 +212,26 @@ export function ChatApp() {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load conversation");
-      setMessages(
-        (data.messages || []).map((m: ChatMessage & { starredAt?: string | null }) => ({
-          ...m,
-          starred: Boolean(m.starred ?? m.starredAt),
-          createdAt:
-            typeof m.createdAt === "string"
-              ? m.createdAt
-              : new Date(m.createdAt).toISOString(),
-          usage: usageByMessageIdRef.current.get(m.id),
-        })),
-      );
+      setMessages((prev) => {
+        const mapped = (data.messages || []).map(
+          (m: ChatMessage & { starredAt?: string | null }) => ({
+            ...m,
+            starred: Boolean(m.starred ?? m.starredAt),
+            createdAt:
+              typeof m.createdAt === "string"
+                ? m.createdAt
+                : new Date(m.createdAt).toISOString(),
+            usage: usageByMessageIdRef.current.get(m.id),
+          }),
+        );
+        const localTasks = prev.filter((message) =>
+          message.id.startsWith("tasks-"),
+        );
+        return [
+          ...mapped.filter((message) => !isRemainingTasksChatMessage(message)),
+          ...localTasks,
+        ];
+      });
       const project = selectedProjectRef.current;
       if (project) void showRemainingTasksRef.current(project, { quiet: true });
     } catch (err) {
