@@ -291,13 +291,16 @@ Use for “remaining tasks for Dina” / “mark 6 complete”. Numbers are 1-ba
 
 ## Morning Ritual
 
-On-demand personal morning packet — **not** the Operating Manual Daily Briefing (win / attention / calendar / waiting-on).
+On-demand personal morning packet — **not** the Operating Manual Daily Briefing (attention / calendar / waiting-on). Available to every user.
 
-Say **“Morning brief”** in chat → `generate_morning_brief`. Includes:
+Say **“Morning brief”** in chat → `generate_morning_brief`. First time, they pick sections; **Morning brief setup** changes the list later. Available sections:
 
-- Come, Follow Me deep study for today (persisted 7-day week plan; talks/videos/art spread uniquely across the week)
-- Book of Mormon schedule line from [`content/schedules/`](content/schedules/)
-- Web-researched markets (date-anchored search + selective fetch; news-mediated levels, not live ticks)
+- Book of Mormon
+- Come, Follow Me — Deep Study
+- Market brief / Business intelligence / Big Stock Movers / Two Minute Trader Edge
+- Top stories (last 12 hours, clickable links)
+- St. George local news
+- Today's Win
 - Journal prompt
 
 Schedules: `content/schedules/cfm_schedule_2026.md`, `content/schedules/bom_schedule_2026.md`. Week plans cache in SQLite (`MorningRitualWeekPlan`).

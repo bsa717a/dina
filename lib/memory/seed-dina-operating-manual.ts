@@ -63,7 +63,7 @@ const SEEDS: Seed[] = [
     category: "decisions",
     title: "Daily briefing order",
     content:
-      "CoS Daily Briefing (<2 min; not the chat Morning Ritual): 1) Today's Win (one meaningful outcome) 2) Needs Your Attention (highest priority; why, recommendation, next action) 3) Calendar (meetings, travel, prep, conflicts) 4) Waiting On (Derek waiting / waiting on Derek) 5) Projects needing attention 6) Personal (family, church, health, reminders) 7) Opportunities (automation, delegation, simplification, buy vs build). Morning Ritual (CFM/BoM/markets/journal) is a separate on-demand chat tool.",
+      "CoS Daily Briefing (<2 min; not the chat Morning Ritual): 1) Today's Win (one meaningful outcome) 2) Needs Your Attention (highest priority; why, recommendation, next action) 3) Calendar (meetings, travel, prep, conflicts) 4) Waiting On (Derek waiting / waiting on Derek) 5) Projects needing attention 6) Personal (family, church, health, reminders) 7) Opportunities (automation, delegation, simplification, buy vs build). Morning Ritual (CFM/BoM/markets/top stories/Today's Win/journal) is a separate on-demand chat tool — do not merge the rest of this briefing into that packet.",
     importance: "critical",
     confidence: 1,
   },

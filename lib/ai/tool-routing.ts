@@ -98,6 +98,13 @@ export function isMorningBriefRequest(text: string) {
   );
 }
 
+export function isMorningBriefSetupRequest(text: string) {
+  return (
+    /\bmorning\s+brief\s+setup\b/i.test(text) ||
+    /\bmorning\s+ritual\s+setup\b/i.test(text)
+  );
+}
+
 /**
  * Lesson / talk / Church citation asks that must use search_church_site
  * (or fetch_church_url) before naming talks, speakers, or people.

@@ -27,6 +27,7 @@ model User {
   memories            MemoryItem[]
   pushSubscriptions   PushSubscription[]
   uploadedAttachments Attachment[]
+  morningBriefPreference MorningBriefPreference?
 }
 
 /// Live project registry. Dina can create and archive these without a code change.
@@ -285,6 +286,20 @@ model ProjectTask {
   @@unique([projectKey, title])
   @@index([projectKey, status])
   @@index([projectKey, sortOrder])
+}
+
+/// Per-user Morning Ritual section picker.
+model MorningBriefPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sectionsJson   String   @default("[]")
+  status         String   @default("ready")
+  pendingReason  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
 }
 
 /// Cached 7-day Come, Follow Me plan for Morning Ritual (Mon–Sun).
