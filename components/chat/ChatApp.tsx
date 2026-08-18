@@ -322,6 +322,7 @@ export function ChatApp() {
           setProjects(next);
           if (typeof data.user?.id === "string") {
             const stored = readStoredActiveProject(data.user.id, next);
+            selectedProjectRef.current = stored;
             setSelectedProject(stored);
             if (stored) void showRemainingTasksRef.current(stored);
           }
@@ -341,11 +342,21 @@ export function ChatApp() {
     };
   }, [loadConversation, refreshHealth, refreshDayUsage]);
 
+  function clearRemainingTasksBubble() {
+    remainingTasksAbortRef.current?.abort();
+    remainingTasksRequestRef.current += 1;
+    setMessages((prev) =>
+      prev.filter((message) => !message.id.startsWith("tasks-")),
+    );
+  }
+
   useEffect(() => {
     if (!selectedProject) return;
     if (projects.some((project) => project.key === selectedProject.key)) return;
+    selectedProjectRef.current = null;
     setSelectedProject(null);
     if (userId) writeStoredActiveProject(userId, null);
+    clearRemainingTasksBubble();
   }, [projects, selectedProject, userId]);
 
   async function showRemainingTasks(project: UserProject) {
@@ -639,16 +650,13 @@ export function ChatApp() {
         onSelectProject={(project) => {
           if (sendingRef.current) return;
           const changed = project?.key !== selectedProject?.key;
+          selectedProjectRef.current = project;
           setSelectedProject(project);
           if (userId) writeStoredActiveProject(userId, project);
           if (project && changed) {
             void showRemainingTasks(project);
           } else if (!project && changed) {
-            remainingTasksAbortRef.current?.abort();
-            remainingTasksRequestRef.current += 1;
-            setMessages((prev) =>
-              prev.filter((message) => !message.id.startsWith("tasks-")),
-            );
+            clearRemainingTasksBubble();
           }
         }}
         onSend={handleSend}
