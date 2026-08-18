@@ -53,7 +53,9 @@ export function isRemainingTasksChatContent(
   const text = content.trim();
   if (role === "user") return /^Show remaining tasks for /i.test(text);
   if (role === "assistant") {
-    return /^(Remaining tasks for |No remaining tasks for )/i.test(text);
+    return /^(Remaining tasks for |No remaining tasks for |Remaining project tasks \(live this turn)/i.test(
+      text,
+    );
   }
   return false;
 }

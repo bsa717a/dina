@@ -103,6 +103,12 @@ describe("remaining task runtime", () => {
         "Remaining tasks for Dina:\n\n1. Ship the selector",
       ),
     ).toBe(true);
+    expect(
+      isRemainingTasksChatContent(
+        "assistant",
+        "Remaining project tasks (live this turn — already loaded):\nDina:\n1. [open] Ship the selector",
+      ),
+    ).toBe(true);
     expect(isRemainingTasksChatContent("user", "mark 2 complete")).toBe(false);
     expect(
       projectKeyFromTaskToolOutput(
