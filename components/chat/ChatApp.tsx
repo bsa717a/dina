@@ -342,9 +342,11 @@ export function ChatApp() {
     };
   }, [loadConversation, refreshHealth, refreshDayUsage]);
 
-  function clearRemainingTasksBubble() {
-    remainingTasksAbortRef.current?.abort();
-    remainingTasksRequestRef.current += 1;
+  function clearRemainingTasksBubble(options?: { keepRequest?: boolean }) {
+    if (!options?.keepRequest) {
+      remainingTasksAbortRef.current?.abort();
+      remainingTasksRequestRef.current += 1;
+    }
     setMessages((prev) =>
       prev.filter((message) => !message.id.startsWith("tasks-")),
     );
@@ -388,7 +390,7 @@ export function ChatApp() {
           selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
-          clearRemainingTasksBubble();
+          clearRemainingTasksBubble({ keepRequest: true });
         }
         throw new Error(data.error || "Could not load tasks.");
       }
