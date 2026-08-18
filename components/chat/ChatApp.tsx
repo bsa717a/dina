@@ -115,6 +115,11 @@ export function ChatApp() {
   const sendingRef = useRef(false);
   const remainingTasksRequestRef = useRef(0);
   const remainingTasksAbortRef = useRef<AbortController | null>(null);
+  const selectedProjectRef = useRef<UserProject | null>(null);
+  const showRemainingTasksRef = useRef<(project: UserProject) => Promise<void>>(
+    async () => undefined,
+  );
+  selectedProjectRef.current = selectedProject;
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
   const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
@@ -209,6 +214,8 @@ export function ChatApp() {
           usage: usageByMessageIdRef.current.get(m.id),
         })),
       );
+      const project = selectedProjectRef.current;
+      if (project) void showRemainingTasksRef.current(project);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
@@ -373,6 +380,7 @@ export function ChatApp() {
       setError(err instanceof Error ? err.message : "Could not load tasks.");
     }
   }
+  showRemainingTasksRef.current = showRemainingTasks;
 
   async function handleSend(input: {
     content: string;
