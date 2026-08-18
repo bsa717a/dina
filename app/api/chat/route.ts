@@ -12,6 +12,10 @@ import {
 } from "@/lib/db/conversations";
 import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { memoryScopeForUser } from "@/lib/memory/scope";
+import {
+  resolveActiveProjectForUser,
+  runWithActiveProject,
+} from "@/lib/chat/active-project";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
 import { logger } from "@/lib/logger";
@@ -37,6 +41,7 @@ export const maxDuration = 300;
 const bodySchema = z.object({
   content: z.string().max(50_000).default(""),
   attachmentIds: z.array(z.string()).max(8).default([]),
+  project: z.string().max(80).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -62,6 +67,15 @@ export async function POST(request: NextRequest) {
   const content = parsed.data.content.trim();
   if (!content && parsed.data.attachmentIds.length === 0) {
     return jsonError("Message or attachment is required.");
+  }
+
+  const requestedProject = parsed.data.project?.trim();
+  const activeProject = await resolveActiveProjectForUser(
+    user,
+    requestedProject,
+  );
+  if (requestedProject && !activeProject) {
+    return jsonError("Unknown project or no access.", 400);
   }
 
   if (user.role === "owner") {
@@ -100,7 +114,8 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      await runWithAuthUser(user, async () => {
+      await runWithAuthUser(user, () =>
+        runWithActiveProject(activeProject, async () => {
       const send = (payload: unknown) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
@@ -122,11 +137,14 @@ export async function POST(request: NextRequest) {
           | undefined;
 
         const scope = await memoryScopeForUser(user);
+        const fallbackQuery =
+          user.role === "owner"
+            ? "derek preferences projects people"
+            : "project tasks decisions";
         const relevant = await retrieveRelevantMemories(
-          content ||
-            (user.role === "owner"
-              ? "derek preferences projects people"
-              : "project tasks decisions"),
+          [content || fallbackQuery, activeProject?.name]
+            .filter(Boolean)
+            .join(" "),
           { limit: 12, scope },
         );
         const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
@@ -161,6 +179,7 @@ export async function POST(request: NextRequest) {
             assistantName: user.assistantName,
             assistantPersona: user.assistantPersona,
             projectNames,
+            activeProject,
           },
         })) {
           if (event.type === "status") {
@@ -225,7 +244,8 @@ export async function POST(request: NextRequest) {
       } finally {
         controller.close();
       }
-      });
+        }),
+      );
     },
   });
 

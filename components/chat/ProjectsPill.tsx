@@ -9,16 +9,19 @@ export type UserProject = {
 
 export function ProjectsPill({
   projects,
+  selected,
   disabled,
   onSelectProject,
 }: {
   projects: UserProject[];
+  selected?: UserProject | null;
   disabled?: boolean;
-  onSelectProject?: (project: UserProject) => void;
+  onSelectProject?: (project: UserProject | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  const active = Boolean(selected);
 
   useEffect(() => {
     if (!open) return;
@@ -51,22 +54,50 @@ export function ProjectsPill({
             </p>
           ) : (
             <ul>
-              {projects.map((project) => (
-                <li key={project.key}>
+              {selected && (
+                <li>
                   <button
                     type="button"
                     role="menuitem"
                     disabled={disabled}
                     onClick={() => {
                       setOpen(false);
-                      onSelectProject?.(project);
+                      onSelectProject?.(null);
                     }}
-                    className="block w-full px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+                    className="block w-full px-3 py-2 text-left text-sm text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--foreground)] disabled:opacity-40"
                   >
-                    {project.name}
+                    All projects
                   </button>
                 </li>
-              ))}
+              )}
+              {projects.map((project) => {
+                const isSelected = selected?.key === project.key;
+                return (
+                  <li key={project.key}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={disabled}
+                      onClick={() => {
+                        setOpen(false);
+                        onSelectProject?.(project);
+                      }}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm disabled:opacity-40 ${
+                        isSelected
+                          ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                          : "text-[var(--foreground)] hover:bg-[var(--accent-soft)]"
+                      }`}
+                    >
+                      <span>{project.name}</span>
+                      {isSelected && (
+                        <span aria-hidden="true" className="text-xs">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -75,15 +106,16 @@ export function ProjectsPill({
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
+        aria-label={selected ? `Project: ${selected.name}` : "Projects"}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
         className={`rounded-full border px-3 py-1 text-xs font-medium transition disabled:opacity-40 ${
-          open
+          open || active
             ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
             : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)]"
         }`}
       >
-        Projects
+        {selected?.name ?? "Projects"}
       </button>
     </div>
   );

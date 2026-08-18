@@ -23,6 +23,9 @@ vi.mock("@/lib/memory/scope", () => ({
 
 vi.mock("@/lib/project-tasks/membership", () => ({
   listMemberProjectKeys: vi.fn(async () => ["dina"]),
+  userCanAccessProject: vi.fn(async (_user: unknown, project: string) =>
+    project === "dina" || project === "Dina" ? "dina" : null,
+  ),
 }));
 
 vi.mock("@/lib/db/client", () => ({
@@ -52,17 +55,22 @@ vi.mock("@/lib/memory/retrieve", () => ({
   formatMemoriesForPrompt: vi.fn(() => ""),
 }));
 
+const streamChat = vi.fn(async function* () {
+  yield { type: "error", message: "OpenAI is down" };
+});
+
 vi.mock("@/lib/ai/provider", () => ({
   getModelProvider: vi.fn(async () => ({
     name: "mock",
-    async *streamChat() {
-      yield { type: "error", message: "OpenAI is down" };
-    },
+    streamChat,
   })),
 }));
 
 describe("POST /api/chat error path", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    streamChat.mockClear();
+    const conversations = await import("@/lib/db/conversations");
+    vi.mocked(conversations.createMessage).mockClear();
     vi.resetModules();
   });
 
@@ -81,5 +89,49 @@ describe("POST /api/chat error path", () => {
     const text = await res.text();
     expect(text).toContain("OpenAI is down");
     expect(text).toContain('"type":"error"');
+  });
+
+  it("passes the selected project to the model actor", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "add a task to ship the selector",
+        attachmentIds: [],
+        project: "dina",
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    await res.text();
+
+    expect(streamChat).toHaveBeenCalled();
+    const [input] = (streamChat.mock.calls as unknown as Array<
+      [{ actor?: { activeProject?: { key: string; name: string } | null } }]
+    >)[0] ?? [];
+    expect(input?.actor?.activeProject).toEqual({ key: "dina", name: "Dina" });
+  });
+
+  it("rejects an unknown selected project", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "add a task",
+        attachmentIds: [],
+        project: "not-a-real-project",
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(String(data.error)).toMatch(/project/i);
+    expect(streamChat).not.toHaveBeenCalled();
+    const conversations = await import("@/lib/db/conversations");
+    expect(conversations.createMessage).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AttentionPanel } from "@/components/chat/AttentionPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
+import type { UserProject } from "@/components/chat/ProjectsPill";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUsage } from "@/components/chat/types";
 import {
@@ -44,6 +45,33 @@ type StreamEvent = {
   dayUsageLabel?: string;
 };
 
+function activeProjectStorageKey(userId: string) {
+  return `dina.activeProject.${userId}`;
+}
+
+function readStoredActiveProject(
+  userId: string,
+  projects: UserProject[],
+): UserProject | null {
+  try {
+    const raw = window.localStorage.getItem(activeProjectStorageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { key?: unknown; name?: unknown };
+    if (typeof parsed?.key !== "string" || typeof parsed?.name !== "string") {
+      return null;
+    }
+    return projects.find((project) => project.key === parsed.key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredActiveProject(userId: string, project: UserProject | null) {
+  const key = activeProjectStorageKey(userId);
+  if (project) window.localStorage.setItem(key, JSON.stringify(project));
+  else window.localStorage.removeItem(key);
+}
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -77,8 +105,14 @@ export function ChatApp() {
     null,
   );
   const [userRole, setUserRole] = useState<"owner" | "member" | null>(null);
-  const [projects, setProjects] = useState<{ key: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<UserProject[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<UserProject | null>(
+    null,
+  );
+  const [sending, setSending] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
+  const sendingRef = useRef(false);
   const dragDepthRef = useRef(0);
   const thinkingRef = useRef(thinking);
   const usageByMessageIdRef = useRef<Map<string, ChatUsage>>(new Map());
@@ -87,7 +121,7 @@ export function ChatApp() {
   // file-drop-guard.js blocks navigation early; this wires drops into Composer.
   useEffect(() => {
     const acceptFiles = (files: File[] | FileList) => {
-      if (thinkingRef.current) return;
+      if (thinkingRef.current || sendingRef.current) return;
       const list = Array.from(files);
       if (!list.length) return;
       dragDepthRef.current = 0;
@@ -103,7 +137,8 @@ export function ChatApp() {
     }
 
     const onDragEnter = (e: DragEvent) => {
-      if (!dragEventHasFiles(e) || thinkingRef.current) return;
+      if (!dragEventHasFiles(e) || thinkingRef.current || sendingRef.current)
+        return;
       dragDepthRef.current += 1;
       setDragActive(true);
     };
@@ -253,6 +288,7 @@ export function ChatApp() {
         setVapidPublicKey(data.vapidPublicKey);
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
         setGoogleEnabled(Boolean(data.googleEnabled));
+        if (typeof data.user?.id === "string") setUserId(data.user.id);
         if (data.user?.assistantName) setAssistantName(data.user.assistantName);
         if (typeof data.user?.avatarUrl === "string") {
           setAssistantAvatarUrl(data.user.avatarUrl);
@@ -261,12 +297,14 @@ export function ChatApp() {
           setUserRole(data.user.role);
         }
         if (Array.isArray(data.projects)) {
-          setProjects(
-            data.projects.filter(
-              (project: { key?: unknown; name?: unknown }) =>
-                typeof project?.key === "string" && typeof project?.name === "string",
-            ),
+          const next = data.projects.filter(
+            (project: { key?: unknown; name?: unknown }): project is UserProject =>
+              typeof project?.key === "string" && typeof project?.name === "string",
           );
+          setProjects(next);
+          if (typeof data.user?.id === "string") {
+            setSelectedProject(readStoredActiveProject(data.user.id, next));
+          }
         }
         if (supported && data.vapidPublicKey && Notification.permission === "granted") {
           const reg = await navigator.serviceWorker.ready;
@@ -283,7 +321,21 @@ export function ChatApp() {
     };
   }, [loadConversation, refreshHealth, refreshDayUsage]);
 
-  async function handleSend(input: { content: string; attachmentIds: string[] }) {
+  useEffect(() => {
+    if (!selectedProject) return;
+    if (projects.some((project) => project.key === selectedProject.key)) return;
+    setSelectedProject(null);
+    if (userId) writeStoredActiveProject(userId, null);
+  }, [projects, selectedProject, userId]);
+
+  async function handleSend(input: {
+    content: string;
+    attachmentIds: string[];
+    project?: UserProject | null;
+  }) {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
     setError(null);
     const tempId = `temp-${crypto.randomUUID()}`;
     setMessages((prev) => [
@@ -308,10 +360,16 @@ export function ChatApp() {
     let started = false;
 
     try {
+      const project =
+        input.project !== undefined ? input.project : selectedProject;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          content: input.content,
+          attachmentIds: input.attachmentIds,
+          ...(project ? { project: project.key } : {}),
+        }),
       });
 
       if (res.status === 401) {
@@ -321,6 +379,10 @@ export function ChatApp() {
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 400 && /project/i.test(String(data.error || ""))) {
+          setSelectedProject(null);
+          if (userId) writeStoredActiveProject(userId, null);
+        }
         throw new Error(data.error || "Chat request failed");
       }
 
@@ -402,6 +464,9 @@ export function ChatApp() {
       setMessages((prev) => prev.filter((m) => m.id !== tempId && m.id !== assistantId));
       setError(err instanceof Error ? err.message : "Chat failed");
       throw err;
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   }
 
@@ -503,8 +568,22 @@ export function ChatApp() {
       />
       <Composer
         ref={composerRef}
-        disabled={thinking}
+        disabled={thinking || sending}
         projects={projects}
+        selectedProject={selectedProject}
+        onSelectProject={(project) => {
+          if (sendingRef.current) return;
+          const changed = project?.key !== selectedProject?.key;
+          setSelectedProject(project);
+          if (userId) writeStoredActiveProject(userId, project);
+          if (project && changed) {
+            void handleSend({
+              content: `Show remaining tasks for ${project.name}`,
+              attachmentIds: [],
+              project,
+            });
+          }
+        }}
         onSend={handleSend}
       />
     </div>

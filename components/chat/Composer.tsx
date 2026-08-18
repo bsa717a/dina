@@ -46,9 +46,22 @@ export const Composer = forwardRef<
   {
     disabled?: boolean;
     projects?: UserProject[];
+    selectedProject?: UserProject | null;
+    projectSelectDisabled?: boolean;
+    onSelectProject?: (project: UserProject | null) => void;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
->(function Composer({ disabled, projects = [], onSend }, ref) {
+>(function Composer(
+  {
+    disabled,
+    projects = [],
+    selectedProject = null,
+    projectSelectDisabled,
+    onSelectProject,
+    onSend,
+  },
+  ref,
+) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [listening, setListening] = useState(false);
@@ -245,13 +258,9 @@ export const Composer = forwardRef<
 
         <ProjectsPill
           projects={projects}
-          disabled={disabled}
-          onSelectProject={(project) => {
-            void onSend({
-              content: `Show remaining tasks for ${project.name}`,
-              attachmentIds: [],
-            });
-          }}
+          selected={selectedProject}
+          disabled={disabled || projectSelectDisabled}
+          onSelectProject={onSelectProject}
         />
 
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-[var(--shadow)]">
@@ -305,7 +314,11 @@ export const Composer = forwardRef<
               }
             }}
             rows={1}
-            placeholder="What’s on your mind?"
+            placeholder={
+              selectedProject
+                ? `What’s on your mind about ${selectedProject.name}?`
+                : "What’s on your mind?"
+            }
             disabled={disabled}
             className="max-h-40 min-h-[40px] flex-1 resize-none overflow-hidden bg-transparent px-1 py-2 text-[15px] leading-5 outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
           />
