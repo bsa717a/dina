@@ -193,8 +193,11 @@ export function formatActiveProjectRuntime(
   if (!project) return "";
   return [
     `Active project: ${project.name} (key: ${project.key}).`,
-    "The user selected this in the project selector. Remaining tasks for this project are in SESSION RUNTIME. For add/complete/update, shared project memory, and phrases like 'this project', default to this project unless they name a different one this turn.",
-    "Mail, calendar, morning ritual, and other non-project work are unchanged.",
+    "The user selected this in the project selector. It is the current project for this turn.",
+    `'Task 1', 'details for task N', mark N complete, and add a task default to ${project.name} — not an older list in chat history.`,
+    "If SESSION RUNTIME remaining tasks for this project is empty, there is no task 1. Say so. Do not pull a numbered item from a previous project's backlog.",
+    `Do not ask which project to add a task to. Add it to ${project.name} unless they name a different one this turn.`,
+    "Shared project memory and phrases like 'this project' also default here. Mail, calendar, morning ritual, and other non-project work are unchanged.",
   ].join("\n");
 }
 
