@@ -33,7 +33,8 @@ describe("active project context", () => {
   it("tells the model to keep project work on the selected project", () => {
     const runtime = formatActiveProjectRuntime({ key: "dina", name: "Dina" });
     expect(runtime).toContain("Active project: Dina");
-    expect(runtime).toContain("default to this project");
+    expect(runtime).toContain("Do not ask which project to add a task to");
+    expect(runtime).toContain("not an older list in chat history");
     expect(formatActiveProjectRuntime(null)).toBe("");
 
     const member = getMemberSystemPrompt({
@@ -74,6 +75,11 @@ describe("remaining task runtime", () => {
     expect(runtime).toContain("1. [open] Ship the selector");
     expect(runtime).toContain("Do not call list_project_tasks just to read it");
     expect(formatRemainingTasksRuntime([])).toBe("");
+    const empty = formatRemainingTasksRuntime([
+      { projectKey: "regi", projectName: "Regi", tasks: [] },
+    ]);
+    expect(empty).toContain("(none remaining)");
+    expect(empty).toContain("There is no task #1 on Regi");
   });
 
   it("formats a user-facing remaining list without a model", () => {
@@ -108,6 +114,15 @@ describe("remaining task runtime", () => {
         "assistant",
         "Remaining project tasks (live this turn — already loaded):\nDina:\n1. [open] Ship the selector",
       ),
+    ).toBe(true);
+    expect(
+      isRemainingTasksChatContent(
+        "assistant",
+        "Current 4StudentLives backlog (remaining/open tasks)\n\n- Chico",
+      ),
+    ).toBe(true);
+    expect(
+      isRemainingTasksChatContent("assistant", "Regi — no remaining tasks."),
     ).toBe(true);
     expect(isRemainingTasksChatContent("user", "mark 2 complete")).toBe(false);
     expect(

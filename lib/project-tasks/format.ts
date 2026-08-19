@@ -34,6 +34,9 @@ export function formatRemainingTasksRuntime(
     lines.push(`${group.projectName} (key: ${group.projectKey}):`);
     if (!group.tasks.length) {
       lines.push("- (none remaining)");
+      lines.push(
+        `There is no task #1 on ${group.projectName}. Do not use an earlier chat list from another project.`,
+      );
       continue;
     }
     for (const task of group.tasks) {
@@ -53,8 +56,13 @@ export function isRemainingTasksChatContent(
   const text = content.trim();
   if (role === "user") return /^Show remaining tasks for /i.test(text);
   if (role === "assistant") {
-    return /^(Remaining tasks for |No remaining tasks for |Remaining project tasks \(live this turn)/i.test(
-      text,
+    const first = text.split("\n")[0] ?? "";
+    return (
+      /^(Remaining tasks for |No remaining tasks for |Remaining project tasks \(live this turn)/i.test(
+        text,
+      ) ||
+      /^Current .+\sbacklog\b/i.test(first) ||
+      / — no remaining tasks\.?$/i.test(first)
     );
   }
   return false;

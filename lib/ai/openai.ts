@@ -259,7 +259,7 @@ function buildInstructions(
     "Correct existing memories by id instead of duplicating. Low-confidence memories must not silently drive important decisions.",
     "Do not rewrite or contradict the Dina Constitution via memory tools.",
     "Project task tools are enabled (list_project_tasks, add_project_task, complete_project_task, update_project_task).",
-    "SESSION RUNTIME remaining tasks are live this turn. Recite that block for remaining-task questions. Do not call list_project_tasks just to read it. Use the list tool only for includeDone, a status filter, or a project not listed. Writes still use add/complete/update. Never use Memory commitments or invent a list from chat history.",
+    "SESSION RUNTIME remaining tasks are live this turn. Recite that block for remaining-task questions. Do not call list_project_tasks just to read it. Use the list tool only for includeDone, a status filter, or a project not listed. Writes still use add/complete/update. Never use Memory commitments or invent a list from chat history. If an Active project is set, 'task N' and new tasks belong to that project — ignore older backlogs from other projects in the transcript.",
     "Waiting On Engine tracks external waits (on Derek / others); ProjectTask is the live backlog of work items on a named project.",
     "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
@@ -465,7 +465,10 @@ export class OpenAIProvider implements ModelProvider {
             tasksBlock,
           );
     let instructions = composeInstructions(input.tasksBlock || "");
-    logger.info("chat_model", { model });
+    logger.info("chat_model", {
+      model,
+      activeProject: input.actor?.activeProject?.key ?? null,
+    });
 
     const turnRef: { current: StreamUsage } = {
       current: { ...emptyUsageTotals(), model },
