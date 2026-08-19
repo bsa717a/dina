@@ -29,6 +29,34 @@ export async function countStarredMessages(userId: string) {
   return prisma.message.count({ where: ownedStarWhere(userId) });
 }
 
+export type StarredMessageRecord = {
+  id: string;
+  role: string;
+  conversationId: string;
+  createdAt: Date;
+  starredAt: Date;
+  content: string;
+};
+
+export async function listStarredMessageRecords(
+  userId: string,
+  limit = STAR_SOFT_CAP,
+): Promise<StarredMessageRecord[]> {
+  const rows = await prisma.message.findMany({
+    where: ownedStarWhere(userId),
+    orderBy: { starredAt: "desc" },
+    take: Math.min(Math.max(limit, 1), STAR_SOFT_CAP),
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role,
+    conversationId: row.conversationId,
+    createdAt: row.createdAt,
+    starredAt: row.starredAt!,
+    content: row.content,
+  }));
+}
+
 export async function listStarredMessages(userId: string, limit = STAR_SOFT_CAP) {
   const rows = await prisma.message.findMany({
     where: ownedStarWhere(userId),

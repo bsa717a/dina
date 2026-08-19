@@ -5,6 +5,7 @@ import {
   getOpenAIChatModel,
 } from "@/lib/env";
 import { annotateToolOutput } from "@/lib/ai/action-receipts";
+import { CHAT_HISTORY_WINDOW } from "@/lib/ai/history";
 import {
   allRequiredDomainsMet,
   domainsSatisfiedByTool,
@@ -140,9 +141,6 @@ function denverNowLabel() {
   }).format(new Date());
 }
 
-/** How many prior chat turns to send the model. Too small and collaborative lists/docs get lost. */
-const CHAT_HISTORY_WINDOW = 80;
-
 function buildInput(messages: ProviderMessage[]): EasyInputMessage[] {
   const input: EasyInputMessage[] = [];
   // Keep recent context; filter junk digests so they don't dominate.
@@ -236,6 +234,7 @@ function buildInstructions(
   lessonsBlock: string,
   activeProject?: { key: string; name: string } | null,
   tasksBlock?: string,
+  starsBlock?: string,
 ) {
   const parts = [getDinaSystemPrompt()];
   if (memoryBlock) {
@@ -248,6 +247,7 @@ function buildInstructions(
   const active = formatActiveProjectRuntime(activeProject);
   if (active) parts.push(active);
   if (tasksBlock) parts.push(tasksBlock);
+  if (starsBlock) parts.push(starsBlock);
   parts.push(
     "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/id/link from the tool payload.",
     "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
@@ -264,7 +264,7 @@ function buildInstructions(
     "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
     "Star tools enabled: list_starred_messages, get_starred_message, unstar_message.",
-    "When Derek asks for starred chats/messages/pins, call list_starred_messages then get_starred_message for full verbatim text.",
+    "SESSION RUNTIME starred messages are live this turn (full verbatim). Recite that block for starred/pin questions. Do not call list_starred_messages or get_starred_message just to read them. Use unstar_message to remove a star. When exporting to Word or Memory, paste the FULL text from that block.",
     "Morning Ritual tool enabled: generate_morning_brief. When anyone asks for morning brief / morning ritual, call it and pass userText. Never invent the section picker yourself — only show what the tool returns. If the tool returns a numbered list, every item must appear. After they pick, call the tool again with their reply. Morning Ritual is NOT the CoS Daily Briefing and does not include calendar.",
     "Team tools enabled: list_projects, create_project, archive_project, list_teammates, add_teammate_to_project, invite_teammate. New project → create_project (not Memory alone). New login → invite_teammate. Existing teammate / add to a project / no second invite → add_teammate_to_project. Do not invent an email address.",
   );
@@ -388,6 +388,7 @@ export class OpenAIProvider implements ModelProvider {
     signal?: AbortSignal;
     memoryBlock?: string;
     tasksBlock?: string;
+    starsBlock?: string;
     actor?: import("@/lib/ai/provider").ChatActor;
   }): AsyncIterable<StreamEvent> {
     const apiKey = getOpenAIApiKey();
@@ -463,6 +464,7 @@ export class OpenAIProvider implements ModelProvider {
             lessonsBlock,
             input.actor?.activeProject,
             tasksBlock,
+            input.starsBlock,
           );
     let instructions = composeInstructions(input.tasksBlock || "");
     logger.info("chat_model", {

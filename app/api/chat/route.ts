@@ -30,6 +30,13 @@ import { seedDerekProjectMemories } from "@/lib/memory/seed-derek-projects";
 import { seedDinaMemoryRuleMemories } from "@/lib/memory/seed-dina-memory-rules";
 import { seedDinaOperatingManualMemories } from "@/lib/memory/seed-dina-operating-manual";
 import { seedDinaProjectTasks } from "@/lib/project-tasks/seed-dina-tasks";
+import {
+  formatStarredMessagesMessage,
+  formatStarredMessagesRuntime,
+  isStarredListChatContent,
+  isStarredListRequest,
+} from "@/lib/stars/format";
+import { listStarredMessageRecords } from "@/lib/stars/store";
 import { loadProviderAttachments } from "@/lib/uploads/storage";
 import { kindFromMime } from "@/lib/uploads/validation";
 
@@ -110,6 +117,49 @@ export async function POST(request: NextRequest) {
     attachmentIds: parsed.data.attachmentIds,
   });
 
+  if (
+    user.role === "owner" &&
+    parsed.data.attachmentIds.length === 0 &&
+    isStarredListRequest(content)
+  ) {
+    const items = await listStarredMessageRecords(user.id);
+    const markdown = formatStarredMessagesMessage(items);
+    const assistant = await createMessage({
+      conversationId: conversation.id,
+      role: "assistant",
+      content: markdown,
+    });
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const send = (payload: unknown) => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+          );
+        };
+        send({ type: "delta", text: markdown });
+        send({
+          type: "done",
+          message: {
+            id: assistant.id,
+            role: assistant.role,
+            content: assistant.content,
+            createdAt: assistant.createdAt,
+            openaiResponseId: assistant.openaiResponseId,
+          },
+        });
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
+  }
+
   const history = await listMessagesForProvider(conversation.id);
   const provider = await getModelProvider();
 
@@ -143,7 +193,7 @@ export async function POST(request: NextRequest) {
           user.role === "owner"
             ? "derek preferences projects people"
             : "project tasks decisions";
-        const [relevant, projectKeys] = await Promise.all([
+        const [relevant, projectKeys, starred] = await Promise.all([
           retrieveRelevantMemories(
             [content || fallbackQuery, activeProject?.name]
               .filter(Boolean)
@@ -151,19 +201,27 @@ export async function POST(request: NextRequest) {
             { limit: 12, scope },
           ),
           listMemberProjectKeys(user),
+          user.role === "owner"
+            ? listStarredMessageRecords(user.id)
+            : Promise.resolve([]),
         ]);
         const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
         const projectNames = projectKeys.map(displayProjectName);
         const tasksBlock = activeProject
           ? await loadRemainingTasksBlock(activeProject.key)
           : "";
+        const starsBlock =
+          user.role === "owner" ? formatStarredMessagesRuntime(starred) : "";
 
         const currentMessageId = history[history.length - 1]?.id;
         const messages = history
           .filter(
             (m) =>
               m.id === currentMessageId ||
-              !isRemainingTasksChatContent(m.role, m.content),
+              !(
+                isRemainingTasksChatContent(m.role, m.content) ||
+                isStarredListChatContent(m.role, m.content)
+              ),
           )
           .map((m) => ({
           role: m.role as "user" | "assistant" | "system",
@@ -186,6 +244,7 @@ export async function POST(request: NextRequest) {
           signal: request.signal,
           memoryBlock,
           tasksBlock,
+          starsBlock,
           actor: {
             id: user.id,
             name: user.name,
