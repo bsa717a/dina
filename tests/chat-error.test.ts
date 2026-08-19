@@ -32,6 +32,12 @@ vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks: vi.fn(async () => []),
 }));
 
+vi.mock("@/lib/stars/store", () => ({
+  STAR_SOFT_CAP: 20,
+  listStarredMessageRecords: vi.fn(async () => []),
+  listStarredMessages: vi.fn(async () => []),
+}));
+
 vi.mock("@/lib/db/client", () => ({
   checkDatabase: vi.fn(async () => ({ ok: true })),
 }));
@@ -189,5 +195,35 @@ describe("POST /api/chat error path", () => {
     expect(input?.messages?.map((message) => message.content)).toEqual([
       "Show remaining tasks for Dina",
     ]);
+  });
+
+  it("returns starred messages without a model turn", async () => {
+    const stars = await import("@/lib/stars/store");
+    vi.mocked(stars.listStarredMessageRecords).mockResolvedValueOnce([
+      {
+        id: "star-1",
+        role: "assistant",
+        conversationId: "c1",
+        createdAt: new Date("2026-08-18T12:00:00.000Z"),
+        starredAt: new Date("2026-08-18T12:00:00.000Z"),
+        content: "Keep this lesson list.",
+      },
+    ]);
+
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "Show starred messages",
+        attachmentIds: [],
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("Keep this lesson list.");
+    expect(streamChat).not.toHaveBeenCalled();
   });
 });

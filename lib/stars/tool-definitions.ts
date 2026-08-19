@@ -24,7 +24,7 @@ export function getStarToolDefinitions(): FunctionTool[] {
   return [
     fn(
       "list_starred_messages",
-      "List Derek's starred chat messages (soft cap 20). Use when he asks for starred chats, pinned replies, or 'the message I starred'. Returns previews + ids — then get_starred_message for full text.",
+      "List Derek's starred chat messages (soft cap 20). Prefer the starred block already in SESSION RUNTIME — do not call this just to recite that list. Returns previews + ids.",
       {
         properties: {
           limit: { type: "number", description: "Max items (default/cap 20)." },
@@ -33,7 +33,7 @@ export function getStarToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "get_starred_message",
-      "Get the full verbatim content of one starred chat message by id. Required before putting starred content into Word/Memory.",
+      "Get the full verbatim content of one starred chat message by id. Prefer the SESSION RUNTIME starred block. Use this only if a starred id is missing from that block.",
       {
         properties: {
           messageId: { type: "string" },
