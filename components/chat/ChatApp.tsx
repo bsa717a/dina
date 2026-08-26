@@ -18,7 +18,7 @@ import { applyPwaIdentity, pwaIdentityForKey } from "@/lib/pwa/identity";
 import { formatDayUsage } from "@/lib/client/usage-format";
 import {
   filterRemainingTaskChatMessages,
-  isRemainingTasksListForProject,
+  mergeRemainingTaskChatMessages,
 } from "@/lib/project-tasks/format";
 
 function dragEventHasFiles(
@@ -148,12 +148,11 @@ export function ChatApp() {
   const remainingTasksAbortRef = useRef<AbortController | null>(null);
   const remainingPostInFlightRef = useRef(false);
   const conversationLoadRequestRef = useRef(0);
-  const conversationLoadPendingRef = useRef(false);
   const selectedProjectRef = useRef<UserProject | null>(null);
   const showRemainingTasksRef = useRef<
     (
       project: UserProject,
-      options?: { quiet?: boolean; postToChat?: boolean },
+      options?: { quiet?: boolean; postToChat?: boolean; persist?: boolean },
     ) => Promise<void>
   >(async () => undefined);
   selectedProjectRef.current = selectedProject;
@@ -233,7 +232,6 @@ export function ChatApp() {
 
   const loadConversation = useCallback(async () => {
     const requestId = ++conversationLoadRequestRef.current;
-    conversationLoadPendingRef.current = true;
     try {
       const res = await fetch("/api/conversations");
       if (requestId !== conversationLoadRequestRef.current) return;
@@ -256,21 +254,19 @@ export function ChatApp() {
         }),
       );
       if (requestId !== conversationLoadRequestRef.current) return;
-      if (remainingPostInFlightRef.current) return;
-      setMessages(
-        filterRemainingTaskChatMessages(
+      setMessages((prev) =>
+        mergeRemainingTaskChatMessages(
           mapped,
+          prev,
           selectedProjectRef.current?.name,
         ),
       );
-      conversationLoadPendingRef.current = false;
       const project = selectedProjectRef.current;
       if (project && !remainingPostInFlightRef.current) {
         void showRemainingTasksRef.current(project, { quiet: true });
       }
     } catch (err) {
       if (requestId !== conversationLoadRequestRef.current) return;
-      conversationLoadPendingRef.current = false;
       setError(err instanceof Error ? err.message : "Failed to load conversation");
     }
   }, [router]);
@@ -415,7 +411,7 @@ export function ChatApp() {
 
   async function showRemainingTasks(
     project: UserProject,
-    options?: { quiet?: boolean; postToChat?: boolean },
+    options?: { quiet?: boolean; postToChat?: boolean; persist?: boolean },
   ) {
     if (options?.quiet && remainingPostInFlightRef.current) return;
 
@@ -430,24 +426,13 @@ export function ChatApp() {
       remainingTasksAbortRef.current = controller;
       setRemainingError(null);
       setRemainingLoading(true);
-      if (options?.postToChat) {
-        remainingPostInFlightRef.current = true;
-        conversationLoadRequestRef.current += 1;
-      }
     }
 
     try {
-      const res = options?.postToChat
-        ? await fetch("/api/project-tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ project: project.key }),
-            signal: controller?.signal,
-          })
-        : await fetch(
-            `/api/project-tasks?project=${encodeURIComponent(project.key)}`,
-            { signal: controller?.signal },
-          );
+      const res = await fetch(
+        `/api/project-tasks?project=${encodeURIComponent(project.key)}`,
+        { signal: controller?.signal },
+      );
       if (requestId !== remainingTasksRequestRef.current) return;
       if (res.status === 401) {
         router.replace("/login");
@@ -455,14 +440,8 @@ export function ChatApp() {
       }
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        markdown?: string;
         tasks?: Array<{ number?: unknown; title?: unknown }>;
-        message?: {
-          id: string;
-          role: ChatMessage["role"] | string;
-          content: string;
-          createdAt: string | Date;
-          attachments?: ChatMessage["attachments"];
-        };
       };
       if (requestId !== remainingTasksRequestRef.current) return;
       const tasks = Array.isArray(data.tasks)
@@ -483,16 +462,52 @@ export function ChatApp() {
       setRemainingTasks(tasks);
       setRemainingError(null);
       setRemainingLoading(false);
-      if (options?.postToChat && data.message) {
-        const next = serializeTaskMessage(data.message);
+      if (options?.postToChat && typeof data.markdown === "string") {
+        const local = {
+          id: `tasks-${project.key}`,
+          role: "assistant" as const,
+          content: data.markdown,
+          createdAt: new Date().toISOString(),
+        };
         setMessages((prev) =>
           filterRemainingTaskChatMessages(
-            [...prev.filter((message) => message.id !== next.id), next],
+            [...prev.filter((message) => message.id !== local.id), local],
             project.name,
           ),
         );
-        if (conversationLoadPendingRef.current) {
-          void loadConversation();
+        if (options.persist) {
+          remainingPostInFlightRef.current = true;
+          const posted = await fetch("/api/project-tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project: project.key }),
+            signal: controller?.signal,
+          });
+          if (requestId !== remainingTasksRequestRef.current) return;
+          const body = (await posted.json().catch(() => ({}))) as {
+            message?: {
+              id: string;
+              role: ChatMessage["role"] | string;
+              content: string;
+              createdAt: string | Date;
+              attachments?: ChatMessage["attachments"];
+            };
+          };
+          if (posted.ok && body.message) {
+            const next = serializeTaskMessage(body.message);
+            setMessages((prev) =>
+              filterRemainingTaskChatMessages(
+                [
+                  ...prev.filter(
+                    (message) =>
+                      message.id !== local.id && message.id !== next.id,
+                  ),
+                  next,
+                ],
+                project.name,
+              ),
+            );
+          }
         }
       }
     } catch (err) {
@@ -769,7 +784,6 @@ export function ChatApp() {
         remainingLoading={remainingLoading}
         remainingError={remainingError}
         onSelectProject={(project) => {
-          if (sendingRef.current) return;
           const changed = project?.key !== selectedProject?.key;
           selectedProjectRef.current = project;
           setSelectedProject(project);
@@ -779,22 +793,18 @@ export function ChatApp() {
             setMessages((prev) => filterRemainingTaskChatMessages(prev, null));
             return;
           }
-          const alreadyListed = messages.some((message) =>
-            isRemainingTasksListForProject(
-              message.role,
-              message.content,
-              project.name,
-            ),
-          );
           if (changed) {
             setRemainingTasks(null);
             setRemainingError(null);
           }
-          if (changed || !alreadyListed) {
-            void showRemainingTasks(project, { postToChat: true });
-            return;
-          }
-          void showRemainingTasks(project);
+          void showRemainingTasks(project, {
+            postToChat: true,
+            persist: changed,
+          });
+        }}
+        onShowRemaining={() => {
+          if (!selectedProject) return;
+          void showRemainingTasks(selectedProject, { postToChat: true });
         }}
         onSend={handleSend}
       />

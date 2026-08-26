@@ -12,11 +12,13 @@ export function ProjectsPill({
   selected,
   disabled,
   onSelectProject,
+  onShowRemaining,
 }: {
   projects: UserProject[];
   selected?: UserProject | null;
   disabled?: boolean;
   onSelectProject?: (project: UserProject | null) => void;
+  onShowRemaining?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -108,7 +110,10 @@ export function ProjectsPill({
         aria-controls={panelId}
         aria-label={selected ? `Project: ${selected.name}` : "Projects"}
         disabled={disabled}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setOpen((value) => !value);
+          if (selected) onShowRemaining?.();
+        }}
         className={`rounded-full border px-3 py-1 text-xs font-medium transition disabled:opacity-40 ${
           open || active
             ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"

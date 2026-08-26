@@ -105,6 +105,40 @@ export function filterRemainingTaskChatMessages<
   });
 }
 
+/** Keep a just-shown remaining list if a conversation reload has not caught up. */
+export function mergeRemainingTaskChatMessages<
+  T extends { id: string; role: string; content: string },
+>(
+  serverMessages: T[],
+  localMessages: T[],
+  projectName?: string | null,
+): T[] {
+  const filtered = filterRemainingTaskChatMessages(serverMessages, projectName);
+  if (!projectName) return filtered;
+  const shown = [...localMessages]
+    .reverse()
+    .find((message) =>
+      isRemainingTasksListForProject(
+        message.role,
+        message.content,
+        projectName,
+      ),
+    );
+  if (!shown) return filtered;
+  if (
+    filtered.some((message) =>
+      isRemainingTasksListForProject(
+        message.role,
+        message.content,
+        projectName,
+      ),
+    )
+  ) {
+    return filtered;
+  }
+  return filterRemainingTaskChatMessages([...filtered, shown], projectName);
+}
+
 /** Remove leaked project-task ids from chat so the model cannot recopy them. */
 export function stripTaskIdsFromChatContent(content: string): string {
   return content

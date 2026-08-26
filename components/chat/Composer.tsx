@@ -56,6 +56,7 @@ export const Composer = forwardRef<
     remainingError?: string | null;
     projectSelectDisabled?: boolean;
     onSelectProject?: (project: UserProject | null) => void;
+    onShowRemaining?: () => void;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
 >(function Composer(
@@ -68,6 +69,7 @@ export const Composer = forwardRef<
     remainingError,
     projectSelectDisabled,
     onSelectProject,
+    onShowRemaining,
     onSend,
   },
   ref,
@@ -270,8 +272,9 @@ export const Composer = forwardRef<
           <ProjectsPill
             projects={projects}
             selected={selectedProject}
-            disabled={disabled || projectSelectDisabled}
+            disabled={projectSelectDisabled}
             onSelectProject={onSelectProject}
+            onShowRemaining={onShowRemaining}
           />
           {selectedProject && (
             <ProjectRemainingStrip

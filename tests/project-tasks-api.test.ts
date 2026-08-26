@@ -82,7 +82,7 @@ describe("GET/POST /api/project-tasks", () => {
     expect(data.tasks).toHaveLength(1);
     expect(data.markdown).toContain("1. Ship the selector");
     expect(createMessage).not.toHaveBeenCalled();
-    expect(seedDinaProjectTasks).toHaveBeenCalled();
+    expect(seedDinaProjectTasks).not.toHaveBeenCalled();
   });
 
   it("persists the remaining list as an assistant message", async () => {
