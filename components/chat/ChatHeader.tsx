@@ -14,6 +14,7 @@ type Status = "online" | "offline" | "degraded" | "checking";
 
 export function ChatHeader({
   assistantName = "Dina",
+  assistantKey = null,
   assistantSubtitle = "Chief of staff",
   avatarUrl,
   status,
@@ -28,6 +29,7 @@ export function ChatHeader({
   onSignOut,
 }: {
   assistantName?: string;
+  assistantKey?: string | null;
   assistantSubtitle?: string;
   avatarUrl?: string | null;
   status: Status;
@@ -105,6 +107,8 @@ export function ChatHeader({
         </div>
 
         <HeaderActions
+          assistantName={assistantName}
+          assistantKey={assistantKey}
           pushSupported={pushSupported}
           pushEnabled={pushEnabled}
           pushBusy={pushBusy}
@@ -118,6 +122,8 @@ export function ChatHeader({
 }
 
 function HeaderActions({
+  assistantName,
+  assistantKey,
   pushSupported,
   pushEnabled,
   pushBusy,
@@ -125,6 +131,8 @@ function HeaderActions({
   onTestPush,
   onSignOut,
 }: {
+  assistantName: string;
+  assistantKey: string | null;
   pushSupported: boolean;
   pushEnabled: boolean;
   pushBusy: boolean;
@@ -179,12 +187,12 @@ function HeaderActions({
   }
 
   async function addToHomepage() {
-    const result = await promptAddToHomepage();
+    const result = await promptAddToHomepage({ assistantKey });
     if (result.kind === "installed" || result.kind === "prompted") {
       setAlreadyInstalled(isStandalonePwa());
       return;
     }
-    setInstallHelp(homepageInstallHelp(result.platform));
+    setInstallHelp(homepageInstallHelp(result.platform, assistantName));
   }
 
   return (

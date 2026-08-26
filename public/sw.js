@@ -1,6 +1,6 @@
 /* Dina service worker — offline shell + web push */
-const CACHE = "dina-shell-v5";
-const SHELL = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
+const CACHE = "dina-shell-v6";
+const SHELL = ["/", "/offline", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -23,6 +23,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // User-specific install identity — never cache a teammate's assistant as Dina.
+  if (url.pathname === "/manifest.webmanifest") return;
   // Never cache hashed app bundles — stale JS breaks drag/drop and other UX.
   if (url.pathname.startsWith("/_next/")) return;
   if (

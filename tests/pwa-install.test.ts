@@ -82,6 +82,12 @@ describe("homepageInstallHelp", () => {
     expect(help.title).toMatch(/Dock/);
     expect(help.steps.join(" ")).toMatch(/Add to Dock/);
   });
+
+  it("names the chosen assistant in the install help", () => {
+    const help = homepageInstallHelp("ios", "Nora");
+    expect(help.title).toBe("Add Nora to your Home Screen");
+    expect(help.steps.join(" ")).toMatch(/Nora will appear/);
+  });
 });
 
 describe("chooseInstallPath", () => {
