@@ -16,7 +16,10 @@ import {
   resolveActiveProjectForUser,
   runWithActiveProject,
 } from "@/lib/chat/active-project";
-import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
+import {
+  isRemainingTasksChatContent,
+  stripTaskIdsFromChatContent,
+} from "@/lib/project-tasks/format";
 import { loadRemainingTasksBlock } from "@/lib/project-tasks/runtime";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { listMemberProjectKeys } from "@/lib/project-tasks/membership";
@@ -258,7 +261,7 @@ export async function POST(request: NextRequest) {
           )
           .map((m) => ({
           role: m.role as "user" | "assistant" | "system",
-          content: m.content,
+          content: stripTaskIdsFromChatContent(m.content),
           attachments:
             m.id === history[history.length - 1]?.id
               ? providerAttachments

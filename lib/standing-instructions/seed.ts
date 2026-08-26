@@ -6,7 +6,7 @@ const SEEDS = [
   {
     title: "Never show task IDs",
     content:
-      "Never show project task IDs, UUIDs, or internal database keys to Derek. Recite remaining tasks as numbered titles only (1. Title). When confirming add, complete, or update, use the number and title. Tools may return extra fields for your own use — do not repeat an id.",
+      "Never show project task IDs, UUIDs, or internal database keys to Derek — including in emails and drafts. Recite remaining tasks as numbered titles only (1. Title). When confirming add, complete, or update, use the number and title. Do not copy an id from earlier chat. Tools may return extra fields for your own use — do not repeat an id.",
   },
 ];
 
