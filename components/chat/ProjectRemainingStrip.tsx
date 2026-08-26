@@ -22,7 +22,7 @@ export function ProjectRemainingStrip({
   loading?: boolean;
   error?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const hasList = tasks !== null;
   const snapshot = hasList
     ? formatRemainingTasksSnapshot({ projectName, tasks })

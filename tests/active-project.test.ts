@@ -7,11 +7,13 @@ import {
 } from "@/lib/chat/active-project";
 import { formatActiveProjectRuntime, getMemberSystemPrompt } from "@/lib/ai/prompt";
 import {
+  filterRemainingTaskChatMessages,
   formatRemainingTaskLines,
   formatRemainingTasksMessage,
   formatRemainingTasksRuntime,
   formatRemainingTasksSnapshot,
   isRemainingTasksChatContent,
+  isRemainingTasksListForProject,
   projectKeyFromTaskToolOutput,
   stripTaskIdsFromChatContent,
 } from "@/lib/project-tasks/format";
@@ -77,6 +79,7 @@ describe("remaining task runtime", () => {
     expect(runtime).toContain("already loaded");
     expect(runtime).toContain("1. [open] Ship the selector");
     expect(runtime).toContain("Do not call list_project_tasks just to read it");
+    expect(runtime).toContain("Do not invent sub-bullets");
     expect(runtime).toContain("Never show task IDs");
     expect(formatRemainingTasksRuntime([])).toBe("");
     const empty = formatRemainingTasksRuntime([
@@ -151,6 +154,38 @@ describe("remaining task runtime", () => {
       isRemainingTasksChatContent("assistant", "Regi — no remaining tasks."),
     ).toBe(true);
     expect(isRemainingTasksChatContent("user", "mark 2 complete")).toBe(false);
+    expect(
+      isRemainingTasksListForProject(
+        "assistant",
+        "Remaining tasks for Dina:\n\n1. Ship the selector",
+        "Dina",
+      ),
+    ).toBe(true);
+    expect(
+      isRemainingTasksListForProject(
+        "assistant",
+        "Remaining tasks for Beacon:\n\n1. Other",
+        "Dina",
+      ),
+    ).toBe(false);
+    expect(
+      filterRemainingTaskChatMessages(
+        [
+          {
+            id: "old",
+            role: "assistant",
+            content: "Remaining tasks for Beacon:\n\n1. Other",
+          },
+          { id: "keep", role: "user", content: "What is next?" },
+          {
+            id: "current",
+            role: "assistant",
+            content: "Remaining tasks for Dina:\n\n1. Ship the selector",
+          },
+        ],
+        "Dina",
+      ).map((message) => message.id),
+    ).toEqual(["keep", "current"]);
     expect(
       projectKeyFromTaskToolOutput(
         JSON.stringify({ ok: true, data: { task: { projectKey: "beacon" } } }),

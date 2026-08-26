@@ -44,7 +44,7 @@ export function formatRemainingTasksRuntime(
     }
   }
   lines.push(
-    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Never show task IDs or UUIDs — numbered titles only. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
+    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Never show task IDs or UUIDs — numbered titles only. Do not invent sub-bullets, owners, timelines, or implementation plans unless asked to break a task down. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
   );
   return lines.join("\n");
 }
@@ -66,6 +66,43 @@ export function isRemainingTasksChatContent(
     );
   }
   return false;
+}
+
+export function isRemainingTasksListForProject(
+  role: string,
+  content: string,
+  projectName: string,
+): boolean {
+  if (!projectName.trim()) return false;
+  const text = content.trim();
+  return (
+    text.startsWith(`Remaining tasks for ${projectName}:`) ||
+    text === `No remaining tasks for ${projectName}.`
+  );
+}
+
+/** Keep only the latest remaining-task list for the selected project. */
+export function filterRemainingTaskChatMessages<
+  T extends { id: string; role: string; content: string },
+>(messages: T[], projectName?: string | null): T[] {
+  const lastForProject = projectName
+    ? [...messages]
+        .reverse()
+        .find((message) =>
+          isRemainingTasksListForProject(
+            message.role,
+            message.content,
+            projectName,
+          ),
+        )
+    : undefined;
+  return messages.filter((message) => {
+    const leftover =
+      message.id.startsWith("tasks-") ||
+      isRemainingTasksChatContent(message.role, message.content);
+    if (!leftover) return true;
+    return lastForProject != null && message.id === lastForProject.id;
+  });
 }
 
 /** Remove leaked project-task ids from chat so the model cannot recopy them. */

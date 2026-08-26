@@ -268,7 +268,7 @@ function buildInstructions(
     "Standing instruction tools are enabled (list_standing_instructions, set_standing_instruction, archive_standing_instruction).",
     "SESSION RUNTIME standing instructions are binding this turn. Follow them even when a tool payload has extra fields. When Derek says from now on / always / never about how you talk or present, call set_standing_instruction — do not only remember(). Recite that block when asked what rules you follow.",
     "Project task tools are enabled (list_project_tasks, add_project_task, complete_project_task, update_project_task).",
-    "SESSION RUNTIME remaining tasks are live this turn. Recite that block for remaining-task questions. Never show task IDs or UUIDs — numbered titles only, including in emails and drafts. Do not copy an id from earlier chat. Do not call list_project_tasks just to read it. Use the list tool only for includeDone, a status filter, or a project not listed. Writes still use add/complete/update. Never use Memory commitments or invent a list from chat history. If an Active project is set, 'task N' and new tasks belong to that project — ignore older backlogs from other projects in the transcript.",
+    "SESSION RUNTIME remaining tasks are live this turn. Recite that block for remaining-task questions. Never show task IDs or UUIDs — numbered titles only, including in emails and drafts. Do not invent sub-bullets, owners, timelines, or implementation plans unless asked to break a task down. Do not copy an id from earlier chat. Do not call list_project_tasks just to read it. Use the list tool only for includeDone, a status filter, or a project not listed. Writes still use add/complete/update. Never use Memory commitments or invent a list from chat history. If an Active project is set, 'task N' and new tasks belong to that project — ignore older backlogs from other projects in the transcript.",
     "Waiting On Engine tracks external waits (on Derek / others); ProjectTask is the live backlog of work items on a named project.",
     "Writing Assistant tool enabled: draft_in_dereks_voice. When Derek asks to write, draft, or reply, call draft_in_dereks_voice first (do not invent a long draft without the tool).",
     "draft_in_dereks_voice never sends. After Derek approves, use send_email or create_reply_draft.",
@@ -465,7 +465,7 @@ export class OpenAIProvider implements ModelProvider {
             "ACTION RECEIPTS: never claim you added, completed, or updated a task unless a tool in THIS turn returned ok=true.",
             tasksBlock,
             "Project task tools: list_project_tasks, add_project_task, complete_project_task, update_project_task.",
-            "Recite remaining tasks from SESSION RUNTIME. Never show task IDs. Call list_project_tasks only for includeDone, a status filter, or a project not listed.",
+            "Recite remaining tasks from SESSION RUNTIME as numbered titles only. Never show task IDs. Do not invent sub-bullets or implementation plans unless asked. Call list_project_tasks only for includeDone, a status filter, or a project not listed.",
             "Memory tools (project-scoped only): search_memory, list_memories, remember, correct_memory.",
             "Morning Ritual tool enabled: generate_morning_brief. When they say Morning brief, call it and pass userText. Never invent the section picker — show the tool's numbered list verbatim. After they pick numbers, call it again with their reply.",
           ]
