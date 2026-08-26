@@ -68,6 +68,16 @@ export function isRemainingTasksChatContent(
   return false;
 }
 
+/** Remove leaked project-task ids from chat so the model cannot recopy them. */
+export function stripTaskIdsFromChatContent(content: string): string {
+  return content
+    .replace(/^[ \t]*[-*]?\s*Task id:\s*\S+[ \t]*\n?/gim, "")
+    .replace(/\s*\(task id:\s*[^)]+\)/gi, "")
+    .replace(/\btask id:\s*[a-z0-9_-]+/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+}
+
 export function projectKeyFromTaskToolOutput(output: string): string | null {
   try {
     const parsed = JSON.parse(output) as {
