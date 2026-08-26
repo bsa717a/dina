@@ -14,6 +14,7 @@ import {
   completeProjectTask,
   getProjectTask,
   listProjectTasks,
+  resolveProjectTask,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
 import {
@@ -58,6 +59,26 @@ function asStatus(value: unknown): ProjectTaskStatus | undefined {
   return undefined;
 }
 
+/** User-facing task fields. Never include internal ids. */
+function publicTask(task: {
+  title: string;
+  description: string;
+  status: string;
+  projectKey: string;
+  number?: number;
+}) {
+  return {
+    ...(typeof task.number === "number" && task.number > 0
+      ? { number: task.number }
+      : {}),
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    projectKey: task.projectKey,
+    projectName: displayProjectName(task.projectKey),
+  };
+}
+
 const handlers: Record<
   string,
   (args: Record<string, unknown>) => Promise<string>
@@ -75,14 +96,7 @@ const handlers: Record<
     return ok({
       projectKey: key,
       projectName: displayProjectName(key),
-      tasks: tasks.map((t) => ({
-        number: t.number,
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        status: t.status,
-        sortOrder: t.sortOrder,
-      })),
+      tasks: tasks.map((t) => publicTask(t)),
       count: tasks.length,
       remainingCount: tasks.filter(
         (t) => t.status === "open" || t.status === "in_progress",
@@ -101,13 +115,15 @@ const handlers: Record<
       source: "chat",
       createdByUserId: user?.id,
     });
-    return ok({ task });
+    const remaining = await listProjectTasks({ project });
+    const number = remaining.find((t) => t.id === task.id)?.number;
+    return ok({ task: publicTask({ ...task, number }) });
   },
   complete_project_task: async (args) => {
     if (typeof args.taskId === "string" && args.taskId) {
       await requireTaskAccess(args.taskId);
       const task = await completeProjectTask({ taskId: args.taskId });
-      return ok({ task, completed: true });
+      return ok({ task: publicTask(task), completed: true });
     }
     const project = projectArgOrActive(args);
     await requireProjectAccess(project);
@@ -115,19 +131,30 @@ const handlers: Record<
       project,
       number: typeof args.number === "number" ? args.number : undefined,
     });
-    return ok({ task, completed: true });
+    return ok({ task: publicTask(task), completed: true });
   },
   update_project_task: async (args) => {
-    const taskId = String(args.taskId || "");
-    if (!taskId) return fail(new Error("taskId is required."));
-    await requireTaskAccess(taskId);
-    const task = await updateProjectTask(taskId, {
+    const resolved =
+      typeof args.taskId === "string" && args.taskId
+        ? await requireTaskAccess(args.taskId).then((task) =>
+            resolveProjectTask({ taskId: task.id }),
+          )
+        : await (async () => {
+            const project = projectArgOrActive(args);
+            await requireProjectAccess(project);
+            return resolveProjectTask({
+              project,
+              number: typeof args.number === "number" ? args.number : undefined,
+            });
+          })();
+    await requireTaskAccess(resolved.id);
+    const task = await updateProjectTask(resolved.id, {
       title: typeof args.title === "string" ? args.title : undefined,
       description:
         typeof args.description === "string" ? args.description : undefined,
       status: asStatus(args.status),
     });
-    return ok({ task });
+    return ok({ task: publicTask({ ...task, number: resolved.number }) });
   },
 };
 

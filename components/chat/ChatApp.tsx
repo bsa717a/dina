@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AttentionPanel } from "@/components/chat/AttentionPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
+import type { RemainingStripTask } from "@/components/chat/ProjectRemainingStrip";
 import type { UserProject } from "@/components/chat/ProjectsPill";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUsage } from "@/components/chat/types";
@@ -119,6 +120,11 @@ export function ChatApp() {
   const [selectedProject, setSelectedProject] = useState<UserProject | null>(
     null,
   );
+  const [remainingTasks, setRemainingTasks] = useState<
+    RemainingStripTask[] | null
+  >(null);
+  const [remainingLoading, setRemainingLoading] = useState(false);
+  const [remainingError, setRemainingError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const sendingRef = useRef(false);
@@ -212,26 +218,20 @@ export function ChatApp() {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load conversation");
-      setMessages((prev) => {
-        const mapped: ChatMessage[] = (data.messages || []).map(
-          (m: ChatMessage & { starredAt?: string | null }) => ({
-            ...m,
-            starred: Boolean(m.starred ?? m.starredAt),
-            createdAt:
-              typeof m.createdAt === "string"
-                ? m.createdAt
-                : new Date(m.createdAt).toISOString(),
-            usage: usageByMessageIdRef.current.get(m.id),
-          }),
-        );
-        const localTasks = prev.filter((message) =>
-          message.id.startsWith("tasks-"),
-        );
-        return [
-          ...mapped.filter((message) => !isRemainingTasksChatMessage(message)),
-          ...localTasks,
-        ];
-      });
+      const mapped: ChatMessage[] = (data.messages || []).map(
+        (m: ChatMessage & { starredAt?: string | null }) => ({
+          ...m,
+          starred: Boolean(m.starred ?? m.starredAt),
+          createdAt:
+            typeof m.createdAt === "string"
+              ? m.createdAt
+              : new Date(m.createdAt).toISOString(),
+          usage: usageByMessageIdRef.current.get(m.id),
+        }),
+      );
+      setMessages(
+        mapped.filter((message) => !isRemainingTasksChatMessage(message)),
+      );
       const project = selectedProjectRef.current;
       if (project) void showRemainingTasksRef.current(project, { quiet: true });
     } catch (err) {
@@ -351,14 +351,14 @@ export function ChatApp() {
     };
   }, [loadConversation, refreshHealth, refreshDayUsage]);
 
-  function clearRemainingTasksBubble(options?: { keepRequest?: boolean }) {
+  function clearRemainingStrip(options?: { keepRequest?: boolean }) {
     if (!options?.keepRequest) {
       remainingTasksAbortRef.current?.abort();
       remainingTasksRequestRef.current += 1;
     }
-    setMessages((prev) =>
-      prev.filter((message) => !isRemainingTasksChatMessage(message)),
-    );
+    setRemainingTasks(null);
+    setRemainingError(null);
+    setRemainingLoading(false);
   }
 
   useEffect(() => {
@@ -367,7 +367,7 @@ export function ChatApp() {
     selectedProjectRef.current = null;
     setSelectedProject(null);
     if (userId) writeStoredActiveProject(userId, null);
-    clearRemainingTasksBubble();
+    clearRemainingStrip();
   }, [projects, selectedProject, userId]);
 
   async function showRemainingTasks(
@@ -378,7 +378,10 @@ export function ChatApp() {
     remainingTasksAbortRef.current?.abort();
     const controller = new AbortController();
     remainingTasksAbortRef.current = controller;
-    setError(null);
+    if (!options?.quiet) {
+      setRemainingError(null);
+      setRemainingLoading(true);
+    }
     try {
       const res = await fetch(
         `/api/project-tasks?project=${encodeURIComponent(project.key)}`,
@@ -391,33 +394,35 @@ export function ChatApp() {
       }
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
-        markdown?: string;
+        tasks?: Array<{ number?: unknown; title?: unknown }>;
       };
       if (requestId !== remainingTasksRequestRef.current) return;
-      const markdown = data.markdown;
-      if (!res.ok || !markdown) {
+      const tasks = Array.isArray(data.tasks)
+        ? data.tasks.filter(
+            (task): task is RemainingStripTask =>
+              typeof task.number === "number" && typeof task.title === "string",
+          )
+        : null;
+      if (!res.ok || !tasks) {
         if (res.status === 400 && /project/i.test(String(data.error || ""))) {
           selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
-          clearRemainingTasksBubble({ keepRequest: true });
+          clearRemainingStrip({ keepRequest: true });
         }
         throw new Error(data.error || "Could not load tasks.");
       }
-      setMessages((prev) => [
-        ...prev.filter((message) => !isRemainingTasksChatMessage(message)),
-        {
-          id: `tasks-${project.key}`,
-          role: "assistant",
-          content: markdown,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      setRemainingTasks(tasks);
+      setRemainingError(null);
+      setRemainingLoading(false);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (requestId !== remainingTasksRequestRef.current) return;
+      setRemainingLoading(false);
       if (options?.quiet) return;
-      setError(err instanceof Error ? err.message : "Could not load tasks.");
+      setRemainingError(
+        err instanceof Error ? err.message : "Could not load tasks.",
+      );
     }
   }
   showRemainingTasksRef.current = showRemainingTasks;
@@ -477,7 +482,7 @@ export function ChatApp() {
           selectedProjectRef.current = null;
           setSelectedProject(null);
           if (userId) writeStoredActiveProject(userId, null);
-          clearRemainingTasksBubble();
+          clearRemainingStrip();
         }
         throw new Error(data.error || "Chat request failed");
       }
@@ -607,6 +612,11 @@ export function ChatApp() {
     router.replace("/login");
   }
 
+  const selectedForUi = selectedProject
+    ? (projects.find((project) => project.key === selectedProject.key) ??
+      selectedProject)
+    : null;
+
   return (
     <div className="relative flex h-[100dvh] flex-col bg-[var(--background)]">
       {dragActive && (
@@ -666,18 +676,25 @@ export function ChatApp() {
         ref={composerRef}
         disabled={thinking || sending}
         projects={projects}
-        selectedProject={selectedProject}
+        selectedProject={selectedForUi}
+        remainingTasks={remainingTasks}
+        remainingLoading={remainingLoading}
+        remainingError={remainingError}
         onSelectProject={(project) => {
           if (sendingRef.current) return;
           const changed = project?.key !== selectedProject?.key;
           selectedProjectRef.current = project;
           setSelectedProject(project);
           if (userId) writeStoredActiveProject(userId, project);
-          if (project && changed) {
-            void showRemainingTasks(project);
-          } else if (!project && changed) {
-            clearRemainingTasksBubble();
+          if (!project) {
+            clearRemainingStrip();
+            return;
           }
+          if (changed) {
+            setRemainingTasks(null);
+            setRemainingError(null);
+          }
+          void showRemainingTasks(project);
         }}
         onSend={handleSend}
       />

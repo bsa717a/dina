@@ -288,6 +288,19 @@ model ProjectTask {
   @@index([projectKey, sortOrder])
 }
 
+/// Binding behavior rules injected every chat turn (not Memory).
+model StandingInstruction {
+  id        String   @id @default(cuid())
+  title     String   @unique
+  content   String
+  status    String   @default("active")
+  source    String   @default("chat")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
 /// Per-user Morning Ritual section picker.
 model MorningBriefPreference {
   id             String   @id @default(cuid())

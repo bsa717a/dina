@@ -75,6 +75,8 @@ Examples:
 
 Preferences should evolve only with evidence.
 
+Binding presentation or behavior rules (“never show task IDs”, “from now on always…”) are **standing instructions**, not Memory. Standing instructions are injected every turn. Memory is retrieved by relevance and will be forgotten on unrelated turns. Use `set_standing_instruction` for those rules.
+
 ---
 
 ## WHAT SHOULD NOT BECOME MEMORY
@@ -89,6 +91,7 @@ Do not store:
 - Temporary emotions
 - Information that expires quickly
 - Duplicate information
+- Binding presentation or behavior rules (those belong in standing instructions)
 - Credentials
 - Passwords
 - API keys

@@ -40,7 +40,7 @@ export function ProjectsPill({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative mb-2">
+    <div ref={rootRef} className="relative">
       {open && (
         <div
           id={panelId}
