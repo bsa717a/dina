@@ -1,3 +1,5 @@
+import { pwaIdentityForKey } from "@/lib/pwa/identity";
+
 export type InstallPlatform = "ios" | "android" | "mac" | "other";
 
 export type AddToHomepageResult =
@@ -88,46 +90,49 @@ export function chooseInstallPath(input: {
   return "help";
 }
 
-export function homepageInstallHelp(platform: InstallPlatform): {
+export function homepageInstallHelp(
+  platform: InstallPlatform,
+  assistantName = "Dina",
+): {
   title: string;
   steps: string[];
 } {
   if (platform === "ios") {
     return {
-      title: "Add Dina to your Home Screen",
+      title: `Add ${assistantName} to your Home Screen`,
       steps: [
         "Tap the Share button in Safari (the square with the arrow).",
         "Scroll down and tap Add to Home Screen.",
-        "Tap Add. Dina will appear on your Home Screen like an app.",
+        `Tap Add. ${assistantName} will appear on your Home Screen like an app.`,
       ],
     };
   }
   if (platform === "mac") {
     return {
-      title: "Add Dina to the Dock",
+      title: `Add ${assistantName} to the Dock`,
       steps: [
         "In Safari, choose File → Add to Dock, or click Share in the toolbar and choose Add to Dock.",
         "In Chrome, click the install icon on the right side of the address bar, then Install.",
-        "Dina opens in its own window and stays in the Dock.",
+        `${assistantName} opens in its own window and stays in the Dock.`,
       ],
     };
   }
   if (platform === "android") {
     return {
-      title: "Add Dina to your Home Screen",
+      title: `Add ${assistantName} to your Home Screen`,
       steps: [
         "Open the browser menu (the three dots).",
         "Tap Add to Home screen or Install app.",
-        "Confirm Add. Dina will appear on your Home Screen like an app.",
+        `Confirm Add. ${assistantName} will appear on your Home Screen like an app.`,
       ],
     };
   }
   return {
-    title: "Add Dina to your Home Screen",
+    title: `Add ${assistantName} to your Home Screen`,
     steps: [
       "Open your browser menu.",
       "Choose Install, Add to Home screen, or Add to Dock.",
-      "Confirm. Dina will open as its own app.",
+      `Confirm. ${assistantName} will open as its own app.`,
     ],
   };
 }
@@ -208,7 +213,7 @@ async function promptWithDeferredEvent(): Promise<AddToHomepageResult | null> {
   }
 }
 
-async function promptWithNavigatorInstall(): Promise<AddToHomepageResult | null> {
+async function promptWithNavigatorInstall(manifestUrl: string): Promise<AddToHomepageResult | null> {
   const nav = window.navigator as NavigatorWithInstall;
   if (typeof nav.install !== "function") return null;
   try {
@@ -221,7 +226,7 @@ async function promptWithNavigatorInstall(): Promise<AddToHomepageResult | null>
     }
     try {
       await nav.install({
-        manifest: "/manifest.webmanifest",
+        manifest: manifestUrl,
         manifestId: "/",
       });
       notifyInstallState();
@@ -235,9 +240,12 @@ async function promptWithNavigatorInstall(): Promise<AddToHomepageResult | null>
   }
 }
 
-export async function promptAddToHomepage(): Promise<AddToHomepageResult> {
+export async function promptAddToHomepage(input?: {
+  assistantKey?: string | null;
+}): Promise<AddToHomepageResult> {
   watchInstallPrompt();
   const platform = currentInstallPlatform();
+  const manifestUrl = pwaIdentityForKey(input?.assistantKey).manifestUrl;
   const path = chooseInstallPath({
     standalone: isStandalonePwa(),
     hasDeferredPrompt: hasDeferredInstallPrompt(),
@@ -250,12 +258,12 @@ export async function promptAddToHomepage(): Promise<AddToHomepageResult> {
   if (path === "deferredPrompt") {
     const prompted = await promptWithDeferredEvent();
     if (prompted) return prompted;
-    const installed = await promptWithNavigatorInstall();
+    const installed = await promptWithNavigatorInstall(manifestUrl);
     if (installed) return installed;
   }
 
   if (path === "navigatorInstall") {
-    const installed = await promptWithNavigatorInstall();
+    const installed = await promptWithNavigatorInstall(manifestUrl);
     if (installed) return installed;
   }
 

@@ -14,6 +14,7 @@ import {
   subscribeToPush,
   watchInstallPrompt,
 } from "@/lib/client/pwa";
+import { applyPwaIdentity, pwaIdentityForKey } from "@/lib/pwa/identity";
 import { formatDayUsage } from "@/lib/client/usage-format";
 import { isRemainingTasksChatContent } from "@/lib/project-tasks/format";
 
@@ -111,6 +112,7 @@ export function ChatApp() {
   const [dragActive, setDragActive] = useState(false);
   const [dayUsageLabel, setDayUsageLabel] = useState<string | null>(null);
   const [assistantName, setAssistantName] = useState("Dina");
+  const [assistantKey, setAssistantKey] = useState<string | null>(null);
   const [assistantAvatarUrl, setAssistantAvatarUrl] = useState<string | null>(
     null,
   );
@@ -317,6 +319,10 @@ export function ChatApp() {
         setGoogleEnabled(Boolean(data.googleEnabled));
         if (typeof data.user?.id === "string") setUserId(data.user.id);
         if (data.user?.assistantName) setAssistantName(data.user.assistantName);
+        if (typeof data.user?.assistantKey === "string") {
+          setAssistantKey(data.user.assistantKey);
+          applyPwaIdentity(pwaIdentityForKey(data.user.assistantKey));
+        }
         if (typeof data.user?.avatarUrl === "string") {
           setAssistantAvatarUrl(data.user.avatarUrl);
         }
@@ -633,6 +639,7 @@ export function ChatApp() {
       )}
       <ChatHeader
         assistantName={assistantName}
+        assistantKey={assistantKey}
         assistantSubtitle={
           userRole === "member" ? "Project assistant" : "Chief of staff"
         }

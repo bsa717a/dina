@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
+import { requireSession } from "@/lib/auth/session";
+import { pwaIdentityForKey, type PwaIdentity } from "@/lib/pwa/identity";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,24 +15,41 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Dina",
-  description: "Derek’s calm, capable chief of staff",
-  applicationName: "Dina",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Dina",
-  },
-  icons: {
-    icon: [
-      { url: "/icons/icon-192.png?v=3", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png?v=3", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [{ url: "/icons/apple-touch-icon.png?v=3", sizes: "180x180", type: "image/png" }],
-  },
-};
+async function pwaIdentityFromSession(): Promise<PwaIdentity> {
+  try {
+    if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+      return pwaIdentityForKey("dina");
+    }
+    const user = await requireSession();
+    return pwaIdentityForKey(user?.assistantKey);
+  } catch {
+    return pwaIdentityForKey("dina");
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const identity = await pwaIdentityFromSession();
+  return {
+    title: identity.name,
+    description: identity.description,
+    applicationName: identity.name,
+    manifest: identity.manifestUrl,
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: identity.name,
+    },
+    icons: {
+      icon: [
+        { url: identity.icon192, sizes: "192x192", type: "image/png" },
+        { url: identity.icon512, sizes: "512x512", type: "image/png" },
+      ],
+      apple: [
+        { url: identity.appleTouchIcon, sizes: "180x180", type: "image/png" },
+      ],
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [
