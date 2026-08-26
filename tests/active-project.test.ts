@@ -8,6 +8,7 @@ import {
 import { formatActiveProjectRuntime, getMemberSystemPrompt } from "@/lib/ai/prompt";
 import {
   filterRemainingTaskChatMessages,
+  mergeRemainingTaskChatMessages,
   formatRemainingTaskLines,
   formatRemainingTasksMessage,
   formatRemainingTasksRuntime,
@@ -186,6 +187,19 @@ describe("remaining task runtime", () => {
         "Dina",
       ).map((message) => message.id),
     ).toEqual(["keep", "current"]);
+    expect(
+      mergeRemainingTaskChatMessages(
+        [{ id: "keep", role: "user", content: "What is next?" }],
+        [
+          {
+            id: "tasks-dina",
+            role: "assistant",
+            content: "Remaining tasks for Dina:\n\n1. Ship the selector",
+          },
+        ],
+        "Dina",
+      ).map((message) => message.id),
+    ).toEqual(["keep", "tasks-dina"]);
     expect(
       projectKeyFromTaskToolOutput(
         JSON.stringify({ ok: true, data: { task: { projectKey: "beacon" } } }),
