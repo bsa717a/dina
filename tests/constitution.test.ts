@@ -49,6 +49,7 @@ describe("Dina foundational documents", () => {
     expect(text).toMatch(/Will knowing this in six months/);
     expect(text).toMatch(/understood, not watched/);
     expect(text).toMatch(/Approval Required/);
+    expect(text).toMatch(/standing instructions/);
   });
 
   it("places foundational docs ahead of runtime wiring", () => {
@@ -60,5 +61,7 @@ describe("Dina foundational documents", () => {
     expect(prompt).toMatch(/Dina Memory Rules/);
     expect(prompt).toMatch(/Runtime capabilities/);
     expect(prompt).toMatch(/Chief of Staff Engine/);
+    expect(prompt).toMatch(/Standing instructions/);
+    expect(prompt).toMatch(/Never show task IDs/);
   });
 });

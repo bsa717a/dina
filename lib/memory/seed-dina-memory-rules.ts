@@ -31,7 +31,7 @@ const SEEDS: Seed[] = [
     category: "decisions",
     title: "What should not become memory",
     content:
-      "Do not store temporary debugging, one-time troubleshooting, random brainstorming, every chat message or AI response, temporary emotions, quickly expiring info, duplicates, credentials, passwords, API keys, or recovery codes.",
+      "Do not store temporary debugging, one-time troubleshooting, random brainstorming, every chat message or AI response, temporary emotions, quickly expiring info, duplicates, binding presentation/behavior rules (those are standing instructions), credentials, passwords, API keys, or recovery codes.",
     importance: "critical",
     confidence: 1,
   },

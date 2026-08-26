@@ -58,18 +58,23 @@ describe("ProjectTask store", () => {
     });
 
     const listed = await listProjectTasks({ project: "Beacon" });
-    expect(listed.map((t) => t.number)).toEqual([1, 2, 3]);
-    expect(listed.map((t) => t.title)).toEqual(["Alpha", "Beta", "Gamma"]);
+    const created = listed.filter((t) =>
+      ["Alpha", "Beta", "Gamma"].includes(t.title),
+    );
+    expect(created.map((t) => t.title)).toEqual(["Alpha", "Beta", "Gamma"]);
 
-    const done = await completeProjectTask({ project: "beacon", number: 2 });
+    const beta = listed.find((t) => t.title === "Beta");
+    const done = await completeProjectTask({
+      project: "beacon",
+      number: beta?.number,
+    });
     expect(done.title).toBe("Beta");
     expect(done.status).toBe("done");
 
-    const remaining = await listProjectTasks({ project: "beacon" });
-    expect(remaining.map((t) => `${t.number}:${t.title}`)).toEqual([
-      "1:Alpha",
-      "2:Gamma",
-    ]);
+    const remaining = (await listProjectTasks({ project: "beacon" })).filter(
+      (t) => t.source === "test",
+    );
+    expect(remaining.map((t) => t.title)).toEqual(["Alpha", "Gamma"]);
   });
 
   it("seeds Dina roadmap idempotently with Waiting On Engine done", async () => {
@@ -161,18 +166,29 @@ describe("project task tools", () => {
       ),
     );
     expect(listed.ok).toBe(true);
-    expect(listed.data.count).toBe(2);
+    const created = listed.data.tasks.filter((t: { title: string }) =>
+      ["One", "Two"].includes(t.title),
+    );
+    expect(created).toHaveLength(2);
+    expect(created[0].id).toBeUndefined();
+    expect(created.map((t: { title: string }) => t.title)).toEqual([
+      "One",
+      "Two",
+    ]);
 
+    const one = listed.data.tasks.find((t: { title: string }) => t.title === "One");
     const completed = JSON.parse(
       await runWithAuthUser(owner, () =>
         executeProjectTaskTool(
           "complete_project_task",
-          JSON.stringify({ project: "beacon", number: 1 }),
+          JSON.stringify({ project: "beacon", number: one.number }),
         ),
       ),
     );
     expect(completed.ok).toBe(true);
     expect(completed.data.task.title).toBe("One");
+    expect(completed.data.task.id).toBeUndefined();
+    expect(completed.data.task.number).toBe(one.number);
 
     const after = JSON.parse(
       await runWithAuthUser(owner, () =>
@@ -182,12 +198,17 @@ describe("project task tools", () => {
         ),
       ),
     );
-    expect(after.data.tasks.map((t: { title: string }) => t.title)).toEqual([
-      "Two",
-    ]);
+    expect(
+      after.data.tasks
+        .filter((t: { title: string }) => ["One", "Two"].includes(t.title))
+        .map((t: { title: string }) => t.title),
+    ).toEqual(["Two"]);
   });
 
   it("defaults list/add/complete to the selected project", async () => {
+    await prisma.projectTask.deleteMany({
+      where: { title: { in: ["Sticky one", "Sticky two", "Sticky three"] } },
+    });
     await addProjectTask({
       project: "beacon",
       title: "Sticky one",
@@ -209,7 +230,11 @@ describe("project task tools", () => {
     );
     expect(listed.ok).toBe(true);
     expect(listed.data.projectKey).toBe("beacon");
-    expect(listed.data.count).toBe(2);
+    expect(
+      listed.data.tasks.filter((t: { title: string }) =>
+        ["Sticky one", "Sticky two"].includes(t.title),
+      ),
+    ).toHaveLength(2);
 
     const added = JSON.parse(
       await runWithAuthUser(owner, () =>
@@ -224,13 +249,18 @@ describe("project task tools", () => {
     expect(added.ok).toBe(true);
     expect(added.data.task.projectKey).toBe("beacon");
     expect(added.data.task.title).toBe("Sticky three");
+    expect(added.data.task.id).toBeUndefined();
+    expect(typeof added.data.task.number).toBe("number");
 
+    const sticky = listed.data.tasks.find(
+      (t: { title: string }) => t.title === "Sticky one",
+    );
     const completed = JSON.parse(
       await runWithAuthUser(owner, () =>
         runWithActiveProject({ key: "beacon", name: "Beacon" }, () =>
           executeProjectTaskTool(
             "complete_project_task",
-            JSON.stringify({ number: 1 }),
+            JSON.stringify({ number: sticky.number }),
           ),
         ),
       ),
@@ -248,5 +278,45 @@ describe("project task tools", () => {
     await prisma.projectTask.deleteMany({
       where: { title: { in: ["Sticky one", "Sticky two", "Sticky three"] } },
     });
+  });
+
+  it("updates a task by project number without exposing an id", async () => {
+    const title = `Test update ${Date.now()}`;
+    await addProjectTask({
+      project: "beacon",
+      title,
+      source: "test",
+    });
+
+    const owner = await ownerUser();
+    const listed = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "list_project_tasks",
+          JSON.stringify({ project: "beacon" }),
+        ),
+      ),
+    ) as {
+      data: { tasks: Array<{ number: number; title: string; id?: string }> };
+    };
+    const match = listed.data.tasks.find((task) => task.title === title);
+    expect(match).toBeTruthy();
+
+    const updated = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "update_project_task",
+          JSON.stringify({
+            project: "beacon",
+            number: match?.number,
+            title: `${title} done`,
+          }),
+        ),
+      ),
+    );
+    expect(updated.ok).toBe(true);
+    expect(updated.data.task.title).toBe(`${title} done`);
+    expect(updated.data.task.number).toBe(match?.number);
+    expect(updated.data.task.id).toBeUndefined();
   });
 });

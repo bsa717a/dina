@@ -44,7 +44,7 @@ export function formatRemainingTasksRuntime(
     }
   }
   lines.push(
-    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
+    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Never show task IDs or UUIDs — numbered titles only. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
   );
   return lines.join("\n");
 }
@@ -80,14 +80,31 @@ export function projectKeyFromTaskToolOutput(output: string): string | null {
   }
 }
 
+/** One-line status for the composer strip. No model involved. */
+export function formatRemainingTasksSnapshot(input: {
+  projectName: string;
+  tasks: Array<{ title: string }>;
+}): string {
+  if (!input.tasks.length) {
+    return `${input.projectName} — nothing waiting.`;
+  }
+  const next = input.tasks[0]?.title.trim() || "an untitled task";
+  return `${input.projectName} — ${input.tasks.length} remaining. Next: ${next}.`;
+}
+
+/** Numbered titles for the expanded strip. */
+export function formatRemainingTaskLines(
+  tasks: Array<{ number: number; title: string }>,
+): string[] {
+  return tasks.map((task) => `${task.number}. ${task.title}`);
+}
+
 /** User-facing remaining list. No model involved. */
 export function formatRemainingTasksMessage(group: RemainingTaskGroup): string {
   if (!group.tasks.length) {
     return `No remaining tasks for ${group.projectName}.`;
   }
   const lines = [`Remaining tasks for ${group.projectName}:`, ""];
-  for (const task of group.tasks) {
-    lines.push(`${task.number}. ${task.title}`);
-  }
+  lines.push(...formatRemainingTaskLines(group.tasks));
   return lines.join("\n");
 }

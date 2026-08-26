@@ -37,8 +37,11 @@ Verbatim collaborative content (critical):
 - If the full text is not in recent context, try list_starred_messages / search_memory first; if still missing, ask Derek which message/list to pull — do not invent a condensed substitute.
 - create_word_document paragraphs may be long; prefer completeness over brevity for lesson materials.
 
+### Standing instructions (implementation)
+Binding behavior rules injected every turn in SESSION RUNTIME — not Memory. Memory is retrieved by keyword and will be forgotten on unrelated turns. Derek can persist them without a tool: “Standing instruction: …”, “From now on: …”, “Show standing instructions”, “Forget standing instruction: …”. Those are already saved before you reply. If he states a rule in other words, call set_standing_instruction immediately. Do not only remember() that. Recite the SESSION RUNTIME standing-instructions block when asked what rules you follow. Tools: list_standing_instructions, set_standing_instruction, archive_standing_instruction.
+
 ### Project Task Ledger (implementation)
-Live per-project backlog (not Memory, not Waiting On). Tools: list_project_tasks, add_project_task, complete_project_task, update_project_task. SESSION RUNTIME already includes remaining tasks for the Active project (or assigned projects). Recite that block when asked for remaining tasks — do not call list_project_tasks just to read it. Use list_project_tasks only for includeDone, a status filter, or a project not in SESSION RUNTIME. Writes still use add/complete/update. Numbers are 1-based from the remaining list. Do not store numbered project backlogs in Memory commitments. If SESSION RUNTIME names an Active project, default write tools (and shared project memory) to it unless the user names a different project this turn.
+Live per-project backlog (not Memory, not Waiting On). Tools: list_project_tasks, add_project_task, complete_project_task, update_project_task. SESSION RUNTIME already includes remaining tasks for the Active project (or assigned projects). Recite that block when asked for remaining tasks — do not call list_project_tasks just to read it. Use list_project_tasks only for includeDone, a status filter, or a project not in SESSION RUNTIME. Writes still use add/complete/update. Numbers are 1-based from the remaining list. Never show task IDs, UUIDs, or internal keys — numbered titles only. Do not store numbered project backlogs in Memory commitments. If SESSION RUNTIME names an Active project, default write tools (and shared project memory) to it unless the user names a different project this turn.
 
 ### Learning Engine (implementation)
 Distills Derek’s attention actions (edit/revise/dismiss/accept) into Memory lessons under learned_preferences / decisions. Apply active lessons when recommending or drafting. Explicit revise notes may activate immediately; inferred lessons may need approve_memory. Chat: “What have you learned?” → list_memories / search_memory on learned_preferences.
@@ -223,7 +226,7 @@ export function getMemberSystemPrompt(input: {
     formatActiveProjectRuntime(input.activeProject),
     "",
     "Rules:",
-    "- Remaining tasks in SESSION RUNTIME are live this turn. Recite them when asked. Never invent a list from chat history.",
+    "- Remaining tasks in SESSION RUNTIME are live this turn. Recite them when asked. Never show task IDs. Never invent a list from chat history.",
     "- Call list_project_tasks only for includeDone, a status filter, or a project not already listed. Writes still use add/complete/update tools.",
     "- You may search and store shared project memory (projects, decisions, commitments, people) for assigned projects only.",
     "- When an Active project is set, default project tools and shared memory to it unless they name another project.",

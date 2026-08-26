@@ -38,6 +38,26 @@ vi.mock("@/lib/stars/store", () => ({
   listStarredMessages: vi.fn(async () => []),
 }));
 
+const setStandingInstruction = vi.fn(async (input: { title: string; content: string }) => ({
+  title: input.title,
+  content: input.content,
+  status: "active",
+}));
+
+vi.mock("@/lib/standing-instructions/store", () => ({
+  listActiveStandingInstructions: vi.fn(async () => []),
+  setStandingInstruction,
+  archiveStandingInstruction: vi.fn(async (title: string) => ({
+    title,
+    content: "",
+    status: "archived",
+  })),
+}));
+
+vi.mock("@/lib/standing-instructions/seed", () => ({
+  seedStandingInstructions: vi.fn(async () => 0),
+}));
+
 vi.mock("@/lib/db/client", () => ({
   checkDatabase: vi.fn(async () => ({ ok: true })),
 }));
@@ -79,6 +99,7 @@ vi.mock("@/lib/ai/provider", () => ({
 describe("POST /api/chat error path", () => {
   beforeEach(async () => {
     streamChat.mockClear();
+    setStandingInstruction.mockClear();
     const conversations = await import("@/lib/db/conversations");
     vi.mocked(conversations.createMessage).mockClear();
     vi.resetModules();
@@ -224,6 +245,53 @@ describe("POST /api/chat error path", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Keep this lesson list.");
+    expect(streamChat).not.toHaveBeenCalled();
+  });
+
+  it("saves a standing instruction without a model turn", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "Standing instruction: never show calendar IDs",
+        attachmentIds: [],
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("Standing instruction saved");
+    expect(text).toContain("never show calendar IDs");
+    expect(streamChat).not.toHaveBeenCalled();
+    expect(setStandingInstruction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Never show calendar IDs",
+        content: "never show calendar IDs",
+        source: "chat",
+      }),
+    );
+  });
+
+  it("shows standing-instruction phrases without a model turn", async () => {
+    const { POST } = await import("@/app/api/chat/route");
+    const req = new Request("http://localhost:8080/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "How can I get you to remember this",
+        attachmentIds: [],
+      }),
+    });
+
+    const res = await POST(req as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("Standing instruction: never show calendar IDs");
+    expect(text).toContain("From now on: lead with the recommendation");
+    expect(text).toContain("Show standing instructions");
+    expect(text).toContain("Forget standing instruction: Never show calendar IDs");
     expect(streamChat).not.toHaveBeenCalled();
   });
 });

@@ -7,8 +7,10 @@ import {
 } from "@/lib/chat/active-project";
 import { formatActiveProjectRuntime, getMemberSystemPrompt } from "@/lib/ai/prompt";
 import {
+  formatRemainingTaskLines,
   formatRemainingTasksMessage,
   formatRemainingTasksRuntime,
+  formatRemainingTasksSnapshot,
   isRemainingTasksChatContent,
   projectKeyFromTaskToolOutput,
 } from "@/lib/project-tasks/format";
@@ -74,6 +76,7 @@ describe("remaining task runtime", () => {
     expect(runtime).toContain("already loaded");
     expect(runtime).toContain("1. [open] Ship the selector");
     expect(runtime).toContain("Do not call list_project_tasks just to read it");
+    expect(runtime).toContain("Never show task IDs");
     expect(formatRemainingTasksRuntime([])).toBe("");
     const empty = formatRemainingTasksRuntime([
       { projectKey: "regi", projectName: "Regi", tasks: [] },
@@ -97,6 +100,28 @@ describe("remaining task runtime", () => {
         tasks: [],
       }),
     ).toBe("No remaining tasks for Dina.");
+  });
+
+  it("formats a one-line remaining snapshot for the composer strip", () => {
+    expect(
+      formatRemainingTasksSnapshot({
+        projectName: "Regi",
+        tasks: [],
+      }),
+    ).toBe("Regi — nothing waiting.");
+    expect(
+      formatRemainingTasksSnapshot({
+        projectName: "Dina",
+        tasks: [task],
+      }),
+    ).toBe("Dina — 1 remaining. Next: Ship the selector.");
+    expect(
+      formatRemainingTasksSnapshot({
+        projectName: "Dina",
+        tasks: [task, { ...task, id: "t2", number: 2, title: "Write the strip" }],
+      }),
+    ).toBe("Dina — 2 remaining. Next: Ship the selector.");
+    expect(formatRemainingTaskLines([task])).toEqual(["1. Ship the selector"]);
   });
 
   it("recognizes leftover remaining-task chat and written project keys", () => {

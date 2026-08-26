@@ -31,6 +31,22 @@ import { seedDinaMemoryRuleMemories } from "@/lib/memory/seed-dina-memory-rules"
 import { seedDinaOperatingManualMemories } from "@/lib/memory/seed-dina-operating-manual";
 import { seedDinaProjectTasks } from "@/lib/project-tasks/seed-dina-tasks";
 import {
+  formatStandingInstructionArchivedMessage,
+  formatStandingInstructionHelpMessage,
+  formatStandingInstructionMissingMessage,
+  formatStandingInstructionSavedMessage,
+  formatStandingInstructionsMessage,
+  formatStandingInstructionsRuntime,
+  isStandingInstructionChatContent,
+} from "@/lib/standing-instructions/format";
+import { parseStandingInstructionRequest } from "@/lib/standing-instructions/parse";
+import { seedStandingInstructions } from "@/lib/standing-instructions/seed";
+import {
+  archiveStandingInstruction,
+  listActiveStandingInstructions,
+  setStandingInstruction,
+} from "@/lib/standing-instructions/store";
+import {
   formatStarredMessagesMessage,
   formatStarredMessagesRuntime,
   isStarredListChatContent,
@@ -95,6 +111,7 @@ export async function POST(request: NextRequest) {
       seedDinaMemoryRuleMemories().catch(() => undefined),
       seedDinaOperatingManualMemories().catch(() => undefined),
       seedDinaProjectTasks().catch(() => undefined),
+      seedStandingInstructions().catch(() => undefined),
     ]);
   }
 
@@ -123,41 +140,49 @@ export async function POST(request: NextRequest) {
     isStarredListRequest(content)
   ) {
     const items = await listStarredMessageRecords(user.id);
-    const markdown = formatStarredMessagesMessage(items);
-    const assistant = await createMessage({
-      conversationId: conversation.id,
-      role: "assistant",
-      content: markdown,
-    });
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        const send = (payload: unknown) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-          );
-        };
-        send({ type: "delta", text: markdown });
-        send({
-          type: "done",
-          message: {
-            id: assistant.id,
-            role: assistant.role,
-            content: assistant.content,
-            createdAt: assistant.createdAt,
-            openaiResponseId: assistant.openaiResponseId,
-          },
+    return directAssistantReply(
+      conversation.id,
+      formatStarredMessagesMessage(items),
+    );
+  }
+
+  const standingRequest =
+    user.role === "owner" && parsed.data.attachmentIds.length === 0
+      ? parseStandingInstructionRequest(content)
+      : null;
+  if (standingRequest) {
+    let markdown = "";
+    if (standingRequest.kind === "help") {
+      markdown = formatStandingInstructionHelpMessage();
+    } else if (standingRequest.kind === "list") {
+      const items = await listActiveStandingInstructions();
+      markdown = formatStandingInstructionsMessage(items);
+    } else if (standingRequest.kind === "set") {
+      try {
+        const item = await setStandingInstruction({
+          title: standingRequest.title,
+          content: standingRequest.content,
+          source: "chat",
         });
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
+        markdown = formatStandingInstructionSavedMessage(item);
+      } catch (error) {
+        markdown =
+          error instanceof Error
+            ? error.message
+            : "Could not save that standing instruction.";
+      }
+    } else {
+      try {
+        const item = await archiveStandingInstruction(standingRequest.title);
+        markdown = formatStandingInstructionArchivedMessage(item.title);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        markdown = /not found/i.test(message)
+          ? formatStandingInstructionMissingMessage(standingRequest.title)
+          : message || "Could not archive that standing instruction.";
+      }
+    }
+    return directAssistantReply(conversation.id, markdown);
   }
 
   const history = await listMessagesForProvider(conversation.id);
@@ -193,7 +218,7 @@ export async function POST(request: NextRequest) {
           user.role === "owner"
             ? "derek preferences projects people"
             : "project tasks decisions";
-        const [relevant, projectKeys, starred] = await Promise.all([
+        const [relevant, projectKeys, starred, standing] = await Promise.all([
           retrieveRelevantMemories(
             [content || fallbackQuery, activeProject?.name]
               .filter(Boolean)
@@ -204,6 +229,9 @@ export async function POST(request: NextRequest) {
           user.role === "owner"
             ? listStarredMessageRecords(user.id)
             : Promise.resolve([]),
+          user.role === "owner"
+            ? listActiveStandingInstructions()
+            : Promise.resolve([]),
         ]);
         const memoryBlock = formatMemoriesForPrompt(relevant, user.role);
         const projectNames = projectKeys.map(displayProjectName);
@@ -212,6 +240,10 @@ export async function POST(request: NextRequest) {
           : "";
         const starsBlock =
           user.role === "owner" ? formatStarredMessagesRuntime(starred) : "";
+        const standingBlock =
+          user.role === "owner"
+            ? formatStandingInstructionsRuntime(standing)
+            : "";
 
         const currentMessageId = history[history.length - 1]?.id;
         const messages = history
@@ -220,7 +252,8 @@ export async function POST(request: NextRequest) {
               m.id === currentMessageId ||
               !(
                 isRemainingTasksChatContent(m.role, m.content) ||
-                isStarredListChatContent(m.role, m.content)
+                isStarredListChatContent(m.role, m.content) ||
+                isStandingInstructionChatContent(m.role, m.content)
               ),
           )
           .map((m) => ({
@@ -244,6 +277,7 @@ export async function POST(request: NextRequest) {
           signal: request.signal,
           memoryBlock,
           tasksBlock,
+          standingBlock,
           starsBlock,
           actor: {
             id: user.id,
@@ -322,6 +356,41 @@ export async function POST(request: NextRequest) {
     },
   });
 
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+async function directAssistantReply(conversationId: string, markdown: string) {
+  const assistant = await createMessage({
+    conversationId,
+    role: "assistant",
+    content: markdown,
+  });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      };
+      send({ type: "delta", text: markdown });
+      send({
+        type: "done",
+        message: {
+          id: assistant.id,
+          role: assistant.role,
+          content: assistant.content,
+          createdAt: assistant.createdAt,
+          openaiResponseId: assistant.openaiResponseId,
+        },
+      });
+      controller.close();
+    },
+  });
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",

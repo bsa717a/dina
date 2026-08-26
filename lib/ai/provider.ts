@@ -56,6 +56,8 @@ export interface ModelProvider {
     memoryBlock?: string;
     /** Live remaining project tasks injected into SESSION RUNTIME. */
     tasksBlock?: string;
+    /** Binding behavior rules injected into SESSION RUNTIME every turn. */
+    standingBlock?: string;
     /** Live starred messages injected into SESSION RUNTIME. */
     starsBlock?: string;
     actor?: ChatActor;

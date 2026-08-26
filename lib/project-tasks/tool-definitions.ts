@@ -25,7 +25,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
   return [
     fn(
       "list_project_tasks",
-      "List the live backlog for a project. Prefer the remaining-task block already in SESSION RUNTIME — do not call this just to recite that list. Use this for includeDone, a status filter, or a project not already listed. Returns 1-based numbers so Derek can say 'mark 6 complete'. Default: remaining tasks (open + in_progress). Do NOT use Memory commitments for project task lists. Omit project when the user has a selected/active project.",
+      "List the live backlog for a project. Prefer the remaining-task block already in SESSION RUNTIME — do not call this just to recite that list. Use this for includeDone, a status filter, or a project not already listed. Returns 1-based numbers and titles only — never show ids. Default: remaining tasks (open + in_progress). Do NOT use Memory commitments for project task lists. Omit project when the user has a selected/active project.",
       {
         properties: {
           project: {
@@ -68,7 +68,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "complete_project_task",
-      "Mark a project task done. Prefer project + number from the latest list_project_tasks remaining list (e.g. project='Dina', number=6). Or pass taskId. Omit project when the user has a selected/active project.",
+      "Mark a project task done. Prefer project + number from the remaining list (e.g. project='Dina', number=6). Omit project when the user has a selected/active project. Confirm with number and title only — never an id.",
       {
         properties: {
           project: {
@@ -80,17 +80,24 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             type: "number",
             description: "1-based number from list_project_tasks remaining list",
           },
-          taskId: { type: "string" },
         },
         required: [],
       },
     ),
     fn(
       "update_project_task",
-      "Update a project task title, description, or status (open / in_progress / done / cancelled).",
+      "Update a project task title, description, or status (open / in_progress / done / cancelled). Prefer project + number from the remaining list. Omit project when the user has a selected/active project. Confirm with number and title only — never an id.",
       {
         properties: {
-          taskId: { type: "string" },
+          project: {
+            type: "string",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project.",
+          },
+          number: {
+            type: "number",
+            description: "1-based number from the remaining list",
+          },
           title: { type: "string" },
           description: { type: "string" },
           status: {
@@ -98,7 +105,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             enum: [...PROJECT_TASK_STATUSES],
           },
         },
-        required: ["taskId"],
+        required: [],
       },
     ),
   ];

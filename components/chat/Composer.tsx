@@ -7,6 +7,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ProjectRemainingStrip,
+  type RemainingStripTask,
+} from "@/components/chat/ProjectRemainingStrip";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
@@ -47,6 +51,9 @@ export const Composer = forwardRef<
     disabled?: boolean;
     projects?: UserProject[];
     selectedProject?: UserProject | null;
+    remainingTasks?: RemainingStripTask[] | null;
+    remainingLoading?: boolean;
+    remainingError?: string | null;
     projectSelectDisabled?: boolean;
     onSelectProject?: (project: UserProject | null) => void;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
@@ -56,6 +63,9 @@ export const Composer = forwardRef<
     disabled,
     projects = [],
     selectedProject = null,
+    remainingTasks = null,
+    remainingLoading,
+    remainingError,
     projectSelectDisabled,
     onSelectProject,
     onSend,
@@ -256,12 +266,23 @@ export const Composer = forwardRef<
 
         {error && <p className="mb-2 text-xs text-[var(--danger)]">{error}</p>}
 
-        <ProjectsPill
-          projects={projects}
-          selected={selectedProject}
-          disabled={disabled || projectSelectDisabled}
-          onSelectProject={onSelectProject}
-        />
+        <div className="mb-2">
+          <ProjectsPill
+            projects={projects}
+            selected={selectedProject}
+            disabled={disabled || projectSelectDisabled}
+            onSelectProject={onSelectProject}
+          />
+          {selectedProject && (
+            <ProjectRemainingStrip
+              key={selectedProject.key}
+              projectName={selectedProject.name}
+              tasks={remainingTasks}
+              loading={remainingLoading}
+              error={remainingError}
+            />
+          )}
+        </div>
 
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-[var(--shadow)]">
           <div className="flex shrink-0 gap-1 pb-0.5">

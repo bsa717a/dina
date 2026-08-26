@@ -148,20 +148,27 @@ export async function updateProjectTask(
 }
 
 /**
- * Complete by task id, or by 1-based number within the project's remaining list
+ * Resolve by task id, or by 1-based number within the project's remaining list
  * (open + in_progress), matching list_project_tasks default numbering.
  */
-export async function completeProjectTask(input: {
+export async function resolveProjectTask(input: {
   taskId?: string;
   project?: string;
   number?: number;
-}): Promise<ProjectTaskRecord> {
+}): Promise<NumberedProjectTask> {
   if (input.taskId) {
-    return updateProjectTask(input.taskId, { status: "done" });
+    const task = await getProjectTask(input.taskId);
+    if (!task) throw new Error("Project task not found.");
+    const remaining = await listProjectTasks({
+      project: task.projectKey,
+      includeDone: true,
+    });
+    const match = remaining.find((t) => t.id === task.id);
+    return match ?? { ...task, number: 0 };
   }
 
   if (!input.project || typeof input.number !== "number") {
-    throw new Error("Provide taskId, or project + number.");
+    throw new Error("Provide project + number.");
   }
 
   const remaining = await listProjectTasks({ project: input.project });
@@ -171,7 +178,20 @@ export async function completeProjectTask(input: {
       `No remaining task #${input.number} for project "${input.project}". List has ${remaining.length} remaining.`,
     );
   }
-  return updateProjectTask(match.id, { status: "done" });
+  return match;
+}
+
+/**
+ * Complete by 1-based remaining number (preferred), or by internal task id.
+ */
+export async function completeProjectTask(input: {
+  taskId?: string;
+  project?: string;
+  number?: number;
+}): Promise<NumberedProjectTask> {
+  const match = await resolveProjectTask(input);
+  const updated = await updateProjectTask(match.id, { status: "done" });
+  return { ...updated, number: match.number };
 }
 
 /**
