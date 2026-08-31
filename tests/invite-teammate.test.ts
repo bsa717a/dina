@@ -51,6 +51,7 @@ const owner: AuthUser = {
   assistantPersona: "",
   assistantKey: "dina",
   mustChangePassword: false,
+  phoneNumber: null,
 };
 
 const member: AuthUser = {
@@ -62,6 +63,7 @@ const member: AuthUser = {
   assistantPersona: "",
   assistantKey: "nora",
   mustChangePassword: false,
+  phoneNumber: null,
 };
 
 describe("invite helpers", () => {
@@ -120,6 +122,7 @@ describe("invite_teammate tool", () => {
       assistantPersona: "",
       assistantKey: null,
       mustChangePassword: true,
+      phoneNumber: null,
     });
     graphRequest.mockResolvedValue({});
   });

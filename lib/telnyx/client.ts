@@ -74,7 +74,7 @@ async function sendRcsMessage(
       to,
       text,
       type: "rcs",
-      messaging_profile_id: config.messagingProfileId,
+      messaging_profile_id: config.messagingProfileId ?? undefined,
     } satisfies TelnyxSendMessageRequest,
   });
 }

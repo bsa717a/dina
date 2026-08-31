@@ -31,6 +31,7 @@ beforeAll(async () => {
     assistantPersona: ownerRow.assistantPersona,
     assistantKey: ownerRow.assistantKey,
     mustChangePassword: ownerRow.mustChangePassword,
+    phoneNumber: ownerRow.phoneNumber ?? null,
   };
   member = await createMember({
     name: "Test Teammate",
