@@ -71,3 +71,37 @@ export function getAttentionScanSecret(): string | undefined {
 export function getDefaultTimeZone(): string {
   return process.env.DEFAULT_TIMEZONE?.trim() || "America/Denver";
 }
+
+// --- Telnyx RCS/SMS Configuration ---
+
+export function getTelnyxApiKey(): string | undefined {
+  return process.env.TELNYX_API_KEY?.trim() || undefined;
+}
+
+export function getTelnyxRcsAgentId(): string | undefined {
+  return process.env.TELNYX_RCS_AGENT_ID?.trim() || undefined;
+}
+
+export function getTelnyxSmsFrom(): string | undefined {
+  return process.env.TELNYX_SMS_FROM?.trim() || undefined;
+}
+
+export function getTelnyxMessagingProfileId(): string | undefined {
+  return process.env.TELNYX_MESSAGING_PROFILE_ID?.trim() || undefined;
+}
+
+export function getTelnyxWebhookSigningSecret(): string | undefined {
+  return process.env.TELNYX_WEBHOOK_SIGNING_SECRET?.trim() || undefined;
+}
+
+export function getGrokBotDinaWebhookUrl(): string | undefined {
+  return process.env.GROK_BOT_DINA_WEBHOOK_URL?.trim() || undefined;
+}
+
+export function getGrokBotDinaWebhookSecret(): string | undefined {
+  return process.env.GROK_BOT_DINA_WEBHOOK_SECRET?.trim() || undefined;
+}
+
+export function isTelnyxConfigured(): boolean {
+  return Boolean(getTelnyxApiKey() && getTelnyxSmsFrom());
+}
