@@ -182,14 +182,28 @@ Uploads are stored in `data/uploads/` (outside `public/`) and served only throug
 | `npm run usage` | Local OpenAI token/cost summary (`--hours 24`, `--feature morning`) |
 | `npm test` | Vitest suite |
 
-## ngrok
+## Public URL (Cloudflare Tunnel)
 
-1. Start Dina: `npm run dev` (or production `npm run build && npm run start`).
-2. Start your existing tunnel to port 8080, e.g. `ngrok http 8080`.
-3. Set `APP_URL` to the HTTPS ngrok URL (no trailing slash) and restart Dina so secure cookies / absolute URLs match.
-4. Open the ngrok URL on your iPhone.
+Production on the Mac mini uses Cloudflare, not ngrok. Quick tunnels (`*.trycloudflare.com`) get a **new hostname every time cloudflared starts**, which breaks the iPhone PWA, push subscriptions, and invite links.
 
-Do not hard-code the ngrok hostname in the app. When the tunnel URL changes, update `APP_URL`.
+Prefer a **named tunnel** (stable hostname):
+
+```bash
+cloudflared login
+cloudflared tunnel create dina
+```
+
+Write `~/.cloudflared/config.yml` with ingress to `http://127.0.0.1:8080`, put that hostname in `APP_URL`, then load [`deploy/com.dina.tunnel.plist`](deploy/com.dina.tunnel.plist). [`deploy/start-tunnel.sh`](deploy/start-tunnel.sh) uses the named tunnel when that config exists.
+
+For a one-off quick tunnel (hostname will change):
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8080
+```
+
+Set `APP_URL` to the printed HTTPS URL (no trailing slash) and restart Dina.
+
+ngrok works for local debugging (`ngrok http 8080`) but the free interstitial blocks Safari / the PWA. Do not hard-code a tunnel hostname in the app.
 
 ## PWA install
 
@@ -393,6 +407,8 @@ Push only works when the browser/PWA has an active notification subscription. If
 
 ## Production on a Mac mini (launchd)
 
+LaunchAgents start only after this user logs in. After a power loss the Mini boots to the login screen and Dina stays down until someone signs in. Enable **automatic login** for this account (System Settings → Users & Groups) so `com.dina.app`, Postgres, and the tunnel come back without a person at the keyboard. FileVault is off on this machine, so auto-login works.
+
 1. Build once:
 
 ```bash
@@ -407,20 +423,28 @@ npm run build
 mkdir -p ~/Library/Logs/dina
 ```
 
-4. Install and load:
+4. Install and load the app (waits for Postgres via [`deploy/start-app.sh`](deploy/start-app.sh)):
 
 ```bash
 cp deploy/com.dina.app.plist ~/Library/LaunchAgents/com.dina.app.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dina.app.plist
 ```
 
+5. Install the public tunnel (see [Public URL](#public-url-cloudflare-tunnel)):
+
+```bash
+cp deploy/com.dina.tunnel.plist ~/Library/LaunchAgents/com.dina.tunnel.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dina.tunnel.plist
+```
+
 Unload:
 
 ```bash
 launchctl bootout gui/$(id -u)/com.dina.app
+launchctl bootout gui/$(id -u)/com.dina.tunnel
 ```
 
-This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs under `~/Library/Logs/dina/`.
+This starts Dina after login, restarts on crash (`KeepAlive`), waits for Postgres, and writes logs under `~/Library/Logs/dina/`.
 
 ## Manual verification checklist
 
@@ -458,7 +482,8 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 | Problem | Fix |
 |---|---|
 | Redirect loop / can’t log in | Ensure `SESSION_SECRET` is 32+ chars and `APP_URL` matches how you open the app (`http` vs `https`) |
-| Cookies fail behind ngrok | Set `APP_URL` to the HTTPS ngrok URL and restart |
+| Cookies fail behind the tunnel | Set `APP_URL` to the HTTPS tunnel URL and restart |
+| Down after power loss / reboot | LaunchAgents need a login — enable auto-login; confirm `com.dina.app`, `postgresql@16`, and `com.dina.tunnel` are loaded; named tunnel required for a stable PWA URL |
 | OpenAI errors in UI | Check `OPENAI_API_KEY`, model name, and network; see server JSON logs |
 | DB errors | Run `npm run setup` / `npx prisma db push`; ensure `data/` is writable |
 | Push doesn’t work | HTTPS required (or localhost); VAPID keys set; permission granted; PWA/service worker registered |

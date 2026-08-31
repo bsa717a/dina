@@ -3,26 +3,20 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.dina.app</string>
+  <string>com.dina.tunnel</string>
 
   <key>WorkingDirectory</key>
   <string>/Users/derekfowler/repo/dina</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/derekfowler/repo/dina/deploy/start-app.sh</string>
+    <string>/Users/derekfowler/repo/dina/deploy/start-tunnel.sh</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>HOST</key>
-    <string>0.0.0.0</string>
-    <key>PORT</key>
-    <string>8080</string>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 
   <key>RunAtLoad</key>
@@ -33,8 +27,8 @@
   <integer>15</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/derekfowler/Library/Logs/dina/stdout.log</string>
+  <string>/Users/derekfowler/Library/Logs/dina/tunnel-stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/derekfowler/Library/Logs/dina/stderr.log</string>
+  <string>/Users/derekfowler/Library/Logs/dina/tunnel-stderr.log</string>
 </dict>
 </plist>
