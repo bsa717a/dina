@@ -140,6 +140,7 @@ async function ownerUser(): Promise<AuthUser> {
     assistantPersona: ownerRow.assistantPersona,
     assistantKey: ownerRow.assistantKey,
     mustChangePassword: ownerRow.mustChangePassword,
+    phoneNumber: ownerRow.phoneNumber ?? null,
   };
 }
 

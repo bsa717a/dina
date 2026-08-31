@@ -57,6 +57,7 @@ describe("create_project tool", () => {
       assistantPersona: ownerRow.assistantPersona,
       assistantKey: ownerRow.assistantKey,
       mustChangePassword: ownerRow.mustChangePassword,
+      phoneNumber: ownerRow.phoneNumber ?? null,
     };
 
     const result = JSON.parse(

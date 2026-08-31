@@ -9,6 +9,7 @@ const PUBLIC_PATHS = new Set([
   "/offline",
   "/api/health",
   "/api/auth/login",
+  "/api/telnyx/webhook",
   "/manifest.webmanifest",
   "/sw.js",
   "/file-drop-guard.js",
