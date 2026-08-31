@@ -11,6 +11,7 @@ export type AuthUser = {
   assistantPersona: string;
   assistantKey: string | null;
   mustChangePassword: boolean;
+  phoneNumber: string | null;
 };
 
 export function isUserRole(value: string): value is UserRole {
@@ -26,6 +27,7 @@ export function toAuthUser(row: {
   assistantPersona: string;
   assistantKey?: string | null;
   mustChangePassword?: boolean;
+  phoneNumber?: string | null;
 }): AuthUser {
   return {
     id: row.id,
@@ -36,6 +38,7 @@ export function toAuthUser(row: {
     assistantPersona: row.assistantPersona,
     assistantKey: row.assistantKey ?? null,
     mustChangePassword: Boolean(row.mustChangePassword),
+    phoneNumber: row.phoneNumber ?? null,
   };
 }
 
