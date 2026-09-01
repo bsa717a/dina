@@ -246,4 +246,37 @@ describe("handoffToGrokBot", () => {
     expect(result.response?.ok).toBe(true);
     expect(result.response?.reply?.text).toBe("Hello from Grok Bot!");
   });
+
+  it("handoff payload includes all required fields (from, text, teammate id, project ids)", async () => {
+    isGrokBotConfigured.mockReturnValue(true);
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://grok-bot.example.com/webhook",
+      webhookSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const { handoffToGrokBot } = await import("@/lib/telnyx/handoff");
+    const message = createTestMessage({
+      from: { carrier: "Verizon", line_type: "mobile", phone_number: "+15551234567" },
+      text: "Test message content",
+    });
+    const roster = createFoundRoster();
+
+    await handoffToGrokBot(message, roster);
+
+    const callArgs = mockFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1].body);
+
+    expect(body.from).toBe("+15551234567");
+    expect(body.text).toBe("Test message content");
+    expect(body.user.id).toBe("user-1");
+    expect(body.projectKeys).toEqual(["4studentlives", "regi"]);
+    expect(body.messageId).toBeDefined();
+    expect(body.to).toBeDefined();
+    expect(body.messageType).toBeDefined();
+    expect(body.receivedAt).toBeDefined();
+  });
 });

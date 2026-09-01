@@ -102,6 +102,10 @@ export function getGrokBotDinaWebhookSecret(): string | undefined {
   return process.env.GROK_BOT_DINA_WEBHOOK_SECRET?.trim() || undefined;
 }
 
+export function getGrokBotDinaApiToken(): string | undefined {
+  return process.env.GROK_BOT_DINA_API_TOKEN?.trim() || undefined;
+}
+
 export function isTelnyxConfigured(): boolean {
   return Boolean(getTelnyxApiKey() && getTelnyxSmsFrom());
 }
