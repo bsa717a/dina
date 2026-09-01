@@ -26,6 +26,7 @@ const ONBOARDING_PATHS = new Set([
 
 function isPublic(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true;
+  if (pathname.startsWith("/api/grok/")) return true;
   if (pathname.startsWith("/icons/")) return true;
   if (pathname.startsWith("/assistants/")) return true;
   if (pathname.startsWith("/_next/")) return true;
