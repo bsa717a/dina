@@ -1,0 +1,76 @@
+# Deploy Dina to Cloud Run (service `dina`) in project `dina-pm`.
+# Auth: GitHub secret GCP_SA_KEY (JSON key for the deploy service account).
+# See deploy/gcp.md for creating that SA. Do not put secret values in this file.
+
+name: Deploy GCP Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-gcp-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_ID: dina-pm
+  REGION: us-central1
+  SERVICE: dina
+  # Artifact Registry: us-central1-docker.pkg.dev/dina-pm/dina
+  IMAGE_BASE: us-central1-docker.pkg.dev/dina-pm/dina/dina
+  CLOUD_SQL_INSTANCE: dina-pm:us-central1:dina-pg
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Artifact Registry Docker auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${IMAGE_BASE}:${GITHUB_SHA}" \
+            -t "${IMAGE_BASE}:latest" \
+            .
+          docker push "${IMAGE_BASE}:${GITHUB_SHA}"
+          docker push "${IMAGE_BASE}:latest"
+
+      - name: Deploy Cloud Run
+        run: |
+          set -euo pipefail
+          # --update-secrets is additive so later Secret Manager bindings
+          # (SESSION_SECRET, TELNYX_*, …) are not wiped on each deploy.
+          # Full secret list: deploy/gcp.md
+          gcloud run deploy "${SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --platform=managed \
+            --image="${IMAGE_BASE}:${GITHUB_SHA}" \
+            --allow-unauthenticated \
+            --set-cloudsql-instances="${CLOUD_SQL_INSTANCE}" \
+            --min-instances=1 \
+            --max-instances=4 \
+            --cpu=1 \
+            --memory=1Gi \
+            --no-cpu-throttling \
+            --timeout=300 \
+            --update-env-vars="NODE_ENV=production,APP_URL=https://dina.clifsmama.com" \
+            --update-secrets="DATABASE_URL=dina-database-url:latest"
