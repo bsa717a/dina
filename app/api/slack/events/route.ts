@@ -23,7 +23,6 @@ import {
   resolveRegiProjectKey,
   verifySlackSignature,
   type SlackEventCallback,
-  type SlackUrlVerification,
 } from "@/lib/slack";
 
 export const runtime = "nodejs";
@@ -52,7 +51,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (payload.type === "url_verification") {
-    const challenge = (payload as SlackUrlVerification).challenge;
+    const challenge =
+      typeof payload.challenge === "string" ? payload.challenge : "";
     if (!challenge) {
       return jsonError("Missing challenge", 400);
     }
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const callback = payload as SlackEventCallback;
+  const callback = payload as unknown as SlackEventCallback;
   const event = parseSlackInboundEvent(callback);
   if (!event) {
     return NextResponse.json({

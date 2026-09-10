@@ -22,13 +22,15 @@ export function stripSlackMentions(text: string): string {
     .replace(/<@[A-Z0-9]+>/gi, "")
     .replace(/<#[A-Z0-9]+\|[^>]+>/gi, "")
     .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+/g, " ")
     .trim();
 }
 
 export function titleFromSlackText(text: string, threadTs: string): string {
   const cleaned = stripSlackMentions(text);
-  const firstLine = cleaned.split("\n")[0]?.trim() || "Slack note";
+  const firstLine = cleaned.split("\n")[0]?.trim() ?? "";
   const truncated = firstLine.slice(0, 80);
   if (truncated.length < 3) {
     return `Slack thread ${threadTs}`;
