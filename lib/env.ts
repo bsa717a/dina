@@ -109,3 +109,51 @@ export function getGrokBotDinaApiToken(): string | undefined {
 export function isTelnyxConfigured(): boolean {
   return Boolean(getTelnyxApiKey() && getTelnyxSmsFrom());
 }
+
+// --- Slack (Regi project only) ---
+
+export function getSlackBotToken(): string | undefined {
+  return process.env.SLACK_BOT_TOKEN?.trim() || undefined;
+}
+
+export function getSlackSigningSecret(): string | undefined {
+  return process.env.SLACK_SIGNING_SECRET?.trim() || undefined;
+}
+
+export function getSlackRegiProjectSlug(): string {
+  return process.env.SLACK_REGI_PROJECT_SLUG?.trim() || "regi";
+}
+
+export function getSlackRegiChannelIds(): string[] {
+  return (process.env.SLACK_REGI_CHANNEL_IDS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function getSlackRegiAllowIms(): boolean {
+  const raw = process.env.SLACK_REGI_ALLOW_IMS?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+export function getSlackBotUserId(): string | undefined {
+  return process.env.SLACK_BOT_USER_ID?.trim() || undefined;
+}
+
+/** Overlay map of Slack user id → Piper username, e.g. U012ABC:adam,U034DEF:derek */
+export function getSlackUserMap(): Record<string, string> {
+  const raw = process.env.SLACK_USER_MAP?.trim();
+  if (!raw) return {};
+  const out: Record<string, string> = {};
+  for (const part of raw.split(",")) {
+    const [slackUserId, username] = part.split(":").map((value) => value.trim());
+    if (slackUserId && username) {
+      out[slackUserId] = username;
+    }
+  }
+  return out;
+}
+
+export function isSlackConfigured(): boolean {
+  return Boolean(getSlackBotToken() && getSlackSigningSecret());
+}

@@ -19,6 +19,8 @@ model User {
   mustChangePassword Boolean  @default(false)
   /// E.164 phone number for RCS/SMS roster lookup (e.g. +14352382071)
   phoneNumber        String?  @unique
+  /// Slack user id for Regi-project roster lookup (e.g. U012ABCDEF)
+  slackUserId        String?  @unique
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -32,6 +34,7 @@ model User {
   morningBriefPreference MorningBriefPreference?
 
   @@index([phoneNumber])
+  @@index([slackUserId])
 }
 
 /// Live project registry. Dina can create and archive these without a code change.

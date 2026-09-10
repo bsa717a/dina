@@ -16,6 +16,7 @@
     "db:seed-owner": "node scripts/seed-owner.mjs",
     "db:import-sqlite": "node scripts/migrate-sqlite-to-postgres.mjs",
     "user:add": "node scripts/add-user.mjs",
+    "user:link-slack": "node scripts/link-slack-user.mjs",
     "attention:scan": "node scripts/attention-scan.mjs",
     "usage": "node scripts/openai-usage.mjs",
     "test": "vitest run",

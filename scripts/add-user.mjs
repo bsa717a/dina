@@ -2,7 +2,7 @@
  * Add a teammate. They set a password and pick a personality on first login.
  *
  *   NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" \
- *     PROJECTS="4studentlives,metabolicos" npm run user:add
+ *     PROJECTS="regi" SLACK_USER_ID="U012ABCDEF" npm run user:add
  */
 import { createRequire } from "module";
 
@@ -15,6 +15,7 @@ const KNOWN = [
   "metabolicos",
   "hidden_guardians",
   "clifsmama",
+  "regi",
 ];
 
 function hashPassword(password) {
@@ -31,6 +32,7 @@ async function main() {
   const name = (process.env.NAME || "").trim();
   const username = (process.env.USERNAME || "").trim().toLowerCase();
   const password = (process.env.TEMP_PASSWORD || "").trim();
+  const slackUserId = (process.env.SLACK_USER_ID || "").trim();
   const projects = (process.env.PROJECTS || "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
@@ -50,6 +52,9 @@ async function main() {
   if (!keys.length) {
     throw new Error(`PROJECTS must include at least one of: ${KNOWN.join(", ")}`);
   }
+  if (slackUserId && !/^U[A-Z0-9]+$/i.test(slackUserId)) {
+    throw new Error("SLACK_USER_ID must look like U012ABCDEF.");
+  }
 
   const user = await prisma.user.create({
     data: {
@@ -61,6 +66,7 @@ async function main() {
       assistantKey: null,
       passwordHash: hashPassword(password),
       mustChangePassword: true,
+      ...(slackUserId ? { slackUserId } : {}),
       memberships: {
         create: keys.map((projectKey) => ({
           projectKey,
@@ -71,7 +77,7 @@ async function main() {
   });
 
   console.log(
-    `Added ${user.name} @${user.username} (${user.id}) — they must set a password and pick a personality on first login. projects=${keys.join(",")}`,
+    `Added ${user.name} @${user.username} (${user.id}) — they must set a password and pick a personality on first login. projects=${keys.join(",")}${slackUserId ? ` slack=${slackUserId}` : ""}`,
   );
   await prisma.$disconnect();
 }

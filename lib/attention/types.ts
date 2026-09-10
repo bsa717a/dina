@@ -41,7 +41,8 @@ export type AttentionSource =
   | "calendar"
   | "todo"
   | "meeting_invite"
-  | "github";
+  | "github"
+  | "slack";
 
 export type CollectedSignal = {
   source: AttentionSource;

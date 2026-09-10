@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkDatabase } from "@/lib/db/client";
-import { getOpenAIApiKey, getVapidConfig } from "@/lib/env";
+import { getOpenAIApiKey, getVapidConfig, isSlackConfigured, isTelnyxConfigured } from "@/lib/env";
 import { checkGoogleApis } from "@/lib/google/auth";
 import { checkMicrosoftGraph } from "@/lib/microsoft/graph";
 
@@ -33,6 +33,8 @@ export async function GET() {
           : google.ok
             ? "ok"
             : "error",
+        telnyx: isTelnyxConfigured() ? "configured" : "missing",
+        slack: isSlackConfigured() ? "configured" : "missing",
       },
       ...(db.error ? { databaseError: "unavailable" } : {}),
       ...(microsoft.configured && !microsoft.ok
