@@ -71,6 +71,7 @@ export interface TelnyxSendMessageRequest {
   type?: TelnyxMessageType;
   subject?: string;
   media_urls?: string[];
+  agent_id?: string;
 }
 
 export interface TelnyxRcsSendMessageRequest {
@@ -78,6 +79,7 @@ export interface TelnyxRcsSendMessageRequest {
   to: string;
   text: string;
   messaging_profile_id?: string;
+  agent_id?: string;
 }
 
 export interface TelnyxSendMessageResponse {

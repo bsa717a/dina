@@ -77,6 +77,9 @@ describe("sendMessage", () => {
         }),
       }),
     );
+    const rcsBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(rcsBody.agent_id).toBe("rcs-agent-123");
+    expect(rcsBody.type).toBe("rcs");
   });
 
   it("falls back to SMS when RCS fails", async () => {
