@@ -66,3 +66,10 @@ export function shouldIgnoreMessageSubtype(subtype?: string): boolean {
   if (!subtype) return false;
   return subtype !== "file_share";
 }
+
+/** True when the text @-mentions this bot (Slack also sends app_mention). */
+export function textMentionsSlackBot(text: string): boolean {
+  const botUserId = getSlackConfig()?.botUserId;
+  if (!botUserId || !text) return false;
+  return text.toUpperCase().includes(`<@${botUserId.toUpperCase()}>`);
+}

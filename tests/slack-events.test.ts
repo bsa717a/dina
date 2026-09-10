@@ -7,6 +7,20 @@ const mockParse = vi.fn();
 const mockProcess = vi.fn();
 const mockDeliver = vi.fn();
 const mockResolveProject = vi.fn();
+const mockHasSlackEvent = vi.fn();
+const afterCallbacks: Array<() => Promise<void>> = [];
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after: (fn: () => unknown) => {
+      afterCallbacks.push(async () => {
+        await fn();
+      });
+    },
+  };
+});
 
 vi.mock("@/lib/slack", () => ({
   isSlackConfigured: () => mockConfigured(),
@@ -19,6 +33,9 @@ vi.mock("@/lib/slack", () => ({
   processSlackInbound: (...args: unknown[]) => mockProcess(...args),
   deliverSlackReply: (...args: unknown[]) => mockDeliver(...args),
   resolveRegiProjectKey: () => mockResolveProject(),
+  hasSlackEvent: (...args: unknown[]) => mockHasSlackEvent(...args),
+  slackEventDedupeKey: (event: { channelId: string; ts: string }) =>
+    `${event.channelId}:${event.ts}`,
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -50,10 +67,13 @@ describe("POST /api/slack/events", () => {
     mockProcess.mockReset();
     mockDeliver.mockReset();
     mockResolveProject.mockReset();
+    mockHasSlackEvent.mockReset();
+    afterCallbacks.length = 0;
     mockConfigured.mockReturnValue(true);
     mockVerify.mockReturnValue({ valid: true });
     mockResolveProject.mockReturnValue("regi");
     mockDeliver.mockResolvedValue(undefined);
+    mockHasSlackEvent.mockReturnValue(false);
   });
 
   it("returns 503 when Slack is not configured", async () => {
@@ -77,7 +97,7 @@ describe("POST /api/slack/events", () => {
     expect(await res.json()).toEqual({ challenge: "challenge-token" });
   });
 
-  it("processes app mentions and replies in-thread", async () => {
+  it("acks immediately and processes the mention after the response", async () => {
     mockParse.mockReturnValue({
       type: "app_mention",
       slackUserId: "U012",
@@ -105,9 +125,44 @@ describe("POST /api/slack/events", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.handled).toBe(true);
-    expect(body.task.number).toBe(1);
+    expect(body.accepted).toBe(true);
+    expect(mockProcess).not.toHaveBeenCalled();
+
+    await afterCallbacks[0]();
+    expect(mockProcess).toHaveBeenCalled();
     expect(mockDeliver).toHaveBeenCalled();
+  });
+
+  it("ignores Slack retries of an event already claimed", async () => {
+    mockParse.mockReturnValue({
+      type: "app_mention",
+      slackUserId: "U012",
+      text: "hello",
+      channelId: "CREGI",
+      ts: "1.1",
+      threadTs: "1.1",
+    });
+    mockHasSlackEvent.mockReturnValue(true);
+
+    const { POST } = await import("@/app/api/slack/events/route");
+    const res = await POST(
+      post(
+        {
+          type: "event_callback",
+          event: { type: "app_mention", user: "U012", text: "hello", ts: "1.1", channel: "CREGI" },
+        },
+        { "x-slack-retry-num": "1" },
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      ignored: true,
+      reason: "retry",
+    });
+    expect(afterCallbacks).toHaveLength(0);
+    expect(mockProcess).not.toHaveBeenCalled();
   });
 });
 
