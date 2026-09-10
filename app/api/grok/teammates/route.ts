@@ -18,6 +18,7 @@ export interface TeammateResponse {
   name: string;
   username: string;
   phoneNumber: string | null;
+  slackUserId: string | null;
   projectKeys: string[];
 }
 
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
       name: user.name,
       username: user.username,
       phoneNumber: row.phoneNumber ?? null,
+      slackUserId: row.slackUserId ?? null,
       projectKeys,
     });
   }

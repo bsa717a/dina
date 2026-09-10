@@ -11,10 +11,16 @@ vi.mock("@/lib/env", () => ({
     privateKey: "priv",
     subject: "mailto:test@example.com",
   }),
+  isTelnyxConfigured: () => false,
+  isSlackConfigured: () => false,
 }));
 
 vi.mock("@/lib/microsoft/graph", () => ({
   checkMicrosoftGraph: vi.fn(async () => ({ ok: true, configured: true })),
+}));
+
+vi.mock("@/lib/google/auth", () => ({
+  checkGoogleApis: vi.fn(async () => ({ ok: true, configured: false })),
 }));
 
 describe("GET /api/health", () => {

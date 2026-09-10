@@ -70,6 +70,12 @@ Open [http://localhost:8080](http://localhost:8080).
 | `GOOGLE_REFRESH_TOKEN` | for Google | Long-lived refresh token from `npm run google-oauth` |
 | `GOOGLE_USER_EMAIL` | for Google | Personal Gmail address |
 | `GOOGLE_LABEL` | no | Account label (default `personal`) |
+| `SLACK_BOT_TOKEN` | for Slack | Bot User OAuth Token (`xoxb-…`) — Regi bot only |
+| `SLACK_SIGNING_SECRET` | for Slack | Events API signing secret |
+| `SLACK_REGI_PROJECT_SLUG` | no | Piper project the Slack bot writes (default `regi`; never 4SL / Metabolic) |
+| `SLACK_REGI_CHANNEL_IDS` | no | Optional comma-separated Slack channel allowlist |
+| `SLACK_REGI_ALLOW_IMS` | no | Allow DMs to the bot (default false) |
+| `SLACK_USER_MAP` | no | Overlay `U012:username` map until `User.slackUserId` is set |
 
 ## Microsoft 365
 
@@ -167,13 +173,22 @@ Derek signs in as `derek` with the `ACCESS_CODE` password and keeps Dina.
 
 Uploads are stored in `data/uploads/` (outside `public/`) and served only through authenticated `/api/attachments/[id]`.
 
+## Slack ↔ Piper (Regi only)
+
+Regi teammates can talk to Piper from Slack. 4StudentLives stays on Telnyx RCS. Setup, scopes, and smoke checks: [`docs/slack-regi.md`](docs/slack-regi.md).
+
+```bash
+USERNAME=adam SLACK_USER_ID=U012ABCDEF npm run user:link-slack
+```
+
 ## Scripts
 
 | Command | Purpose |
 |---|---|
 | `npm run setup` | Create data dirs, icons, apply DB schema, seed owner |
 | `npm run db:import-sqlite` | Copy `data/dina.db` into Postgres (once) |
-| `npm run user:add` | Add a teammate (`NAME`, `USERNAME`, `TEMP_PASSWORD`, `PROJECTS`) |
+| `npm run user:add` | Add a teammate (`NAME`, `USERNAME`, `TEMP_PASSWORD`, `PROJECTS`, optional `SLACK_USER_ID`) |
+| `npm run user:link-slack` | Link `USERNAME` → `SLACK_USER_ID` for the Regi Slack roster |
 | `npm run generate-vapid` | Print VAPID keys for `.env` |
 | `npm run generate-icons` | Regenerate PNG app icons |
 | `npm run dev` | Dev server on `0.0.0.0:8080` |
