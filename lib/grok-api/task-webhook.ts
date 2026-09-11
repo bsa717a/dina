@@ -5,8 +5,8 @@
  * When unset, changes are logged (no-op) like Telnyx handoff.
  */
 
-import { createHmac } from "crypto";
 import { logger } from "@/lib/logger";
+import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
 import { getGrokBotConfig, isGrokBotConfigured } from "@/lib/telnyx/config";
 import type { ProjectTaskStatus } from "@/lib/project-tasks/types";
 
@@ -30,10 +30,6 @@ export interface TaskChangePayload {
 export interface TaskChangeResult {
   status: "sent" | "logged" | "error";
   error?: string;
-}
-
-function signPayload(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
 export async function notifyTaskChange(
@@ -64,15 +60,7 @@ export async function notifyTaskChange(
     timestamp: new Date().toISOString(),
   });
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (config.webhookSecret) {
-    const signature = signPayload(body, config.webhookSecret);
-    headers["X-Grok-Bot-Signature"] = signature;
-    headers["X-Grok-Bot-Timestamp"] = String(Math.floor(Date.now() / 1000));
-  }
+  const headers = buildGrokBotWebhookHeaders(body, config.webhookSecret);
 
   try {
     const response = await fetch(config.webhookUrl, {

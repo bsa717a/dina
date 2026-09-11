@@ -1,12 +1,12 @@
 /**
  * Grok Bot Dina handoff for Slack inbound (mirrors Telnyx handoff).
  *
- * Same webhook URL / HMAC headers as lib/telnyx/handoff.ts.
+ * Same webhook URL / Bearer + X-Automation-Key auth as lib/telnyx/handoff.ts.
  * Payload is tagged channel:"slack" and projectKeys is forced to Regi.
  */
 
-import { createHmac } from "crypto";
 import { logger } from "@/lib/logger";
+import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
 import { getGrokBotConfig, isGrokBotConfigured } from "@/lib/telnyx/config";
 import type { GrokBotHandoffResponse } from "@/lib/telnyx/types";
 import type { SlackHandoffPayload, SlackInboundEvent, SlackRosterLookupResult } from "./types";
@@ -49,10 +49,6 @@ export function buildSlackHandoffPayload(
   };
 }
 
-function signPayload(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-
 export async function handoffSlackToGrokBot(
   event: SlackInboundEvent,
   roster: SlackRosterLookupResult,
@@ -78,14 +74,7 @@ export async function handoffSlackToGrokBot(
   }
 
   const body = JSON.stringify(payload);
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (config.webhookSecret) {
-    headers["X-Grok-Bot-Signature"] = signPayload(body, config.webhookSecret);
-    headers["X-Grok-Bot-Timestamp"] = String(Math.floor(Date.now() / 1000));
-  }
+  const headers = buildGrokBotWebhookHeaders(body, config.webhookSecret);
 
   try {
     const response = await fetch(config.webhookUrl, {

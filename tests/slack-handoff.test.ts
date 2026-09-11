@@ -89,8 +89,14 @@ describe("handoffSlackToGrokBot", () => {
     expect(body.user.username).toBe("alex");
     expect(body.slack.channelId).toBe("CREGI");
     expect(body.slack.threadTs).toBe("1710000000.000100");
-    expect(mockFetch.mock.calls[0][1].headers["X-Grok-Bot-Signature"]).toEqual(
-      expect.any(String),
+    expect(mockFetch.mock.calls[0][1].headers).toEqual(
+      expect.objectContaining({
+        "Content-Type": "application/json",
+        Authorization: "Bearer secret",
+        "X-Automation-Key": "secret",
+        "X-Grok-Bot-Signature": expect.any(String),
+        "X-Grok-Bot-Timestamp": expect.any(String),
+      }),
     );
   });
 

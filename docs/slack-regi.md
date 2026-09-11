@@ -10,7 +10,7 @@ Live Piper: https://dina.clifsmama.com
 2. Map Slack user → Piper member (`User.slackUserId` or `SLACK_USER_MAP`)
 3. Unknown users get a thread reply: ask Derek to add them
 4. Known Regi members: create or update a **Regi** project task + Attention item
-5. Same Grok Bot Dina handoff used by Telnyx (`GROK_BOT_DINA_WEBHOOK_URL`)
+5. Same Grok Bot Dina handoff used by Telnyx (`GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`)
 6. Piper replies in the **same Slack thread**
 
 Telnyx `/api/telnyx/webhook` is unchanged.
@@ -82,7 +82,9 @@ Unknown Slack accounts are **not** auto-provisioned. They get a clear thread rep
 
 ## Grok Bot
 
-Inbound Slack uses the same webhook as Telnyx. Extra fields:
+Inbound Slack uses the same webhook as Telnyx. Set `GROK_BOT_DINA_WEBHOOK_SECRET` to the Routines panel **sender key** (`crsr_…`). Piper sends it as `Authorization: Bearer <key>` and `X-Automation-Key` — HMAC-only headers will not wake the routine.
+
+Extra fields:
 
 - `channel: "slack"`
 - `messageType: "slack"`
