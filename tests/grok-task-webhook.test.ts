@@ -90,7 +90,7 @@ describe("notifyTaskChange", () => {
     expect(body.timestamp).toBeDefined();
   });
 
-  it("includes signature when webhook secret is set", async () => {
+  it("sends Bearer and X-Automation-Key when webhook secret is set", async () => {
     isGrokBotConfigured.mockReturnValue(true);
     getGrokBotConfig.mockReturnValue({
       webhookUrl: "https://grok-bot.example.com/webhook",
@@ -108,6 +108,9 @@ describe("notifyTaskChange", () => {
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-secret",
+          "X-Automation-Key": "test-secret",
           "X-Grok-Bot-Signature": expect.any(String),
           "X-Grok-Bot-Timestamp": expect.any(String),
         }),

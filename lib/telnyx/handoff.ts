@@ -5,8 +5,8 @@
  * When unset, messages are logged so the pipe can be tested without Grok Bot.
  */
 
-import { createHmac } from "crypto";
 import { logger } from "@/lib/logger";
+import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
 import { getGrokBotConfig, isGrokBotConfigured } from "./config";
 import type {
   GrokBotHandoffPayload,
@@ -44,10 +44,6 @@ function buildHandoffPayload(
   };
 }
 
-function signPayload(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-
 export async function handoffToGrokBot(
   message: TelnyxMessagePayload,
   roster: RosterLookupResult,
@@ -72,15 +68,7 @@ export async function handoffToGrokBot(
   }
 
   const body = JSON.stringify(payload);
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (config.webhookSecret) {
-    const signature = signPayload(body, config.webhookSecret);
-    headers["X-Grok-Bot-Signature"] = signature;
-    headers["X-Grok-Bot-Timestamp"] = String(Math.floor(Date.now() / 1000));
-  }
+  const headers = buildGrokBotWebhookHeaders(body, config.webhookSecret);
 
   try {
     const response = await fetch(config.webhookUrl, {
