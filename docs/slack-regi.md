@@ -91,7 +91,7 @@ Extra fields:
 - `projectKeys: ["regi"]` only
 - `slack: { teamId, channelId, threadTs, eventTs, slackUserId }`
 
-If Grok Bot returns `{ ok: true, reply: { text } }`, that text is posted in-thread. If the webhook is unset, Piper still writes the Regi task/Attention and posts a local ack.
+If Grok Bot returns `{ ok: true, reply: { text } }`, that text is posted in-thread. If the webhook accepts the handoff without a sync reply (`status: sent`, no `reply.text`), Piper stays silent — Dina’s Old Dina routine later POSTs the real answer via `/api/grok/outbound-slack`. If the webhook is unset (`logged`) or the handoff errors, Piper still writes the Regi task/Attention and posts a local ledger ack.
 
 Async Slack send (service token): `POST /api/grok/outbound-slack` with `{ channelId, threadTs, text }`.
 

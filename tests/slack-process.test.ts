@@ -152,6 +152,50 @@ describe("processSlackInbound", () => {
     const result = await processSlackInbound(mention);
     expect(result.handoff).toBe("logged");
     expect(result.reply?.text).toContain("task #4");
+    expect(result.reply?.text).toContain("Got it — logged on Regi");
+  });
+
+  it("acks locally when Grok Bot handoff errors", async () => {
+    mockLookup.mockResolvedValue({
+      found: true,
+      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
+      projectKeys: ["regi"],
+      onRegiProject: true,
+    });
+    mockUpsertLedger.mockResolvedValue({
+      task: { id: "t1", number: 5, title: "ship the dashboard polish", created: false },
+      attention: { id: "a1" },
+    });
+    mockHandoff.mockResolvedValue({ status: "error", error: "timeout" });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound(mention);
+    expect(result.handoff).toBe("error");
+    expect(result.reply?.text).toContain("Updated Regi task #5");
+  });
+
+  it("does not invent a local ack when async handoff is sent without reply.text", async () => {
+    mockLookup.mockResolvedValue({
+      found: true,
+      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
+      projectKeys: ["regi"],
+      onRegiProject: true,
+    });
+    mockUpsertLedger.mockResolvedValue({
+      task: { id: "t1", number: 6, title: "ship the dashboard polish", created: true },
+      attention: { id: "a1" },
+    });
+    mockHandoff.mockResolvedValue({
+      status: "sent",
+      response: { ok: true, hasReply: false },
+    });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound(mention);
+    expect(result.handled).toBe(true);
+    expect(result.handoff).toBe("sent");
+    expect(result.task?.number).toBe(6);
+    expect(result.reply).toBeUndefined();
   });
 
   it("ignores top-level channel messages that are not mentions", async () => {
