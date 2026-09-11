@@ -17,6 +17,7 @@
     "db:import-sqlite": "node scripts/migrate-sqlite-to-postgres.mjs",
     "user:add": "node scripts/add-user.mjs",
     "user:link-slack": "node scripts/link-slack-user.mjs",
+    "slack:socket": "tsx scripts/slack-socket.ts",
     "attention:scan": "node scripts/attention-scan.mjs",
     "usage": "node scripts/openai-usage.mjs",
     "test": "vitest run",
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.2",
+    "@slack/socket-mode": "^2.0.5",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
     "iron-session": "^8.0.4",

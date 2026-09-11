@@ -13,6 +13,7 @@ vi.mock("@/lib/env", () => ({
   }),
   isTelnyxConfigured: () => false,
   isSlackConfigured: () => false,
+  isSlackSocketModeConfigured: () => false,
 }));
 
 vi.mock("@/lib/microsoft/graph", () => ({
@@ -35,5 +36,8 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(200);
     expect(body.status).toBe("ok");
     expect(body.checks.database).toBe("ok");
+    expect(body.checks.slack).toBe("missing");
+    expect(body.checks.slackSocket).toBe("missing");
+    expect(body.checks.telnyx).toBe("missing");
   });
 });

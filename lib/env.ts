@@ -120,6 +120,33 @@ export function getSlackSigningSecret(): string | undefined {
   return process.env.SLACK_SIGNING_SECRET?.trim() || undefined;
 }
 
+/** App-level token (xapp-…) for Socket Mode. Requires connections:write. */
+export function getSlackAppToken(): string | undefined {
+  return process.env.SLACK_APP_TOKEN?.trim() || undefined;
+}
+
+export type SlackSocketModeProcess = "in-process" | "standalone" | "off";
+
+/**
+ * Where the Socket Mode client should run.
+ * - in-process (default): start from Next.js instrumentation / next start
+ * - standalone: only `npm run slack:socket` starts it
+ * - off: never start (HTTP Events only)
+ */
+export function getSlackSocketModeProcess(): SlackSocketModeProcess {
+  const raw = process.env.SLACK_SOCKET_MODE?.trim().toLowerCase();
+  if (!raw) return "in-process";
+  if (raw === "off" || raw === "0" || raw === "false" || raw === "http") {
+    return "off";
+  }
+  if (raw === "standalone" || raw === "worker") return "standalone";
+  return "in-process";
+}
+
+export function isSlackAppToken(value: string | undefined): boolean {
+  return Boolean(value?.startsWith("xapp-"));
+}
+
 export function getSlackRegiProjectSlug(): string {
   return process.env.SLACK_REGI_PROJECT_SLUG?.trim() || "regi";
 }
@@ -156,4 +183,9 @@ export function getSlackUserMap(): Record<string, string> {
 
 export function isSlackConfigured(): boolean {
   return Boolean(getSlackBotToken() && getSlackSigningSecret());
+}
+
+/** Socket Mode needs the existing bot credentials plus an xapp- app token. */
+export function isSlackSocketModeConfigured(): boolean {
+  return isSlackConfigured() && isSlackAppToken(getSlackAppToken());
 }

@@ -198,6 +198,27 @@ describe("parseSlackInboundEvent", () => {
     expect(parsed?.channelId).toBe("CREGI");
   });
 
+  it("parses Socket Mode–unwrapped message follow-ups", async () => {
+    const { parseSlackInboundEvent } = await import("@/lib/slack/process");
+    const parsed = parseSlackInboundEvent({
+      type: "event_callback",
+      team_id: "TREGI",
+      event_id: "Ev2",
+      event: {
+        type: "message",
+        user: "U012ALEX",
+        text: "follow up",
+        ts: "2.2",
+        thread_ts: "1.1",
+        channel: "CREGI",
+        channel_type: "channel",
+      },
+    });
+    expect(parsed?.type).toBe("message");
+    expect(parsed?.threadTs).toBe("1.1");
+    expect(parsed?.eventId).toBe("Ev2");
+  });
+
   it("ignores reaction events", async () => {
     const { parseSlackInboundEvent } = await import("@/lib/slack/process");
     expect(

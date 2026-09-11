@@ -1,12 +1,9 @@
 /**
  * Slack Events API webhook (Regi project only).
  *
- * Flow:
- * 1. url_verification → echo challenge
- * 2. Verify Slack signing secret
- * 3. Parse app_mention / message events
- * 4. Roster lookup → Regi task/Attention → Grok Bot handoff
- * 5. Reply in the same Slack thread
+ * Kept for url_verification and as an HTTP fallback. When Socket Mode is
+ * enabled in the Slack app, Slack delivers app_mention / message over the
+ * WebSocket (see lib/slack/socket.ts), not this Request URL.
  *
  * Telnyx RCS for 4SL is unchanged (see /api/telnyx/webhook).
  */
@@ -15,11 +12,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { jsonError } from "@/lib/http";
 import {
-  deliverSlackReply,
   extractSlackSignatureHeaders,
+  getSlackSocketStatus,
+  handleSlackInboundCallback,
   isSlackConfigured,
-  parseSlackInboundEvent,
-  processSlackInbound,
+  isSlackSocketModeConfigured,
   resolveRegiProjectKey,
   verifySlackSignature,
   type SlackEventCallback,
@@ -68,18 +65,9 @@ export async function POST(request: NextRequest) {
   }
 
   const callback = payload as unknown as SlackEventCallback;
-  const event = parseSlackInboundEvent(callback);
-  if (!event) {
-    return NextResponse.json({
-      ok: true,
-      ignored: true,
-      reason: "unhandled_event",
-    });
-  }
 
   try {
-    const result = await processSlackInbound(event);
-    await deliverSlackReply(result);
+    const result = await handleSlackInboundCallback(callback);
 
     return NextResponse.json({
       ok: true,
@@ -98,7 +86,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logger.error("slack_webhook_error", {
       error: error instanceof Error ? error.message : "unknown",
-      eventTs: event.ts,
+      eventId: callback.event_id,
     });
     return jsonError("Internal server error", 500);
   }
@@ -113,10 +101,22 @@ export async function GET() {
     projectError = error instanceof Error ? error.message : "invalid project slug";
   }
 
+  const socketMode = getSlackSocketStatus();
+  const socketConfigured = isSlackSocketModeConfigured();
+
   return NextResponse.json({
     ok: true,
     service: "slack-events",
     configured: isSlackConfigured(),
+    inbound: socketConfigured ? "socket" : "http",
+    socketMode: {
+      configured: socketConfigured,
+      started: socketMode.started,
+      connected: socketMode.connected,
+      source: socketMode.source,
+      lastError: socketMode.lastError,
+      lastEventAt: socketMode.lastEventAt,
+    },
     projectKey,
     scope: "regi",
     ...(projectError ? { projectError } : {}),

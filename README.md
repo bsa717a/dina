@@ -72,9 +72,12 @@ Open [http://localhost:8080](http://localhost:8080).
 | `GOOGLE_LABEL` | no | Account label (default `personal`) |
 | `SLACK_BOT_TOKEN` | for Slack | Bot User OAuth Token (`xoxb-…`) — Regi bot only |
 | `SLACK_SIGNING_SECRET` | for Slack | Events API signing secret |
+| `SLACK_APP_TOKEN` | for Slack Socket Mode | App-level token (`xapp-…`, `connections:write`) — preferred inbound |
+| `SLACK_SOCKET_MODE` | no | `in-process` (default), `standalone`, or `off` |
 | `SLACK_REGI_PROJECT_SLUG` | no | Piper project the Slack bot writes (default `regi`; never 4SL / Metabolic) |
 | `SLACK_REGI_CHANNEL_IDS` | no | Optional comma-separated Slack channel allowlist |
 | `SLACK_REGI_ALLOW_IMS` | no | Allow DMs to the bot (default false) |
+| `SLACK_BOT_USER_ID` | no | Bot member id (`U…`) so Piper ignores itself |
 | `SLACK_USER_MAP` | no | Overlay `U012:username` map until `User.slackUserId` is set |
 
 ## Microsoft 365
@@ -175,7 +178,7 @@ Uploads are stored in `data/uploads/` (outside `public/`) and served only throug
 
 ## Slack ↔ Piper (Regi only)
 
-Regi teammates can talk to Piper from Slack. 4StudentLives stays on Telnyx RCS. Setup, scopes, and smoke checks: [`docs/slack-regi.md`](docs/slack-regi.md).
+Regi teammates can talk to Piper from Slack (Socket Mode preferred; HTTP Events remain for URL verification). 4StudentLives stays on Telnyx RCS. Setup, Cloud Run notes, and smoke checks: [`docs/slack-regi.md`](docs/slack-regi.md).
 
 ```bash
 USERNAME=adam SLACK_USER_ID=U012ABCDEF npm run user:link-slack
@@ -189,6 +192,7 @@ USERNAME=adam SLACK_USER_ID=U012ABCDEF npm run user:link-slack
 | `npm run db:import-sqlite` | Copy `data/dina.db` into Postgres (once) |
 | `npm run user:add` | Add a teammate (`NAME`, `USERNAME`, `TEMP_PASSWORD`, `PROJECTS`, optional `SLACK_USER_ID`) |
 | `npm run user:link-slack` | Link `USERNAME` → `SLACK_USER_ID` for the Regi Slack roster |
+| `npm run slack:socket` | Dedicated Slack Socket Mode worker (when `SLACK_SOCKET_MODE=standalone`) |
 | `npm run generate-vapid` | Print VAPID keys for `.env` |
 | `npm run generate-icons` | Regenerate PNG app icons |
 | `npm run dev` | Dev server on `0.0.0.0:8080` |
