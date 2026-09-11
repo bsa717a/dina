@@ -7,7 +7,10 @@
  * 3. Unknown / not-on-Regi → clear reply asking Derek
  * 4. Create or update a Regi task + Attention item
  * 5. Hand off to Grok Bot Dina (same webhook as Telnyx)
- * 6. Reply into the same Slack thread
+ * 6. Reply in-thread only when Grok returns sync text, or when
+ *    handoff is logged/error (local ledger ack). A successful async
+ *    handoff (`sent` without reply.text) stays silent so outbound-slack
+ *    can post the real answer later.
  */
 
 import { logger } from "@/lib/logger";
@@ -140,7 +143,9 @@ export async function processSlackInbound(
     ? handoffResult.response.reply?.text
     : undefined;
 
-  if (!replyText) {
+  // Async handoff accepted: Dina will POST the real answer via outbound-slack.
+  // Do not invent a local ledger ack — that double-posts and misleads.
+  if (!replyText && handoffResult.status !== "sent") {
     replyText = ledger.task.created
       ? `Got it — logged on Regi as “${ledger.task.title}” (task #${ledger.task.number}).`
       : `Updated Regi task #${ledger.task.number} (“${ledger.task.title}”).`;
@@ -149,11 +154,13 @@ export async function processSlackInbound(
   return {
     handled: true,
     reason: "ok",
-    reply: {
-      text: replyText,
-      channelId: event.channelId,
-      threadTs: event.threadTs,
-    },
+    reply: replyText
+      ? {
+          text: replyText,
+          channelId: event.channelId,
+          threadTs: event.threadTs,
+        }
+      : undefined,
     task: ledger.task,
     attention: ledger.attention,
     handoff: handoffResult.status,
