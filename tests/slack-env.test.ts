@@ -70,4 +70,15 @@ describe("Slack env helpers", () => {
     process.env.SLACK_SOCKET_MODE = "off";
     expect(getSlackSocketModeProcess()).toBe("off");
   });
+
+  it("does not treat Socket Mode as configured when SLACK_SOCKET_MODE=off", () => {
+    for (const key of KEYS) prior[key] = process.env[key];
+    process.env.SLACK_BOT_TOKEN = "xoxb-test";
+    process.env.SLACK_SIGNING_SECRET = "secret";
+    process.env.SLACK_APP_TOKEN = "xapp-1-regi";
+    process.env.SLACK_SOCKET_MODE = "off";
+    expect(isSlackSocketModeConfigured()).toBe(false);
+    process.env.SLACK_SOCKET_MODE = "http";
+    expect(isSlackSocketModeConfigured()).toBe(false);
+  });
 });

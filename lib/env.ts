@@ -185,7 +185,11 @@ export function isSlackConfigured(): boolean {
   return Boolean(getSlackBotToken() && getSlackSigningSecret());
 }
 
-/** Socket Mode needs the existing bot credentials plus an xapp- app token. */
+/** Socket Mode needs bot credentials plus an xapp- token, and must not be off. */
 export function isSlackSocketModeConfigured(): boolean {
-  return isSlackConfigured() && isSlackAppToken(getSlackAppToken());
+  return (
+    isSlackConfigured() &&
+    isSlackAppToken(getSlackAppToken()) &&
+    getSlackSocketModeProcess() !== "off"
+  );
 }

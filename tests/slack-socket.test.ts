@@ -279,6 +279,29 @@ describe("startSlackSocketMode", () => {
   });
 });
 
+describe("getSlackSocketStatus", () => {
+  it("stores live status on globalThis so route chunks see instrumentation updates", async () => {
+    const {
+      getSlackSocketStatus,
+      resetSlackSocketStatus,
+      setSlackSocketStatus,
+    } = await import("@/lib/slack/socket-status");
+    resetSlackSocketStatus();
+    setSlackSocketStatus({
+      configured: true,
+      started: true,
+      connected: true,
+      source: "instrumentation",
+    });
+    const shared = (
+      globalThis as unknown as { slackSocketStatus?: { connected: boolean } }
+    ).slackSocketStatus;
+    expect(shared?.connected).toBe(true);
+    expect(getSlackSocketStatus().connected).toBe(true);
+    resetSlackSocketStatus();
+  });
+});
+
 describe("slackSocketHealthFromStatus", () => {
   it("maps connection state for health checks", async () => {
     const { slackSocketHealthFromStatus } = await import(

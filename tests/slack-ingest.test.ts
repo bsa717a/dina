@@ -73,6 +73,16 @@ describe("handleSlackInboundCallback", () => {
     expect(mockProcess).toHaveBeenCalledOnce();
   });
 
+  it("releases the claim when processing throws so Slack can retry", async () => {
+    mockProcess.mockRejectedValueOnce(new Error("db down"));
+    const { handleSlackInboundCallback } = await import("@/lib/slack/ingest");
+    await expect(handleSlackInboundCallback(callback)).rejects.toThrow("db down");
+    const retry = await handleSlackInboundCallback(callback);
+    expect(retry.handled).toBe(true);
+    expect(mockProcess).toHaveBeenCalledTimes(2);
+    expect(mockDeliver).toHaveBeenCalledOnce();
+  });
+
   it("returns unhandled_event without processing", async () => {
     mockParse.mockReturnValue(null);
     const { handleSlackInboundCallback } = await import("@/lib/slack/ingest");
@@ -93,6 +103,13 @@ describe("claimSlackEventId", () => {
     expect(claimSlackEventId("Ev1")).toBe(true);
     expect(claimSlackEventId("Ev1")).toBe(false);
     expect(claimSlackEventId("Ev2")).toBe(true);
+  });
+
+  it("allows a released id to be claimed again", async () => {
+    const { claimSlackEventId, releaseSlackEventId } = await import("@/lib/slack/dedupe");
+    expect(claimSlackEventId("Ev1")).toBe(true);
+    releaseSlackEventId("Ev1");
+    expect(claimSlackEventId("Ev1")).toBe(true);
   });
 
   it("allows events with no id", async () => {

@@ -23,23 +23,38 @@ export interface SlackSocketStatus {
   lastEventType?: string;
 }
 
-const status: SlackSocketStatus = {
-  configured: false,
-  started: false,
-  connected: false,
-  source: null,
+/**
+ * Next.js compiles instrumentation.ts and App Router handlers as separate
+ * entries, so a module-level object is not shared. Same process, same
+ * globalThis — same pattern as the Prisma client.
+ */
+const globalForSlackSocket = globalThis as unknown as {
+  slackSocketStatus?: SlackSocketStatus;
 };
 
+function getStatusStore(): SlackSocketStatus {
+  if (!globalForSlackSocket.slackSocketStatus) {
+    globalForSlackSocket.slackSocketStatus = {
+      configured: false,
+      started: false,
+      connected: false,
+      source: null,
+    };
+  }
+  return globalForSlackSocket.slackSocketStatus;
+}
+
 export function getSlackSocketStatus(): SlackSocketStatus {
-  return { ...status };
+  return { ...getStatusStore() };
 }
 
 export function setSlackSocketStatus(patch: Partial<SlackSocketStatus>): SlackSocketStatus {
-  Object.assign(status, patch);
+  Object.assign(getStatusStore(), patch);
   return getSlackSocketStatus();
 }
 
 export function resetSlackSocketStatus(): void {
+  const status = getStatusStore();
   status.configured = false;
   status.started = false;
   status.connected = false;

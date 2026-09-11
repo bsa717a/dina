@@ -42,6 +42,11 @@ export function pruneSeenSlackEvents(
   }
 }
 
+export function releaseSlackEventId(eventId: string | undefined): void {
+  if (!eventId) return;
+  seen.delete(eventId);
+}
+
 export function resetSlackEventDedupe(): void {
   seen.clear();
 }

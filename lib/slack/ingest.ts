@@ -3,7 +3,7 @@
  */
 
 import { logger } from "@/lib/logger";
-import { claimSlackEventId } from "./dedupe";
+import { claimSlackEventId, releaseSlackEventId } from "./dedupe";
 import { deliverSlackReply, parseSlackInboundEvent, processSlackInbound } from "./process";
 import type { SlackEventCallback, SlackInboundResult } from "./types";
 
@@ -24,7 +24,12 @@ export async function handleSlackInboundCallback(
     return { handled: false, ignored: true, reason: "duplicate_event" };
   }
 
-  const result = await processSlackInbound(event);
-  await deliverSlackReply(result);
-  return result;
+  try {
+    const result = await processSlackInbound(event);
+    await deliverSlackReply(result);
+    return result;
+  } catch (error) {
+    releaseSlackEventId(eventKey);
+    throw error;
+  }
 }
