@@ -250,6 +250,41 @@ describe("handoffToGrokBot", () => {
     expect(result.response?.reply?.text).toBe("Hello from Grok Bot!");
   });
 
+  it("forwards RCS body.text as the handoff text", async () => {
+    isGrokBotConfigured.mockReturnValue(true);
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://grok-bot.example.com/webhook",
+      webhookSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const { handoffToGrokBot } = await import("@/lib/telnyx/handoff");
+    const message = createTestMessage({
+      type: "RCS",
+      text: "",
+      body: { text: "Help" },
+      to: [
+        {
+          carrier: "",
+          line_type: "",
+          phone_number: "",
+          agent_id: "42257dc9-586a-4f72-bba3-6b816d1ec6ed",
+          agent_name: "dina_4n1bd8jt_agent",
+        },
+      ],
+    });
+
+    await handoffToGrokBot(message, createFoundRoster());
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.text).toBe("Help");
+    expect(body.to).toBe("42257dc9-586a-4f72-bba3-6b816d1ec6ed");
+    expect(body.messageType).toBe("RCS");
+  });
+
   it("handoff payload includes all required fields (from, text, teammate id, project ids)", async () => {
     isGrokBotConfigured.mockReturnValue(true);
     getGrokBotConfig.mockReturnValue({
