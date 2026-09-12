@@ -1,7 +1,7 @@
 /**
  * POST /api/grok/outbound
  *
- * Send an outbound message via Telnyx (RCS-first, SMS fallback).
+ * Send an outbound message via Telnyx (RCS when preferRcs, else SMS).
  * Requires service token authentication.
  *
  * Body:
