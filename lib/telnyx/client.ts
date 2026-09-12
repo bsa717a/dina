@@ -1,13 +1,15 @@
 /**
  * Telnyx API client for sending RCS and SMS messages.
  *
- * Attempts RCS first when the RCS agent is configured, falls back to SMS.
+ * Attempts RCS first via POST /v2/messages/rcs (agent_id + messaging
+ * profile) when the RCS agent is configured, then falls back to SMS.
  */
 
 import { logger } from "@/lib/logger";
 import { getTelnyxConfig } from "./config";
 import type {
   TelnyxMessageType,
+  TelnyxRcsSendMessageRequest,
   TelnyxSendMessageRequest,
   TelnyxSendMessageResponse,
 } from "./types";
@@ -66,16 +68,30 @@ async function sendRcsMessage(
   if (!config?.rcsAgentId) {
     throw new Error("RCS agent not configured");
   }
+  if (!config.messagingProfileId) {
+    throw new Error("Messaging profile not configured for RCS");
+  }
 
-  return telnyxRequest<TelnyxSendMessageResponse>("/messages", {
-    method: "POST",
-    body: {
+  const body: TelnyxRcsSendMessageRequest = {
+    agent_id: config.rcsAgentId,
+    to,
+    messaging_profile_id: config.messagingProfileId,
+    type: "RCS",
+    agent_message: {
+      content_message: { text },
+    },
+  };
+
+  if (config.smsFrom) {
+    body.sms_fallback = {
       from: config.smsFrom,
-      to,
       text,
-      type: "rcs",
-      messaging_profile_id: config.messagingProfileId ?? undefined,
-    } satisfies TelnyxSendMessageRequest,
+    };
+  }
+
+  return telnyxRequest<TelnyxSendMessageResponse>("/messages/rcs", {
+    method: "POST",
+    body,
   });
 }
 

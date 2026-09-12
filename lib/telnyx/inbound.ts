@@ -106,6 +106,12 @@ export function extractInboundTo(payload: unknown): string {
   return "";
 }
 
+export function isRcsMessageType(
+  type: TelnyxMessageType | string | undefined,
+): boolean {
+  return type === "rcs" || type === "RCS";
+}
+
 function normalizeMessageType(raw: unknown): TelnyxMessageType {
   if (typeof raw === "string" && MESSAGE_TYPES.has(raw as TelnyxMessageType)) {
     return raw as TelnyxMessageType;

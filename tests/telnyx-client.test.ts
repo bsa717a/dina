@@ -68,14 +68,62 @@ describe("sendMessage", () => {
 
     expect(result.sent).toBe(true);
     expect(result.type).toBe("rcs");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.telnyx.com/v2/messages",
+      "https://api.telnyx.com/v2/messages/rcs",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer test-key",
         }),
       }),
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body).toEqual({
+      agent_id: "rcs-agent-123",
+      to: "+14352382071",
+      messaging_profile_id: "profile-123",
+      type: "RCS",
+      agent_message: { content_message: { text: "Hello!" } },
+      sms_fallback: { from: "+18005551234", text: "Hello!" },
+    });
+    expect(body.from).toBeUndefined();
+  });
+
+  it("falls back to SMS when RCS agent is set but messaging profile is missing", async () => {
+    getTelnyxConfig.mockReturnValue({
+      apiKey: "test-key",
+      rcsAgentId: "rcs-agent-123",
+      smsFrom: "+18005551234",
+      messagingProfileId: null,
+      webhookSigningSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: "msg-sms-profile",
+            type: "SMS",
+            from: { phone_number: "+18005551234" },
+            to: [{ phone_number: "+14352382071" }],
+          },
+        }),
+    });
+
+    const { sendMessage } = await import("@/lib/telnyx/client");
+    const result = await sendMessage({
+      to: "+14352382071",
+      text: "Hello!",
+    });
+
+    expect(result.sent).toBe(true);
+    expect(result.type).toBe("SMS");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.telnyx.com/v2/messages",
+      expect.anything(),
     );
   });
 
@@ -121,6 +169,12 @@ describe("sendMessage", () => {
     expect(result.sent).toBe(true);
     expect(result.type).toBe("SMS");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "https://api.telnyx.com/v2/messages/rcs",
+    );
+    expect(mockFetch.mock.calls[1][0]).toBe(
+      "https://api.telnyx.com/v2/messages",
+    );
   });
 
   it("sends SMS directly when preferRcs is false", async () => {
