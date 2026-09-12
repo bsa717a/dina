@@ -2,11 +2,9 @@
  * Telnyx API client for sending RCS and SMS messages.
  *
  * preferRcs uses POST /v2/messages/rcs with agent_id + messaging_profile_id
- * and agent_message.content_message.text. That send field is the same
- * identifier Telnyx puts on inbound `to[].agent_id` (UUID
- * 42257dc9-586a-4f72-bba3-6b816d1ec6ed for this agent). GET /rcs/agents/{id}
- * also uses that UUID. The display name `dina_4n1bd8jt_agent` is agent_name,
- * not the send agent_id.
+ * and agent_message.content_message.text. Send agent_id is the string
+ * `dina_4n1bd8jt_agent` (TELNYX_RCS_AGENT_ID). Status GETs use UUID
+ * 42257dc9-586a-4f72-bba3-6b816d1ec6ed — do not send with that UUID.
  *
  * Do not attach sms_fallback. Telnyx will create an SMS from TELNYX_SMS_FROM,
  * return HTTP 200, and still look like a successful RCS send.
@@ -36,7 +34,11 @@ export interface SendMessageOptions {
    * Never report that SMS as type rcs.
    */
   allowSmsFallback?: boolean;
-  /** Override TELNYX_RCS_AGENT_ID (inbound to[].agent_id). */
+  /**
+   * Rare override of TELNYX_RCS_AGENT_ID. Webhook/keyword/Grok replies
+   * must not set this from inbound `to[].agent_id` (that value is the
+   * status-GET UUID, not the send string).
+   */
   agentId?: string;
 }
 

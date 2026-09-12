@@ -145,7 +145,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
       true,
-      { agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed" },
     );
   });
 
@@ -192,7 +191,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
       true,
-      { agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed" },
     );
   });
 
@@ -213,7 +211,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
       true,
-      { agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed" },
     );
   });
 
@@ -231,7 +228,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
       false,
-      { agentId: undefined },
     );
   });
 
@@ -288,7 +284,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       "Here is the backlog.",
       true,
-      { agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed" },
     );
   });
 
@@ -329,7 +324,6 @@ describe("POST /api/telnyx/webhook", () => {
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.stop,
       true,
-      { agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed" },
     );
   });
 

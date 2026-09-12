@@ -121,7 +121,7 @@ describe("sendMessage", () => {
     expect(body.sms_fallback).toBeUndefined();
   });
 
-  it("uses inbound to[].agent_id override for the send body", async () => {
+  it("uses config.rcsAgentId string, not a rare agentId override, by default", async () => {
     getTelnyxConfig.mockReturnValue(configured);
     mockFetch.mockResolvedValue(rcsOk());
 
@@ -129,11 +129,26 @@ describe("sendMessage", () => {
     await sendMessage({
       to: "+19044030781",
       text: "Hello!",
-      agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed",
     });
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.agent_id).toBe("42257dc9-586a-4f72-bba3-6b816d1ec6ed");
+    expect(body.agent_id).toBe("dina_4n1bd8jt_agent");
+    expect(body.agent_id).not.toBe("42257dc9-586a-4f72-bba3-6b816d1ec6ed");
+  });
+
+  it("honors a rare agentId override without changing the default send path", async () => {
+    getTelnyxConfig.mockReturnValue(configured);
+    mockFetch.mockResolvedValue(rcsOk());
+
+    const { sendMessage } = await import("@/lib/telnyx/client");
+    await sendMessage({
+      to: "+19044030781",
+      text: "Hello!",
+      agentId: "other_rcs_agent",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.agent_id).toBe("other_rcs_agent");
     expect(body.sms_fallback).toBeUndefined();
   });
 
@@ -361,15 +376,13 @@ describe("sendReply", () => {
     mockFetch.mockResolvedValue(rcsOk({ id: "msg-reply" }));
 
     const { sendReply } = await import("@/lib/telnyx/client");
-    const result = await sendReply("+19044030781", "Thanks for your message!", true, {
-      agentId: "42257dc9-586a-4f72-bba3-6b816d1ec6ed",
-    });
+    const result = await sendReply("+19044030781", "Thanks for your message!");
 
     expect(result.sent).toBe(true);
     expect(result.messageId).toBe("msg-reply");
     expect(result.type).toBe("RCS");
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.agent_id).toBe("42257dc9-586a-4f72-bba3-6b816d1ec6ed");
+    expect(body.agent_id).toBe("dina_4n1bd8jt_agent");
     expect(body.sms_fallback).toBeUndefined();
   });
 });

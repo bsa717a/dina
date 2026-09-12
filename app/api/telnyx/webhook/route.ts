@@ -72,9 +72,7 @@ async function processInboundMessage(
   const keyword = matchTelnyxKeyword(text);
   if (keyword) {
     const preferRcs = isRcsMessageType(message.type);
-    const replyResult = await sendReply(from, keyword.text, preferRcs, {
-      agentId: message.to[0]?.agent_id,
-    });
+    const replyResult = await sendReply(from, keyword.text, preferRcs);
 
     if (replyResult.sent) {
       logger.info("telnyx_keyword_reply_sent", {
@@ -123,7 +121,6 @@ async function processInboundMessage(
       from,
       handoffResult.response.reply.text,
       isRcsMessageType(message.type),
-      { agentId: message.to[0]?.agent_id },
     );
     result.reply = replyResult;
 
