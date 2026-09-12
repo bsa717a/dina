@@ -88,11 +88,22 @@ export interface TelnyxSendMessageRequest {
   media_urls?: string[];
 }
 
+export interface TelnyxRcsAgentMessage {
+  content_message: {
+    text: string;
+  };
+}
+
 export interface TelnyxRcsSendMessageRequest {
-  from: string;
+  agent_id: string;
   to: string;
-  text: string;
-  messaging_profile_id?: string;
+  messaging_profile_id: string;
+  type?: "RCS";
+  agent_message: TelnyxRcsAgentMessage;
+  sms_fallback?: {
+    from: string;
+    text: string;
+  };
 }
 
 export interface TelnyxSendMessageResponse {
@@ -162,7 +173,7 @@ export interface InboundMessageResult {
   messageId: string;
   from: string;
   handled: boolean;
-  handoff: "sent" | "logged" | "error";
+  handoff: "sent" | "logged" | "error" | "skipped";
   roster: RosterLookupResult;
   reply?: {
     sent: boolean;

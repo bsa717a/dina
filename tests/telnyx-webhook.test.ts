@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { TELNYX_KEYWORD_REPLIES } from "@/lib/telnyx/keywords";
 
 const mockConfigured = vi.fn();
 const mockVerify = vi.fn();
@@ -112,7 +113,11 @@ describe("POST /api/telnyx/webhook", () => {
     mockVerify.mockReturnValue({ valid: true });
     mockLookup.mockResolvedValue(knownRoster);
     mockHandoff.mockResolvedValue({ status: "logged" });
-    mockReply.mockResolvedValue({ sent: false });
+    mockReply.mockResolvedValue({
+      sent: true,
+      type: "rcs",
+      messageId: "out-rcs-1",
+    });
   });
 
   it("returns 503 when Telnyx is not configured", async () => {
@@ -123,7 +128,7 @@ describe("POST /api/telnyx/webhook", () => {
     expect(await res.json()).toEqual({ error: "Telnyx is not configured" });
   });
 
-  it("ingests official RCS HELP (body.text) with 2xx", async () => {
+  it("sends an RCS agent auto-reply for official RCS HELP and skips Grok", async () => {
     const { POST } = await import("@/app/api/telnyx/webhook/route");
     const res = await POST(post(rcsHelpPayload()));
     const body = await res.json();
@@ -132,14 +137,14 @@ describe("POST /api/telnyx/webhook", () => {
     expect(body.ok).toBe(true);
     expect(body.messageId).toBe("d5b48ae4-91a9-4a5f-8a6d-756060c1cf32");
     expect(body.handled).toBe(true);
+    expect(body.handoff).toBe("skipped");
+    expect(body.reply).toEqual({ sent: true, type: "rcs" });
     expect(mockLookup).toHaveBeenCalledWith("+19044030781");
-    expect(mockHandoff).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: "Help",
-        type: "RCS",
-        from: expect.objectContaining({ phone_number: "+19044030781" }),
-      }),
-      knownRoster,
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.help,
+      true,
     );
   });
 
@@ -157,9 +162,12 @@ describe("POST /api/telnyx/webhook", () => {
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(mockHandoff).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Help" }),
-      knownRoster,
+    expect(body.handoff).toBe("skipped");
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.help,
+      true,
     );
   });
 
@@ -175,9 +183,11 @@ describe("POST /api/telnyx/webhook", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockHandoff).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Help" }),
-      knownRoster,
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.help,
+      true,
     );
   });
 
@@ -189,9 +199,68 @@ describe("POST /api/telnyx/webhook", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.messageId).toBe("sms-d5b48ae4");
+    expect(body.handoff).toBe("skipped");
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.help,
+      false,
+    );
+  });
+
+  it("hands conversational RCS to Grok and stays silent when there is no sync reply", async () => {
+    mockHandoff.mockResolvedValue({
+      status: "sent",
+      response: { ok: true },
+    });
+
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "What is on the 4SL backlog?" },
+        }),
+      ),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handled).toBe(true);
+    expect(body.handoff).toBe("sent");
+    expect(body.reply).toBeUndefined();
     expect(mockHandoff).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Help", type: "SMS" }),
+      expect.objectContaining({
+        text: "What is on the 4SL backlog?",
+        type: "RCS",
+      }),
       knownRoster,
+    );
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("sends a Grok sync reply over RCS when inbound type is RCS", async () => {
+    mockHandoff.mockResolvedValue({
+      status: "sent",
+      response: { ok: true, reply: { text: "Here is the backlog." } },
+    });
+
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "What is on the 4SL backlog?" },
+        }),
+      ),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("sent");
+    expect(body.reply).toEqual({ sent: true, type: "rcs" });
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      "Here is the backlog.",
+      true,
     );
   });
 
@@ -210,6 +279,29 @@ describe("POST /api/telnyx/webhook", () => {
     expect(body.ok).toBe(true);
     expect(body.handled).toBe(false);
     expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("sends a local STOP auto-reply over RCS without Grok handoff", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "STOP" },
+        }),
+      ),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(body.reply).toEqual({ sent: true, type: "rcs" });
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.stop,
+      true,
+    );
   });
 
   it("ignores outbound / non-received events with 2xx", async () => {

@@ -5,8 +5,10 @@
  * 1. Verify Telnyx webhook signature (when signing secret is configured)
  * 2. Parse the webhook payload
  * 3. Look up sender in the roster (User table by phone number)
- * 4. Hand off to Grok Bot Dina (or log if Grok Bot URL is not set)
- * 5. Send reply back via Telnyx if Grok Bot provides one
+ * 4. HELP / STOP / START (and aliases) send a local Telnyx reply immediately
+ *    (RCS agent when inbound type is RCS). These must not wait on Grok.
+ * 5. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
+ * 6. Send a Telnyx reply if Grok Bot returns sync `reply.text`
  *
  * Unknown numbers are safely rejected (logged, not auto-provisioned).
  */
@@ -23,6 +25,8 @@ import {
   sendReply,
   extractInboundFromPhone,
   extractInboundText,
+  isRcsMessageType,
+  matchTelnyxKeyword,
   normalizeInboundMessage,
   type TelnyxWebhookPayload,
   type TelnyxMessagePayload,
@@ -65,6 +69,39 @@ async function processInboundMessage(
     textLength: text.length,
   });
 
+  const keyword = matchTelnyxKeyword(text);
+  if (keyword) {
+    const preferRcs = isRcsMessageType(message.type);
+    const replyResult = await sendReply(from, keyword.text, preferRcs);
+
+    if (replyResult.sent) {
+      logger.info("telnyx_keyword_reply_sent", {
+        messageId,
+        replyMessageId: replyResult.messageId,
+        to: from,
+        type: replyResult.type,
+        keyword: keyword.kind,
+        preferRcs,
+      });
+    } else {
+      logger.error("telnyx_keyword_reply_failed", {
+        messageId,
+        to: from,
+        keyword: keyword.kind,
+        error: replyResult.error,
+      });
+    }
+
+    return {
+      messageId,
+      from,
+      handled: true,
+      handoff: "skipped",
+      roster,
+      reply: replyResult,
+    };
+  }
+
   const handoffResult = await handoffToGrokBot(message, roster);
 
   const result: InboundMessageResult = {
@@ -80,7 +117,11 @@ async function processInboundMessage(
     handoffResult.response?.ok &&
     handoffResult.response.reply?.text
   ) {
-    const replyResult = await sendReply(from, handoffResult.response.reply.text);
+    const replyResult = await sendReply(
+      from,
+      handoffResult.response.reply.text,
+      isRcsMessageType(message.type),
+    );
     result.reply = replyResult;
 
     if (replyResult.sent) {
