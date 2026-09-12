@@ -5,7 +5,7 @@
  * - Inbound webhook processing with signature verification
  * - Roster lookup (phone → teammate/project)
  * - Grok Bot Dina handoff
- * - Outbound RCS/SMS sending with RCS-first fallback
+ * - Outbound RCS (POST /v2/messages/rcs) and explicit SMS fallback
  */
 
 export * from "./types";

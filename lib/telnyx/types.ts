@@ -100,6 +100,10 @@ export interface TelnyxRcsSendMessageRequest {
   messaging_profile_id: string;
   type?: "RCS";
   agent_message: TelnyxRcsAgentMessage;
+  /**
+   * Telnyx-native SMS fallback. Do not send this on preferRcs paths:
+   * Telnyx creates an SMS from the DID and still returns HTTP 200.
+   */
   sms_fallback?: {
     from: string;
     text: string;

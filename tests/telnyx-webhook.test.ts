@@ -148,6 +148,29 @@ describe("POST /api/telnyx/webhook", () => {
     );
   });
 
+  it("surfaces a failed RCS keyword reply instead of claiming type rcs", async () => {
+    mockReply.mockResolvedValue({
+      sent: false,
+      type: "SMS",
+      messageId: "4031a093-9c5e-4543-a8f0-670538284050",
+      error:
+        "Telnyx POST /v2/messages/rcs returned type SMS (message 4031a093-9c5e-4543-a8f0-670538284050) instead of RCS from +14352382071",
+    });
+
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(post(rcsHelpPayload()));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(body.reply).toEqual({
+      sent: false,
+      type: "SMS",
+      error: expect.stringContaining("instead of RCS"),
+    });
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
   it("ingests RCS when text is a JSON string {\"text\":\"Help\"}", async () => {
     const { POST } = await import("@/app/api/telnyx/webhook/route");
     const res = await POST(

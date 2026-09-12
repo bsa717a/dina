@@ -208,6 +208,7 @@ export async function POST(request: NextRequest) {
         ? {
             sent: result.reply.sent,
             type: result.reply.type,
+            ...(result.reply.error ? { error: result.reply.error } : {}),
           }
         : undefined,
     });
