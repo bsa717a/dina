@@ -8,6 +8,11 @@
 import { logger } from "@/lib/logger";
 import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
 import { getGrokBotConfig, isGrokBotConfigured } from "./config";
+import {
+  extractInboundFromPhone,
+  extractInboundText,
+  extractInboundTo,
+} from "./inbound";
 import type {
   GrokBotHandoffPayload,
   GrokBotHandoffResponse,
@@ -27,9 +32,9 @@ function buildHandoffPayload(
 ): GrokBotHandoffPayload {
   return {
     messageId: message.id,
-    from: message.from.phone_number,
-    to: message.to[0]?.phone_number ?? "",
-    text: message.text,
+    from: extractInboundFromPhone(message) || message.from?.phone_number || "",
+    to: extractInboundTo(message) || message.to[0]?.phone_number || "",
+    text: extractInboundText(message),
     messageType: message.type,
     receivedAt: message.received_at,
     user: roster.found
@@ -53,8 +58,8 @@ export async function handoffToGrokBot(
   if (!isGrokBotConfigured()) {
     logger.info("grok_bot_handoff_logged", {
       messageId: message.id,
-      from: message.from.phone_number,
-      text: message.text.slice(0, 100),
+      from: extractInboundFromPhone(message) || message.from?.phone_number || "",
+      text: extractInboundText(message).slice(0, 100),
       userFound: roster.found,
       userId: roster.found ? roster.user.id : null,
       reason: "grok_bot_not_configured",

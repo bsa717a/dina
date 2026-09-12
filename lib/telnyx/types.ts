@@ -2,7 +2,7 @@
  * Telnyx RCS/SMS webhook and API types.
  */
 
-export type TelnyxMessageType = "rcs" | "SMS" | "MMS";
+export type TelnyxMessageType = "rcs" | "RCS" | "SMS" | "MMS";
 
 export type TelnyxWebhookEventType =
   | "message.received"
@@ -26,6 +26,17 @@ export interface TelnyxWebhookPayload {
   };
 }
 
+export interface TelnyxRcsBody {
+  text?: string;
+  suggestion_response?: {
+    postback_data?: string;
+    text?: string;
+  };
+  user_file?: unknown;
+  location?: unknown;
+  [key: string]: unknown;
+}
+
 export interface TelnyxMessagePayload {
   completed_at: string | null;
   cost: { amount: string; currency: string } | null;
@@ -42,6 +53,8 @@ export interface TelnyxMessagePayload {
   record_type: "message";
   sent_at: string | null;
   text: string;
+  /** RCS inbound nests user text here (`body.text`) instead of `text`. */
+  body?: TelnyxRcsBody;
   to: TelnyxPhoneAddress[];
   type: TelnyxMessageType;
   valid_until: string | null;
@@ -54,6 +67,8 @@ export interface TelnyxPhoneAddress {
   line_type: string;
   phone_number: string;
   status?: string;
+  agent_id?: string;
+  agent_name?: string;
 }
 
 export interface TelnyxMedia {

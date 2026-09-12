@@ -21,6 +21,9 @@ import {
   lookupByPhoneNumber,
   handoffToGrokBot,
   sendReply,
+  extractInboundFromPhone,
+  extractInboundText,
+  normalizeInboundMessage,
   type TelnyxWebhookPayload,
   type TelnyxMessagePayload,
   type InboundMessageResult,
@@ -31,7 +34,8 @@ export const runtime = "nodejs";
 async function processInboundMessage(
   message: TelnyxMessagePayload,
 ): Promise<InboundMessageResult> {
-  const from = message.from.phone_number;
+  const from = extractInboundFromPhone(message);
+  const text = extractInboundText(message);
   const messageId = message.id;
 
   const roster = await lookupByPhoneNumber(from);
@@ -40,7 +44,7 @@ async function processInboundMessage(
     logger.warn("telnyx_unknown_sender", {
       messageId,
       from,
-      text: message.text.slice(0, 50),
+      text: text.slice(0, 50),
     });
     return {
       messageId,
@@ -58,7 +62,7 @@ async function processInboundMessage(
     userName: roster.user.name,
     projectKeys: roster.projectKeys,
     type: message.type,
-    textLength: message.text.length,
+    textLength: text.length,
   });
 
   const handoffResult = await handoffToGrokBot(message, roster);
@@ -125,18 +129,31 @@ export async function POST(request: NextRequest) {
   }
 
   const eventType = payload.data?.event_type;
-  const message = payload.data?.payload;
+  const rawMessage = payload.data?.payload;
 
   if (eventType !== "message.received") {
     logger.debug("telnyx_webhook_ignored", { eventType });
     return NextResponse.json({ ok: true, ignored: true, eventType });
   }
 
-  if (!message || message.direction !== "inbound") {
+  if (!rawMessage || rawMessage.direction === "outbound") {
     logger.debug("telnyx_webhook_not_inbound", {
-      direction: message?.direction,
+      direction: rawMessage?.direction,
     });
     return NextResponse.json({ ok: true, ignored: true, reason: "not_inbound" });
+  }
+
+  const message = normalizeInboundMessage(rawMessage, payload.data?.occurred_at);
+  if (!message) {
+    logger.warn("telnyx_webhook_unrecognized_payload", {
+      eventType,
+      hasPayload: Boolean(rawMessage),
+    });
+    return NextResponse.json({
+      ok: true,
+      ignored: true,
+      reason: "unrecognized_payload",
+    });
   }
 
   try {
