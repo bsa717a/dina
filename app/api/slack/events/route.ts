@@ -11,16 +11,18 @@
  * Telnyx RCS for 4SL is unchanged (see /api/telnyx/webhook).
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { jsonError } from "@/lib/http";
 import {
   deliverSlackReply,
   extractSlackSignatureHeaders,
+  hasSlackEvent,
   isSlackConfigured,
   parseSlackInboundEvent,
   processSlackInbound,
   resolveRegiProjectKey,
+  slackEventDedupeKey,
   verifySlackSignature,
   type SlackEventCallback,
 } from "@/lib/slack";
@@ -77,31 +79,31 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  try {
-    const result = await processSlackInbound(event);
-    await deliverSlackReply(result);
-
+  const retryNum = request.headers.get("x-slack-retry-num");
+  if (retryNum && hasSlackEvent(slackEventDedupeKey(event))) {
     return NextResponse.json({
       ok: true,
-      handled: result.handled,
-      ignored: result.ignored ?? false,
-      reason: result.reason,
-      handoff: result.handoff,
-      task: result.task
-        ? {
-            id: result.task.id,
-            number: result.task.number,
-            created: result.task.created,
-          }
-        : undefined,
+      ignored: true,
+      reason: "retry",
     });
-  } catch (error) {
-    logger.error("slack_webhook_error", {
-      error: error instanceof Error ? error.message : "unknown",
-      eventTs: event.ts,
-    });
-    return jsonError("Internal server error", 500);
   }
+
+  after(async () => {
+    try {
+      const result = await processSlackInbound(event);
+      await deliverSlackReply(result);
+    } catch (error) {
+      logger.error("slack_webhook_error", {
+        error: error instanceof Error ? error.message : "unknown",
+        eventTs: event.ts,
+      });
+    }
+  });
+
+  return NextResponse.json({
+    ok: true,
+    accepted: true,
+  });
 }
 
 export async function GET() {

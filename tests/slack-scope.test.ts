@@ -67,6 +67,14 @@ describe("Slack Regi scope", () => {
     expect(isChannelAllowed("D123", "im")).toBe(true);
   });
 
+  it("detects when the text @-mentions this bot", async () => {
+    mockGetSlackConfig.mockReturnValue({ botUserId: "UBOT" });
+    const { textMentionsSlackBot } = await import("@/lib/slack/scope");
+    expect(textMentionsSlackBot("<@UBOT> ship it")).toBe(true);
+    expect(textMentionsSlackBot("<@UOTHER> ship it")).toBe(false);
+    expect(textMentionsSlackBot("no mention")).toBe(false);
+  });
+
   it("treats bot_id as the bot's own message", async () => {
     mockGetSlackConfig.mockReturnValue({ botUserId: "UBOT" });
     const { isOwnBotMessage } = await import("@/lib/slack/scope");

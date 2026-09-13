@@ -22,10 +22,12 @@ import {
   stripSlackMentions,
 } from "./ledger";
 import { lookupBySlackUserId } from "./roster";
+import { claimSlackEvent, slackEventDedupeKey } from "./dedupe";
 import {
   isChannelAllowed,
   isOwnBotMessage,
   shouldIgnoreMessageSubtype,
+  textMentionsSlackBot,
 } from "./scope";
 import type {
   SlackEventCallback,
@@ -78,6 +80,9 @@ export async function processSlackInbound(
     if (event.threadTs === event.ts) {
       return { handled: false, ignored: true, reason: "channel_message_without_mention" };
     }
+    if (textMentionsSlackBot(event.text)) {
+      return { handled: false, ignored: true, reason: "handled_by_app_mention" };
+    }
     const existingThread = await findSlackThreadAttention(
       event.channelId,
       event.threadTs,
@@ -85,6 +90,16 @@ export async function processSlackInbound(
     if (!existingThread) {
       return { handled: false, ignored: true, reason: "unknown_thread" };
     }
+  }
+
+  if (!claimSlackEvent(slackEventDedupeKey(event))) {
+    logger.info("slack_duplicate_event", {
+      channelId: event.channelId,
+      ts: event.ts,
+      eventId: event.eventId,
+      type: event.type,
+    });
+    return { handled: false, ignored: true, reason: "duplicate_event" };
   }
 
   const roster = await lookupBySlackUserId(event.slackUserId);

@@ -45,7 +45,7 @@ Subscribe to bot events:
 - `message.groups` (private channels)
 - `message.im` only if DMs are enabled
 
-Slack will POST a `url_verification` challenge. Piper echoes `{ "challenge": "…" }` after signature check.
+Slack will POST a `url_verification` challenge. Piper echoes `{ "challenge": "…" }` after signature check. Event callbacks return 200 immediately (work runs after the response) so Slack does not retry a slow Grok handoff. The same channel+ts is processed once — Slack's paired `app_mention` + `message` events share that key.
 
 Invite the bot to the Regi channel(s): `/invite @Piper`.
 

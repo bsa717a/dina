@@ -9,6 +9,7 @@ const mockHandoff = vi.fn();
 const mockIsChannelAllowed = vi.fn();
 const mockIsOwnBotMessage = vi.fn();
 const mockShouldIgnore = vi.fn();
+const mockMentionsBot = vi.fn();
 
 vi.mock("@/lib/slack/roster", () => ({
   lookupBySlackUserId: (...args: unknown[]) => mockLookup(...args),
@@ -29,6 +30,7 @@ vi.mock("@/lib/slack/scope", () => ({
   isChannelAllowed: (...args: unknown[]) => mockIsChannelAllowed(...args),
   isOwnBotMessage: (...args: unknown[]) => mockIsOwnBotMessage(...args),
   shouldIgnoreMessageSubtype: (...args: unknown[]) => mockShouldIgnore(...args),
+  textMentionsSlackBot: (...args: unknown[]) => mockMentionsBot(...args),
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -60,9 +62,11 @@ describe("processSlackInbound", () => {
     mockIsChannelAllowed.mockReset();
     mockIsOwnBotMessage.mockReset();
     mockShouldIgnore.mockReset();
+    mockMentionsBot.mockReset();
     mockIsChannelAllowed.mockReturnValue(true);
     mockIsOwnBotMessage.mockReturnValue(false);
     mockShouldIgnore.mockReturnValue(false);
+    mockMentionsBot.mockReturnValue(false);
   });
 
   it("ignores the bot's own messages", async () => {
@@ -206,6 +210,47 @@ describe("processSlackInbound", () => {
     });
     expect(result.reason).toBe("channel_message_without_mention");
     expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it("ignores in-thread @Piper messages so app_mention handles them once", async () => {
+    mockMentionsBot.mockReturnValue(true);
+    mockFindThread.mockResolvedValue({ id: "existing" });
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound({
+      ...mention,
+      type: "message",
+      ts: "1710000000.000200",
+      threadTs: "1710000000.000100",
+    });
+    expect(result.reason).toBe("handled_by_app_mention");
+    expect(mockLookup).not.toHaveBeenCalled();
+    expect(mockUpsertLedger).not.toHaveBeenCalled();
+  });
+
+  it("does not process the same channel+ts twice", async () => {
+    mockLookup.mockResolvedValue({
+      found: true,
+      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
+      projectKeys: ["regi"],
+      onRegiProject: true,
+    });
+    mockUpsertLedger.mockResolvedValue({
+      task: { id: "t1", number: 3, title: "ship the dashboard polish", created: true },
+      attention: { id: "a1" },
+    });
+    mockHandoff.mockResolvedValue({ status: "logged" });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const first = await processSlackInbound(mention);
+    const second = await processSlackInbound({
+      ...mention,
+      eventId: "Ev-retry",
+    });
+
+    expect(first.handled).toBe(true);
+    expect(second.reason).toBe("duplicate_event");
+    expect(mockUpsertLedger).toHaveBeenCalledTimes(1);
+    expect(mockHandoff).toHaveBeenCalledTimes(1);
   });
 
   it("ignores thread follow-ups that are not Piper threads", async () => {
