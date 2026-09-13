@@ -1,0 +1,14 @@
+.git
+.github
+.cursor
+.next
+node_modules
+data
+coverage
+*.db
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+deploy/com.dina.app.plist
+deploy/com.dina.attention.plist
