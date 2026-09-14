@@ -26,9 +26,15 @@ vi.mock("@/lib/slack/handoff", () => ({
   handoffSlackToGrokBot: (...args: unknown[]) => mockHandoff(...args),
 }));
 
-vi.mock("@/lib/slack/reply", () => ({
-  buildSlackLocalReply: (...args: unknown[]) => mockLocalReply(...args),
-}));
+vi.mock("@/lib/slack/reply", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/slack/reply")>(
+    "@/lib/slack/reply",
+  );
+  return {
+    ...actual,
+    buildSlackLocalReply: (...args: unknown[]) => mockLocalReply(...args),
+  };
+});
 
 vi.mock("@/lib/slack/scope", () => ({
   isChannelAllowed: (...args: unknown[]) => mockIsChannelAllowed(...args),
@@ -155,10 +161,6 @@ describe("processSlackInbound", () => {
 
   it("answers remaining-task asks locally without Grok Bot", async () => {
     mockLookup.mockResolvedValue(foundRoster);
-    mockUpsertLedger.mockResolvedValue({
-      task: { id: "t1", number: 7, title: "show remaining tasks", created: true },
-      attention: { id: "a1" },
-    });
     mockLocalReply.mockResolvedValue({
       kind: "remaining_tasks",
       text: "Remaining tasks for Regi:\n\n1. Polish the dashboard",
@@ -175,15 +177,37 @@ describe("processSlackInbound", () => {
     expect(mockLocalReply).toHaveBeenCalledWith(
       expect.objectContaining({ text: "show remaining tasks" }),
     );
+    expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("lists tasks for show-me-all phrasing without creating a ledger task", async () => {
+    mockLookup.mockResolvedValue(foundRoster);
+    mockLocalReply.mockResolvedValue({
+      kind: "remaining_tasks",
+      text: "Remaining tasks for Regi:\n\n1. Polish the dashboard",
+    });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound({
+      ...mention,
+      text: "<@UBOT> show me all tasks",
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.handoff).toBe("skipped");
+    expect(result.replyKind).toBe("remaining_tasks");
+    expect(result.reply?.text).toContain("Remaining tasks for Regi:");
+    expect(result.task).toBeUndefined();
+    expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockLocalReply).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "show me all tasks", ledger: undefined }),
+    );
     expect(mockHandoff).not.toHaveBeenCalled();
   });
 
   it("answers assignee status locally without Grok Bot", async () => {
     mockLookup.mockResolvedValue(foundRoster);
-    mockUpsertLedger.mockResolvedValue({
-      task: { id: "t1", number: 8, title: "my remaining tasks", created: true },
-      attention: { id: "a1" },
-    });
     mockLocalReply.mockResolvedValue({
       kind: "assignee_status",
       text: "Remaining Regi tasks assigned to Alex:\n\n1. Alex polish",
@@ -198,6 +222,7 @@ describe("processSlackInbound", () => {
     expect(result.handoff).toBe("skipped");
     expect(result.replyKind).toBe("assignee_status");
     expect(result.reply?.text).toContain("assigned to Alex");
+    expect(mockUpsertLedger).not.toHaveBeenCalled();
     expect(mockHandoff).not.toHaveBeenCalled();
   });
 

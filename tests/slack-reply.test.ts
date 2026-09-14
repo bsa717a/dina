@@ -70,16 +70,41 @@ describe("classifySlackLocalIntent", () => {
     expect(classifySlackLocalIntent("what's remaining")).toBe("remaining_tasks");
     expect(classifySlackLocalIntent("task list")).toBe("remaining_tasks");
     expect(classifySlackLocalIntent("what's left")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("show me all tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("show all tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("list tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("remaining tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("open tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("show me the remaining tasks")).toBe(
+      "remaining_tasks",
+    );
+    expect(classifySlackLocalIntent("show all open tasks")).toBe("remaining_tasks");
+    expect(classifySlackLocalIntent("what are the open tasks")).toBe(
+      "remaining_tasks",
+    );
+    expect(classifySlackLocalIntent("please show me all tasks")).toBe(
+      "remaining_tasks",
+    );
+    expect(classifySlackLocalIntent("can you show me all tasks")).toBe(
+      "remaining_tasks",
+    );
+    expect(classifySlackLocalIntent("show me all tasks for regi")).toBe(
+      "remaining_tasks",
+    );
   });
 
   it("treats assignee status asks as assignee_status", async () => {
     const { classifySlackLocalIntent } = await import("@/lib/slack/reply");
     expect(classifySlackLocalIntent("my remaining tasks")).toBe("assignee_status");
     expect(classifySlackLocalIntent("my tasks")).toBe("assignee_status");
+    expect(classifySlackLocalIntent("what are my tasks")).toBe("assignee_status");
+    expect(classifySlackLocalIntent("show me my tasks")).toBe("assignee_status");
+    expect(classifySlackLocalIntent("my open tasks")).toBe("assignee_status");
     expect(classifySlackLocalIntent("assigned to me")).toBe("assignee_status");
     expect(classifySlackLocalIntent("what's on my plate")).toBe("assignee_status");
     expect(classifySlackLocalIntent("status")).toBe("assignee_status");
     expect(classifySlackLocalIntent("what's my status")).toBe("assignee_status");
+    expect(classifySlackLocalIntent("what tasks do I have")).toBe("assignee_status");
   });
 
   it("leaves work requests on the ack path", async () => {
@@ -87,6 +112,9 @@ describe("classifySlackLocalIntent", () => {
     expect(classifySlackLocalIntent("ship the dashboard polish")).toBe("ack");
     expect(classifySlackLocalIntent("add remaining tasks to the board")).toBe("ack");
     expect(classifySlackLocalIntent("we still have remaining tasks to ship")).toBe(
+      "ack",
+    );
+    expect(classifySlackLocalIntent("please add a task to polish the dashboard")).toBe(
       "ack",
     );
   });
@@ -176,5 +204,60 @@ describe("buildSlackLocalReply", () => {
 
     expect(result.kind).toBe("ack");
     expect(result.text).toContain("task #3");
+  });
+
+  it("lists remaining tasks for show-me-all phrasing without a ledger", async () => {
+    mockListProjectTasks.mockResolvedValue([
+      task({ id: "t1", number: 1, title: "Polish the dashboard" }),
+      task({ id: "t2", number: 2, title: "Review the mockup", assigneeUserId: "u2" }),
+    ]);
+
+    const { buildSlackLocalReply } = await import("@/lib/slack/reply");
+    const result = await buildSlackLocalReply({
+      text: "show me all tasks",
+      roster,
+    });
+
+    expect(result.kind).toBe("remaining_tasks");
+    expect(result.text).toContain("Remaining tasks for Regi:");
+    expect(result.text).toContain("1. Polish the dashboard");
+    expect(result.text).toContain("2. Review the mockup");
+    expect(result.text).not.toContain("Got it — logged on Regi");
+  });
+
+  it("excludes a just-created query task titled show me all tasks", async () => {
+    mockListProjectTasks.mockResolvedValue([
+      task({ id: "t1", number: 1, title: "Polish the dashboard" }),
+      task({ id: "t-query", number: 2, title: "show me all tasks" }),
+    ]);
+
+    const { buildSlackLocalReply } = await import("@/lib/slack/reply");
+    const result = await buildSlackLocalReply({
+      text: "show me all tasks",
+      roster,
+      ledger: {
+        task: { id: "t-query", number: 37, title: "show me all tasks", created: true },
+        attention: { id: "a1" },
+      },
+    });
+
+    expect(result.kind).toBe("remaining_tasks");
+    expect(result.text).toContain("1. Polish the dashboard");
+    expect(result.text).not.toContain("show me all tasks");
+    expect(result.text).not.toContain("Got it — logged on Regi");
+  });
+
+  it("does not invent a ledger ack when a query list fails without a ledger", async () => {
+    mockListProjectTasks.mockRejectedValue(new Error("db down"));
+
+    const { buildSlackLocalReply } = await import("@/lib/slack/reply");
+    const result = await buildSlackLocalReply({
+      text: "show me all tasks",
+      roster,
+    });
+
+    expect(result.kind).toBe("remaining_tasks");
+    expect(result.text).toContain("Couldn't load remaining tasks");
+    expect(result.text).not.toContain("Got it — logged on Regi");
   });
 });

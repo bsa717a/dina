@@ -84,8 +84,8 @@ Unknown Slack accounts are **not** auto-provisioned. They get a clear thread rep
 
 Slack `@Piper` / allowed follow-ups are answered by Piper on this service:
 
-- **Remaining tasks** — `@Piper show remaining tasks` (and similar) recites the live Regi remaining list as numbered titles. No model, no Grok Bot webhook.
-- **Assignee status** — `my tasks`, `my remaining tasks`, `status` recites remaining Regi tasks assigned to the mapped teammate.
+- **Remaining tasks** — `@Piper show me all tasks`, `show all tasks`, `list tasks`, `remaining tasks`, `open tasks` (and similar) recites the live Regi remaining list as numbered titles. No model, no Grok Bot webhook. These queries do not create a ledger task.
+- **Assignee status** — `my tasks`, `what are my tasks`, `my remaining tasks`, `status` recites remaining Regi tasks assigned to the mapped teammate. Also skips the ledger.
 - **Ack** — other messages get a ledger ack (`Got it — logged on Regi…` / `Updated Regi task #N`).
 
 Telnyx RCS still uses `GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`. Slack inbound must not send that webhook.
