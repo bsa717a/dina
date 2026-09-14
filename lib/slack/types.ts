@@ -2,6 +2,8 @@
  * Slack Events API types for the Regi-only Piper bot.
  */
 
+import type { AuthUser } from "@/lib/auth/types";
+
 export type SlackEventType = "url_verification" | "event_callback";
 
 export type SlackInnerEventType = "app_mention" | "message";
@@ -63,6 +65,8 @@ export type SlackRosterLookupResult =
         username: string;
         slackUserId: string;
       };
+      /** Full Piper actor — same AuthUser the web chat session uses. */
+      authUser: AuthUser;
       projectKeys: string[];
       onRegiProject: boolean;
     }
@@ -115,12 +119,13 @@ export interface SlackInboundResult {
     id: string;
   };
   handoff?: "sent" | "logged" | "error" | "skipped";
-  replyKind?: "remaining_tasks" | "assignee_status" | "ack";
+  replyKind?: "chat" | "remaining_tasks" | "assignee_status" | "ack";
   roster?: SlackRosterLookupResult;
 }
 
 export interface SlackThreadMeta {
-  taskId: string;
+  /** Present only when an older Slack ledger write created a task. */
+  taskId?: string;
   channelId: string;
   threadTs: string;
   slackUserId: string;

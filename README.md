@@ -175,7 +175,7 @@ Uploads are stored in `data/uploads/` (outside `public/`) and served only throug
 
 ## Slack ↔ Piper (Regi only)
 
-Regi teammates can talk to Piper from Slack. 4StudentLives stays on Telnyx RCS. Setup, scopes, and smoke checks: [`docs/slack-regi.md`](docs/slack-regi.md).
+Regi teammates can talk to Piper from Slack. Free-text `@Piper` uses the same chat turn as the web text box (mapped Slack user, Active project = Regi). 4StudentLives stays on Telnyx RCS. Setup, scopes, and smoke checks: [`docs/slack-regi.md`](docs/slack-regi.md).
 
 ```bash
 USERNAME=adam SLACK_USER_ID=U012ABCDEF npm run user:link-slack

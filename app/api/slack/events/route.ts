@@ -5,7 +5,7 @@
  * 1. url_verification → echo challenge
  * 2. Verify Slack signing secret
  * 3. Parse app_mention / message events
- * 4. Roster lookup → Regi task/Attention → local Piper reply
+ * 4. Roster lookup → same Piper chat turn as the web text box (Regi)
  * 5. Reply in the same Slack thread (never wake Grok Bot)
  *
  * Telnyx RCS for 4SL is unchanged (see /api/telnyx/webhook).
@@ -26,6 +26,8 @@ import {
 } from "@/lib/slack";
 
 export const runtime = "nodejs";
+/** Chat turns can run tools; keep the worker alive past Slack's 3s ack. */
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   if (!isSlackConfigured()) {

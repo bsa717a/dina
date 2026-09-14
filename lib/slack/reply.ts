@@ -1,7 +1,8 @@
 /**
  * Local Slack replies for the Regi-only Piper bot.
  *
- * Slack inbound must answer here — never via Grok Bot / Old Dina webhook.
+ * Keyword helpers from #56/#57. Slack free-text no longer uses these —
+ * inbound goes through lib/slack/chat.ts → runChatTurn.
  * Telnyx RCS still uses lib/telnyx/handoff.ts.
  */
 

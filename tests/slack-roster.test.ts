@@ -92,6 +92,8 @@ describe("lookupBySlackUserId", () => {
     expect(result.found).toBe(true);
     if (result.found) {
       expect(result.user.username).toBe("alex");
+      expect(result.authUser.username).toBe("alex");
+      expect(result.authUser.role).toBe("member");
       expect(result.onRegiProject).toBe(true);
       expect(result.projectKeys).toEqual(["regi"]);
     }
