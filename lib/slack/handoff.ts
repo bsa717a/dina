@@ -1,8 +1,9 @@
 /**
  * Grok Bot Dina handoff helper for Slack-shaped payloads.
  *
- * Slack inbound process must NOT call this — Piper answers locally
- * (see lib/slack/reply.ts). Telnyx RCS still uses lib/telnyx/handoff.ts.
+ * Slack inbound process must NOT call this — Piper answers via the
+ * same chat turn as the web text box (lib/slack/chat.ts → runChatTurn).
+ * Telnyx RCS still uses lib/telnyx/handoff.ts.
  *
  * Same webhook URL / Bearer + X-Automation-Key auth as Telnyx if invoked.
  * Payload is tagged channel:"slack" and projectKeys is forced to Regi.

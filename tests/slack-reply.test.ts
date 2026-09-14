@@ -24,6 +24,17 @@ vi.mock("@/lib/logger", () => ({
 const roster: Extract<SlackRosterLookupResult, { found: true }> = {
   found: true,
   user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
+  authUser: {
+    id: "u1",
+    name: "Alex",
+    username: "alex",
+    role: "member",
+    assistantName: "Nora",
+    assistantPersona: "",
+    assistantKey: "nora",
+    mustChangePassword: false,
+    phoneNumber: null,
+  },
   projectKeys: ["regi"],
   onRegiProject: true,
 };

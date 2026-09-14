@@ -43,13 +43,12 @@ function parseThreadMeta(rawJson: string | null): SlackThreadMeta | null {
   try {
     const parsed = JSON.parse(rawJson) as Partial<SlackThreadMeta>;
     if (
-      typeof parsed.taskId === "string" &&
       typeof parsed.channelId === "string" &&
       typeof parsed.threadTs === "string" &&
       typeof parsed.projectKey === "string"
     ) {
       return {
-        taskId: parsed.taskId,
+        ...(typeof parsed.taskId === "string" ? { taskId: parsed.taskId } : {}),
         channelId: parsed.channelId,
         threadTs: parsed.threadTs,
         slackUserId: typeof parsed.slackUserId === "string" ? parsed.slackUserId : "",
@@ -222,4 +221,75 @@ export async function upsertSlackThreadLedger(input: {
     },
     attention: { id: attention.id },
   };
+}
+
+/**
+ * Mark a Slack thread as a Piper conversation so follow-ups are answered.
+ * Does not create a Regi task — the chat brain + project tools own writes.
+ */
+export async function rememberSlackThread(input: {
+  event: SlackInboundEvent;
+  roster: Extract<SlackRosterLookupResult, { found: true }>;
+}): Promise<{ attention: { id: string } }> {
+  const projectKey = resolveRegiProjectKey();
+  const sourceId = slackThreadSourceId(input.event.channelId, input.event.threadTs);
+  const cleaned = stripSlackMentions(input.event.text) || input.event.text;
+  const sender = input.roster.user.name;
+  const title = titleFromSlackText(input.event.text, input.event.threadTs);
+
+  const existing = await prisma.attentionItem.findUnique({
+    where: {
+      source_sourceId: { source: ATTENTION_SOURCE, sourceId },
+    },
+  });
+
+  const existingMeta = parseThreadMeta(existing?.rawJson ?? null);
+  const meta: SlackThreadMeta = {
+    ...(existingMeta?.taskId ? { taskId: existingMeta.taskId } : {}),
+    channelId: input.event.channelId,
+    threadTs: input.event.threadTs,
+    slackUserId: input.event.slackUserId,
+    projectKey,
+  };
+
+  const summary = existing
+    ? `${sender} followed up in Slack: ${cleaned.slice(0, 280)}`
+    : `${sender} asked Piper via Slack: ${cleaned.slice(0, 280)}`;
+
+  const attention = existing
+    ? await prisma.attentionItem.update({
+        where: { id: existing.id },
+        data: {
+          sender,
+          subject: existing.subject || title,
+          summary,
+          lastSeenAt: new Date(),
+          status: existing.status === "snoozed" ? existing.status : "open",
+          rawJson: JSON.stringify(meta),
+        },
+      })
+    : await prisma.attentionItem.create({
+        data: {
+          source: ATTENTION_SOURCE,
+          sourceId,
+          category: "reply_required",
+          status: "open",
+          sender,
+          subject: title,
+          summary,
+          whyItMatters: "A Regi teammate reached Piper from Slack.",
+          recommendedAction: "Reply in the Slack thread.",
+          needsResponse: true,
+          hasDeadline: false,
+          isBlocking: false,
+          canWait: true,
+          shouldDraftReply: false,
+          notifyNow: true,
+          notificationTitle: `Regi · Slack from ${sender}`,
+          notificationBody: cleaned.slice(0, 160),
+          rawJson: JSON.stringify(meta),
+        },
+      });
+
+  return { attention: { id: attention.id } };
 }

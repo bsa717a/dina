@@ -90,9 +90,8 @@ describe("POST /api/slack/events", () => {
       handled: true,
       reason: "ok",
       handoff: "skipped",
-      replyKind: "ack",
+      replyKind: "chat",
       reply: { text: "Got it", channelId: "CREGI", threadTs: "1.1" },
-      task: { id: "t1", number: 1, title: "hello", created: true },
     });
 
     const { POST } = await import("@/app/api/slack/events/route");
@@ -108,8 +107,8 @@ describe("POST /api/slack/events", () => {
     expect(body.ok).toBe(true);
     expect(body.handled).toBe(true);
     expect(body.handoff).toBe("skipped");
-    expect(body.replyKind).toBe("ack");
-    expect(body.task.number).toBe(1);
+    expect(body.replyKind).toBe("chat");
+    expect(body.task).toBeUndefined();
     expect(mockDeliver).toHaveBeenCalled();
   });
 });

@@ -5,7 +5,8 @@
  * - Events API signature verification
  * - Roster lookup (Slack user → teammate)
  * - Regi task + Attention ledger
- * - Local in-thread replies (no Grok Bot wake)
+ * - In-thread replies via the same chat turn as the Piper web box
+ *   (no Grok Bot wake)
  * - Threaded Slack replies
  */
 
@@ -18,4 +19,5 @@ export * from "./client";
 export * from "./handoff";
 export * from "./ledger";
 export * from "./reply";
+export * from "./chat";
 export * from "./process";

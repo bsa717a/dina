@@ -5,23 +5,22 @@
  * 1. Ignore bots / disallowed channels / irrelevant subtypes
  * 2. Roster lookup (Slack user → Piper member)
  * 3. Unknown / not-on-Regi → clear reply asking Derek
- * 4. Work requests: create or update a Regi task + Attention item.
- *    List/status queries skip the ledger so they do not create junk tasks.
- * 5. Reply in-thread from local Piper logic (remaining tasks, assignee
- *    status, or ledger ack). Do not call Grok Bot / Old Dina.
+ * 4. Mark the Slack thread so follow-ups stay in this conversation
+ * 5. Run the same chat turn as the Piper web text box (Gemini/provider
+ *    + project tools), scoped to Regi. Do not call Grok Bot / Old Dina.
  *
  * Telnyx RCS still uses lib/telnyx/handoff.ts — that path is unchanged.
  */
 
 import { logger } from "@/lib/logger";
 import { postSlackMessage } from "./client";
+import { runSlackPiperChat } from "./chat";
 import {
   findSlackThreadAttention,
-  upsertSlackThreadLedger,
+  rememberSlackThread,
   stripSlackMentions,
 } from "./ledger";
 import { lookupBySlackUserId } from "./roster";
-import { buildSlackLocalReply, classifySlackLocalIntent } from "./reply";
 import {
   isChannelAllowed,
   isOwnBotMessage,
@@ -35,6 +34,13 @@ import type {
 import { NOT_ON_REGI_REPLY, UNKNOWN_USER_REPLY } from "./types";
 
 const HANDLED_EVENT_TYPES = new Set(["app_mention", "message"]);
+
+/** Slack retries if the Events ack is slow; share one in-flight chat turn. */
+const inflightByEvent = new Map<string, Promise<SlackInboundResult>>();
+
+function slackEventDedupeKey(event: SlackInboundEvent): string {
+  return event.eventId || `${event.channelId}:${event.ts}`;
+}
 
 export function parseSlackInboundEvent(
   payload: SlackEventCallback,
@@ -60,6 +66,20 @@ export function parseSlackInboundEvent(
 }
 
 export async function processSlackInbound(
+  event: SlackInboundEvent,
+): Promise<SlackInboundResult> {
+  const key = slackEventDedupeKey(event);
+  const existing = inflightByEvent.get(key);
+  if (existing) return existing;
+
+  const work = processSlackInboundOnce(event).finally(() => {
+    setTimeout(() => inflightByEvent.delete(key), 60_000);
+  });
+  inflightByEvent.set(key, work);
+  return work;
+}
+
+async function processSlackInboundOnce(
   event: SlackInboundEvent,
 ): Promise<SlackInboundResult> {
   if (isOwnBotMessage(event) || shouldIgnoreMessageSubtype(event.subtype)) {
@@ -117,9 +137,10 @@ export async function processSlackInbound(
     return { handled: false, reason: "not_on_regi", reply, roster };
   }
 
+  const cleanedText = stripSlackMentions(event.text).trim();
   const cleanedEvent: SlackInboundEvent = {
     ...event,
-    text: stripSlackMentions(event.text) || event.text,
+    text: cleanedText || "Hello",
   };
 
   logger.info("slack_inbound_message", {
@@ -132,39 +153,42 @@ export async function processSlackInbound(
     textLength: cleanedEvent.text.length,
   });
 
-  const intent = classifySlackLocalIntent(cleanedEvent.text);
-  const ledger =
-    intent === "ack"
-      ? await upsertSlackThreadLedger({
-          event: cleanedEvent,
-          roster,
-        })
-      : undefined;
+  let attention: { id: string } | undefined;
+  try {
+    const marked = await rememberSlackThread({
+      event: cleanedEvent,
+      roster,
+    });
+    attention = marked.attention;
+  } catch (error) {
+    logger.error("slack_thread_mark_failed", {
+      messageId: event.ts,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
 
-  const localReply = await buildSlackLocalReply({
+  const chat = await runSlackPiperChat({
+    user: roster.authUser,
     text: cleanedEvent.text,
-    roster,
-    ledger,
   });
 
-  logger.info("slack_local_reply", {
+  logger.info("slack_chat_reply", {
     messageId: event.ts,
-    kind: localReply.kind,
-    taskNumber: ledger?.task.number,
+    ok: chat.ok,
+    userId: roster.user.id,
   });
 
   return {
     handled: true,
     reason: "ok",
     reply: {
-      text: localReply.text,
+      text: chat.text,
       channelId: event.channelId,
       threadTs: event.threadTs,
     },
-    task: ledger?.task,
-    attention: ledger?.attention,
+    attention,
     handoff: "skipped",
-    replyKind: localReply.kind,
+    replyKind: "chat",
     roster,
   };
 }

@@ -9,9 +9,10 @@ Live Piper: https://dina.clifsmama.com
 1. Slack `app_mention` (and thread follow-ups) → verify signature
 2. Map Slack user → Piper member (`User.slackUserId` or `SLACK_USER_MAP`)
 3. Unknown users get a thread reply: ask Derek to add them
-4. Known Regi members: create or update a **Regi** project task + Attention item
-5. Piper replies in the **same Slack thread** from local logic (remaining tasks, assignee-scoped status, or a ledger ack)
-6. Slack inbound does **not** call Grok Bot / Old Dina. Telnyx RCS still does.
+4. Known Regi members: Slack text is sent through the **same chat turn** as the Piper web text box (`runChatTurn` / `getModelProvider`), with Active project = Regi
+5. Creating, listing, and completing tasks goes through that brain + the existing project-task tools (not English regex)
+6. Piper replies in the **same Slack thread**
+7. Slack inbound does **not** call Grok Bot / Old Dina. Telnyx RCS still does.
 
 Telnyx `/api/telnyx/webhook` is unchanged.
 
@@ -80,13 +81,19 @@ NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" \
 
 Unknown Slack accounts are **not** auto-provisioned. They get a clear thread reply to ask Derek.
 
-## Local replies (no Grok Bot)
+## Free-text replies (same brain as the web box)
 
-Slack `@Piper` / allowed follow-ups are answered by Piper on this service:
+Slack `@Piper` / allowed follow-ups are answered by the same `runChatTurn` path as `POST /api/chat`:
 
-- **Remaining tasks** — `@Piper show me all tasks`, `show all tasks`, `list tasks`, `remaining tasks`, `open tasks` (and similar) recites the live Regi remaining list as numbered titles. No model, no Grok Bot webhook. These queries do not create a ledger task.
-- **Assignee status** — `my tasks`, `what are my tasks`, `my remaining tasks`, `status` recites remaining Regi tasks assigned to the mapped teammate. Also skips the ledger.
-- **Ack** — other messages get a ledger ack (`Got it — logged on Regi…` / `Updated Regi task #N`).
+1. Map Slack user → Piper `AuthUser` (`User.slackUserId` or `SLACK_USER_MAP`)
+2. Set Active project to Regi
+3. Persist the turn on that user's default conversation (same history as the web text box)
+4. Stream/collect the model + project-task tools
+5. Post the assistant text back in the Slack thread
+
+There is no separate Slack brain and no Grok Bot webhook. Keyword stubs (`lib/slack/reply.ts`) are leftover from #56/#57 and are not the inbound path.
+
+`/piper` slash commands (PR #58) are optional and unused by this free-text path.
 
 Telnyx RCS still uses `GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`. Slack inbound must not send that webhook.
 

@@ -44,6 +44,17 @@ const foundRoster: SlackRosterLookupResult = {
     username: "alex",
     slackUserId: "U012ALEX",
   },
+  authUser: {
+    id: "user-1",
+    name: "Alex",
+    username: "alex",
+    role: "member",
+    assistantName: "Nora",
+    assistantPersona: "",
+    assistantKey: "nora",
+    mustChangePassword: false,
+    phoneNumber: null,
+  },
   projectKeys: ["regi"],
   onRegiProject: true,
 };

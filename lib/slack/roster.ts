@@ -62,6 +62,7 @@ export async function lookupBySlackUserId(
       username: user.username,
       slackUserId,
     },
+    authUser: user,
     projectKeys: onRegiProject ? [regiKey] : memberKeys,
     onRegiProject,
   };
