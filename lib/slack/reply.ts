@@ -64,7 +64,7 @@ function isRemainingTasksAsk(normalized: string): boolean {
     /^(?:show|list|recite|get|display|give)(?: me| us)?(?: (?:the|all|our))*(?: remaining| open)?(?: project)? tasks?$/.test(
       normalized,
     ) ||
-    /^(?:what(?:'s|s| are| is)|whats)(?: (?:the|all))*(?: remaining(?: tasks?)?|open(?: tasks?)?|tasks?|left)$/.test(
+    /^(?:what(?:'s|s| are| is)|whats)(?: (?:the|all))*(?: remaining(?: tasks?)?| open(?: tasks?)?| tasks?| left)$/.test(
       normalized,
     ) ||
     /^(?:(?:all|the) )?(?:remaining|open) tasks?$/.test(normalized) ||
