@@ -11,6 +11,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/login",
   "/api/telnyx/webhook",
   "/api/slack/events",
+  "/api/slack/commands",
   "/manifest.webmanifest",
   "/sw.js",
   "/file-drop-guard.js",

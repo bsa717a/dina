@@ -7,6 +7,7 @@ const mockUpsertLedger = vi.fn();
 const mockFindThread = vi.fn();
 const mockHandoff = vi.fn();
 const mockLocalReply = vi.fn();
+const mockProcessCommand = vi.fn();
 const mockIsChannelAllowed = vi.fn();
 const mockIsOwnBotMessage = vi.fn();
 const mockShouldIgnore = vi.fn();
@@ -36,10 +37,21 @@ vi.mock("@/lib/slack/reply", async () => {
   };
 });
 
+vi.mock("@/lib/slack/command", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/slack/command")>(
+    "@/lib/slack/command",
+  );
+  return {
+    ...actual,
+    processPiperCommand: (...args: unknown[]) => mockProcessCommand(...args),
+  };
+});
+
 vi.mock("@/lib/slack/scope", () => ({
   isChannelAllowed: (...args: unknown[]) => mockIsChannelAllowed(...args),
   isOwnBotMessage: (...args: unknown[]) => mockIsOwnBotMessage(...args),
   shouldIgnoreMessageSubtype: (...args: unknown[]) => mockShouldIgnore(...args),
+  resolveRegiProjectKey: () => "regi",
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -81,6 +93,7 @@ describe("processSlackInbound", () => {
     mockFindThread.mockReset();
     mockHandoff.mockReset();
     mockLocalReply.mockReset();
+    mockProcessCommand.mockReset();
     mockIsChannelAllowed.mockReset();
     mockIsOwnBotMessage.mockReset();
     mockShouldIgnore.mockReset();
@@ -200,6 +213,7 @@ describe("processSlackInbound", () => {
     expect(result.reply?.text).toContain("Remaining tasks for Regi:");
     expect(result.task).toBeUndefined();
     expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockProcessCommand).not.toHaveBeenCalled();
     expect(mockLocalReply).toHaveBeenCalledWith(
       expect.objectContaining({ text: "show me all tasks", ledger: undefined }),
     );
@@ -223,6 +237,35 @@ describe("processSlackInbound", () => {
     expect(result.replyKind).toBe("assignee_status");
     expect(result.reply?.text).toContain("assigned to Alex");
     expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("routes @Piper tasks through slash-command logic without a ledger", async () => {
+    mockLookup.mockResolvedValue(foundRoster);
+    mockProcessCommand.mockResolvedValue({
+      kind: "command_list",
+      text: "Open Regi tasks assigned to Alex:\n\n2. Alex polish",
+    });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound({
+      ...mention,
+      text: "<@UBOT> tasks",
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.handoff).toBe("skipped");
+    expect(result.replyKind).toBe("command_list");
+    expect(result.reply?.text).toContain("Alex polish");
+    expect(result.task).toBeUndefined();
+    expect(mockProcessCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parsed: expect.objectContaining({ verb: "list" }),
+        roster: foundRoster,
+      }),
+    );
+    expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockLocalReply).not.toHaveBeenCalled();
     expect(mockHandoff).not.toHaveBeenCalled();
   });
 

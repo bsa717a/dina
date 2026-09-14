@@ -5,8 +5,9 @@
  * 1. Ignore bots / disallowed channels / irrelevant subtypes
  * 2. Roster lookup (Slack user → Piper member)
  * 3. Unknown / not-on-Regi → clear reply asking Derek
- * 4. Work requests: create or update a Regi task + Attention item.
- *    List/status queries skip the ledger so they do not create junk tasks.
+ * 4. Structured verbs (`tasks`/`list`/`add`/`done`) use the slash-command
+ *    board path. List/status queries skip the ledger so they do not create
+ *    junk tasks. Other work requests create or update a Regi task + Attention.
  * 5. Reply in-thread from local Piper logic (remaining tasks, assignee
  *    status, or ledger ack). Do not call Grok Bot / Old Dina.
  *
@@ -15,6 +16,11 @@
 
 import { logger } from "@/lib/logger";
 import { postSlackMessage } from "./client";
+import {
+  isStructuredPiperCommand,
+  parsePiperCommand,
+  processPiperCommand,
+} from "./command";
 import {
   findSlackThreadAttention,
   upsertSlackThreadLedger,
@@ -131,6 +137,34 @@ export async function processSlackInbound(
     threadTs: event.threadTs,
     textLength: cleanedEvent.text.length,
   });
+
+  const command = parsePiperCommand(cleanedEvent.text);
+  if (isStructuredPiperCommand(command)) {
+    const commandReply = await processPiperCommand({
+      parsed: command,
+      roster,
+      channelId: event.channelId,
+    });
+    logger.info("slack_command_reply", {
+      messageId: event.ts,
+      kind: commandReply.kind,
+      verb: command.verb,
+      taskNumber: commandReply.task?.number,
+    });
+    return {
+      handled: true,
+      reason: "ok",
+      reply: {
+        text: commandReply.text,
+        channelId: event.channelId,
+        threadTs: event.threadTs,
+      },
+      task: commandReply.task,
+      handoff: "skipped",
+      replyKind: commandReply.kind,
+      roster,
+    };
+  }
 
   const intent = classifySlackLocalIntent(cleanedEvent.text);
   const ledger =

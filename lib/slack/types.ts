@@ -115,7 +115,14 @@ export interface SlackInboundResult {
     id: string;
   };
   handoff?: "sent" | "logged" | "error" | "skipped";
-  replyKind?: "remaining_tasks" | "assignee_status" | "ack";
+  replyKind?:
+    | "remaining_tasks"
+    | "assignee_status"
+    | "ack"
+    | "command_list"
+    | "command_add"
+    | "command_done"
+    | "command_help";
   roster?: SlackRosterLookupResult;
 }
 
