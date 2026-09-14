@@ -89,7 +89,8 @@ describe("POST /api/slack/events", () => {
     mockProcess.mockResolvedValue({
       handled: true,
       reason: "ok",
-      handoff: "logged",
+      handoff: "skipped",
+      replyKind: "ack",
       reply: { text: "Got it", channelId: "CREGI", threadTs: "1.1" },
       task: { id: "t1", number: 1, title: "hello", created: true },
     });
@@ -106,6 +107,8 @@ describe("POST /api/slack/events", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.handled).toBe(true);
+    expect(body.handoff).toBe("skipped");
+    expect(body.replyKind).toBe("ack");
     expect(body.task.number).toBe(1);
     expect(mockDeliver).toHaveBeenCalled();
   });

@@ -10,8 +10,8 @@ Live Piper: https://dina.clifsmama.com
 2. Map Slack user → Piper member (`User.slackUserId` or `SLACK_USER_MAP`)
 3. Unknown users get a thread reply: ask Derek to add them
 4. Known Regi members: create or update a **Regi** project task + Attention item
-5. Same Grok Bot Dina handoff used by Telnyx (`GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`)
-6. Piper replies in the **same Slack thread**
+5. Piper replies in the **same Slack thread** from local logic (remaining tasks, assignee-scoped status, or a ledger ack)
+6. Slack inbound does **not** call Grok Bot / Old Dina. Telnyx RCS still does.
 
 Telnyx `/api/telnyx/webhook` is unchanged.
 
@@ -80,20 +80,17 @@ NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" \
 
 Unknown Slack accounts are **not** auto-provisioned. They get a clear thread reply to ask Derek.
 
-## Grok Bot
+## Local replies (no Grok Bot)
 
-Inbound Slack uses the same webhook as Telnyx. Set `GROK_BOT_DINA_WEBHOOK_SECRET` to the Routines panel **sender key** (`crsr_…`). Piper sends it as `Authorization: Bearer <key>` and `X-Automation-Key` — HMAC-only headers will not wake the routine.
+Slack `@Piper` / allowed follow-ups are answered by Piper on this service:
 
-Extra fields:
+- **Remaining tasks** — `@Piper show remaining tasks` (and similar) recites the live Regi remaining list as numbered titles. No model, no Grok Bot webhook.
+- **Assignee status** — `my tasks`, `my remaining tasks`, `status` recites remaining Regi tasks assigned to the mapped teammate.
+- **Ack** — other messages get a ledger ack (`Got it — logged on Regi…` / `Updated Regi task #N`).
 
-- `channel: "slack"`
-- `messageType: "slack"`
-- `projectKeys: ["regi"]` only
-- `slack: { teamId, channelId, threadTs, eventTs, slackUserId }`
+Telnyx RCS still uses `GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`. Slack inbound must not send that webhook.
 
-If Grok Bot returns `{ ok: true, reply: { text } }`, that text is posted in-thread. If the webhook accepts the handoff without a sync reply (`status: sent`, no `reply.text`), Piper stays silent — Dina’s Old Dina routine later POSTs the real answer via `/api/grok/outbound-slack`. If the webhook is unset (`logged`) or the handoff errors, Piper still writes the Regi task/Attention and posts a local ledger ack.
-
-Async Slack send (service token): `POST /api/grok/outbound-slack` with `{ channelId, threadTs, text }`.
+Async Slack send (service token, unused by inbound Slack): `POST /api/grok/outbound-slack` with `{ channelId, threadTs, text }`.
 
 ## Smoke checks
 

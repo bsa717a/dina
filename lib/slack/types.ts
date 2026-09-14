@@ -114,7 +114,8 @@ export interface SlackInboundResult {
   attention?: {
     id: string;
   };
-  handoff?: "sent" | "logged" | "error";
+  handoff?: "sent" | "logged" | "error" | "skipped";
+  replyKind?: "remaining_tasks" | "assignee_status" | "ack";
   roster?: SlackRosterLookupResult;
 }
 

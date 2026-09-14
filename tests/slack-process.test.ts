@@ -6,6 +6,7 @@ const mockLookup = vi.fn();
 const mockUpsertLedger = vi.fn();
 const mockFindThread = vi.fn();
 const mockHandoff = vi.fn();
+const mockLocalReply = vi.fn();
 const mockIsChannelAllowed = vi.fn();
 const mockIsOwnBotMessage = vi.fn();
 const mockShouldIgnore = vi.fn();
@@ -23,6 +24,10 @@ vi.mock("@/lib/slack/ledger", () => ({
 
 vi.mock("@/lib/slack/handoff", () => ({
   handoffSlackToGrokBot: (...args: unknown[]) => mockHandoff(...args),
+}));
+
+vi.mock("@/lib/slack/reply", () => ({
+  buildSlackLocalReply: (...args: unknown[]) => mockLocalReply(...args),
 }));
 
 vi.mock("@/lib/slack/scope", () => ({
@@ -50,6 +55,18 @@ const mention: SlackInboundEvent = {
   channelType: "channel",
 };
 
+const remainingAsk: SlackInboundEvent = {
+  ...mention,
+  text: "<@UBOT> show remaining tasks",
+};
+
+const foundRoster = {
+  found: true,
+  user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
+  projectKeys: ["regi"],
+  onRegiProject: true,
+};
+
 describe("processSlackInbound", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -57,12 +74,14 @@ describe("processSlackInbound", () => {
     mockUpsertLedger.mockReset();
     mockFindThread.mockReset();
     mockHandoff.mockReset();
+    mockLocalReply.mockReset();
     mockIsChannelAllowed.mockReset();
     mockIsOwnBotMessage.mockReset();
     mockShouldIgnore.mockReset();
     mockIsChannelAllowed.mockReturnValue(true);
     mockIsOwnBotMessage.mockReturnValue(false);
     mockShouldIgnore.mockReturnValue(false);
+    mockHandoff.mockRejectedValue(new Error("Grok Bot must not be called for Slack"));
   });
 
   it("ignores the bot's own messages", async () => {
@@ -92,6 +111,7 @@ describe("processSlackInbound", () => {
     expect(result.handled).toBe(false);
     expect(result.reply?.text).toBe(UNKNOWN_USER_REPLY);
     expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 
   it("asks Derek when the user is not on Regi", async () => {
@@ -106,22 +126,18 @@ describe("processSlackInbound", () => {
     expect(result.handled).toBe(false);
     expect(result.reply?.text).toBe(NOT_ON_REGI_REPLY);
     expect(mockUpsertLedger).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 
-  it("creates a Regi task and uses the Grok Bot reply", async () => {
-    mockLookup.mockResolvedValue({
-      found: true,
-      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
-      projectKeys: ["regi"],
-      onRegiProject: true,
-    });
+  it("creates a Regi task and acks locally without Grok Bot", async () => {
+    mockLookup.mockResolvedValue(foundRoster);
     mockUpsertLedger.mockResolvedValue({
       task: { id: "t1", number: 3, title: "ship the dashboard polish", created: true },
       attention: { id: "a1" },
     });
-    mockHandoff.mockResolvedValue({
-      status: "sent",
-      response: { ok: true, reply: { text: "Logged. I'll watch that thread." } },
+    mockLocalReply.mockResolvedValue({
+      kind: "ack",
+      text: "Got it — logged on Regi as “ship the dashboard polish” (task #3).",
     });
 
     const { processSlackInbound } = await import("@/lib/slack/process");
@@ -129,73 +145,60 @@ describe("processSlackInbound", () => {
 
     expect(result.handled).toBe(true);
     expect(result.task?.number).toBe(3);
-    expect(result.handoff).toBe("sent");
-    expect(result.reply?.text).toBe("Logged. I'll watch that thread.");
+    expect(result.handoff).toBe("skipped");
+    expect(result.replyKind).toBe("ack");
+    expect(result.reply?.text).toContain("task #3");
     expect(result.reply?.threadTs).toBe(mention.threadTs);
     expect(mockUpsertLedger).toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 
-  it("acks locally when Grok Bot is only logged", async () => {
-    mockLookup.mockResolvedValue({
-      found: true,
-      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
-      projectKeys: ["regi"],
-      onRegiProject: true,
-    });
+  it("answers remaining-task asks locally without Grok Bot", async () => {
+    mockLookup.mockResolvedValue(foundRoster);
     mockUpsertLedger.mockResolvedValue({
-      task: { id: "t1", number: 4, title: "ship the dashboard polish", created: true },
+      task: { id: "t1", number: 7, title: "show remaining tasks", created: true },
       attention: { id: "a1" },
     });
-    mockHandoff.mockResolvedValue({ status: "logged" });
-
-    const { processSlackInbound } = await import("@/lib/slack/process");
-    const result = await processSlackInbound(mention);
-    expect(result.handoff).toBe("logged");
-    expect(result.reply?.text).toContain("task #4");
-    expect(result.reply?.text).toContain("Got it — logged on Regi");
-  });
-
-  it("acks locally when Grok Bot handoff errors", async () => {
-    mockLookup.mockResolvedValue({
-      found: true,
-      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
-      projectKeys: ["regi"],
-      onRegiProject: true,
-    });
-    mockUpsertLedger.mockResolvedValue({
-      task: { id: "t1", number: 5, title: "ship the dashboard polish", created: false },
-      attention: { id: "a1" },
-    });
-    mockHandoff.mockResolvedValue({ status: "error", error: "timeout" });
-
-    const { processSlackInbound } = await import("@/lib/slack/process");
-    const result = await processSlackInbound(mention);
-    expect(result.handoff).toBe("error");
-    expect(result.reply?.text).toContain("Updated Regi task #5");
-  });
-
-  it("does not invent a local ack when async handoff is sent without reply.text", async () => {
-    mockLookup.mockResolvedValue({
-      found: true,
-      user: { id: "u1", name: "Alex", username: "alex", slackUserId: "U012ALEX" },
-      projectKeys: ["regi"],
-      onRegiProject: true,
-    });
-    mockUpsertLedger.mockResolvedValue({
-      task: { id: "t1", number: 6, title: "ship the dashboard polish", created: true },
-      attention: { id: "a1" },
-    });
-    mockHandoff.mockResolvedValue({
-      status: "sent",
-      response: { ok: true, hasReply: false },
+    mockLocalReply.mockResolvedValue({
+      kind: "remaining_tasks",
+      text: "Remaining tasks for Regi:\n\n1. Polish the dashboard",
     });
 
     const { processSlackInbound } = await import("@/lib/slack/process");
-    const result = await processSlackInbound(mention);
+    const result = await processSlackInbound(remainingAsk);
+
     expect(result.handled).toBe(true);
-    expect(result.handoff).toBe("sent");
-    expect(result.task?.number).toBe(6);
-    expect(result.reply).toBeUndefined();
+    expect(result.handoff).toBe("skipped");
+    expect(result.replyKind).toBe("remaining_tasks");
+    expect(result.reply?.text).toContain("Remaining tasks for Regi:");
+    expect(result.reply?.text).toContain("1. Polish the dashboard");
+    expect(mockLocalReply).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "show remaining tasks" }),
+    );
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("answers assignee status locally without Grok Bot", async () => {
+    mockLookup.mockResolvedValue(foundRoster);
+    mockUpsertLedger.mockResolvedValue({
+      task: { id: "t1", number: 8, title: "my remaining tasks", created: true },
+      attention: { id: "a1" },
+    });
+    mockLocalReply.mockResolvedValue({
+      kind: "assignee_status",
+      text: "Remaining Regi tasks assigned to Alex:\n\n1. Alex polish",
+    });
+
+    const { processSlackInbound } = await import("@/lib/slack/process");
+    const result = await processSlackInbound({
+      ...mention,
+      text: "<@UBOT> my remaining tasks",
+    });
+
+    expect(result.handoff).toBe("skipped");
+    expect(result.replyKind).toBe("assignee_status");
+    expect(result.reply?.text).toContain("assigned to Alex");
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 
   it("ignores top-level channel messages that are not mentions", async () => {
@@ -206,6 +209,7 @@ describe("processSlackInbound", () => {
     });
     expect(result.reason).toBe("channel_message_without_mention");
     expect(mockLookup).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 
   it("ignores thread follow-ups that are not Piper threads", async () => {
@@ -219,6 +223,7 @@ describe("processSlackInbound", () => {
     });
     expect(result.reason).toBe("unknown_thread");
     expect(mockLookup).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 });
 
