@@ -104,14 +104,10 @@ function formatAssigneeStatus(
   if (!tasks.length) {
     return `No remaining ${projectName} tasks assigned to ${name}.`;
   }
-  const numbered = tasks.map((task, index) => ({
-    number: index + 1,
-    title: task.title,
-  }));
   return [
     `Remaining ${projectName} tasks assigned to ${name}:`,
     "",
-    ...formatRemainingTaskLines(numbered),
+    ...formatRemainingTaskLines(tasks),
   ].join("\n");
 }
 

@@ -17,5 +17,6 @@ export * from "./roster";
 export * from "./client";
 export * from "./handoff";
 export * from "./ledger";
+export * from "./command";
 export * from "./reply";
 export * from "./process";

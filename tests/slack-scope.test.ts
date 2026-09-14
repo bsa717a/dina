@@ -67,6 +67,13 @@ describe("Slack Regi scope", () => {
     expect(isChannelAllowed("D123", "im")).toBe(true);
   });
 
+  it("infers slash-command channel types from id and name", async () => {
+    const { inferSlackChannelType } = await import("@/lib/slack/scope");
+    expect(inferSlackChannelType("CREGI", "regi")).toBe("channel");
+    expect(inferSlackChannelType("D123", "directmessage")).toBe("im");
+    expect(inferSlackChannelType("G123", "privategroup")).toBe("group");
+  });
+
   it("treats bot_id as the bot's own message", async () => {
     mockGetSlackConfig.mockReturnValue({ botUserId: "UBOT" });
     const { isOwnBotMessage } = await import("@/lib/slack/scope");

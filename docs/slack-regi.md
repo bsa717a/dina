@@ -6,12 +6,14 @@ Live Piper: https://dina.clifsmama.com
 
 ## What it does
 
-1. Slack `app_mention` (and thread follow-ups) → verify signature
+**Preferred team path — slash commands** (`/piper tasks`, `/piper add`, `/piper done`). These call the same Regi board store as the web UI, scoped to the mapped Slack→Piper user. No English phrase lists.
+
+1. Slack slash command or `app_mention` (and thread follow-ups) → verify signature
 2. Map Slack user → Piper member (`User.slackUserId` or `SLACK_USER_MAP`)
-3. Unknown users get a thread reply: ask Derek to add them
-4. Known Regi members: create or update a **Regi** project task + Attention item
-5. Piper replies in the **same Slack thread** from local logic (remaining tasks, assignee-scoped status, or a ledger ack)
-6. Slack inbound does **not** call Grok Bot / Old Dina. Telnyx RCS still does.
+3. Unknown users get a reply: ask Derek to add them
+4. `/piper` verbs list / create / complete **Regi** tasks for that user
+5. Free-text `@Piper` that is a structured verb (`tasks`, `list`, `add …`, `done N`) uses the same command path. Clear list/status asks still skip the ledger (no junk task). Other mentions create or update a Regi task + Attention item
+6. Piper replies locally (ephemeral for slash commands, in-thread for mentions). Slack inbound does **not** call Grok Bot / Old Dina. Telnyx RCS still does.
 
 Telnyx `/api/telnyx/webhook` is unchanged.
 
@@ -49,6 +51,23 @@ Slack will POST a `url_verification` challenge. Piper echoes `{ "challenge": "�
 
 Invite the bot to the Regi channel(s): `/invite @Piper`.
 
+## Slash Commands (do this once in Slack)
+
+Slack App Directory / your Piper app → **Slash Commands** → **Create New Command**:
+
+| Field | Value |
+|---|---|
+| Command | `/piper` |
+| Request URL | `https://dina.clifsmama.com/api/slack/commands` |
+| Short Description | Regi board via Piper |
+| Usage Hint | `tasks \| add <title> \| done <number>` |
+
+Save, then **reinstall the app** to the Regi workspace if Slack asks. No extra bot scopes. Same `SLACK_SIGNING_SECRET` as Events API.
+
+Optional split commands (same URL): `/piper-tasks`, `/piper-add`, `/piper-done`.
+
+Smoke: `curl -sS https://dina.clifsmama.com/api/slack/commands` → `{ service: "slack-commands", scope: "regi" }`.
+
 ## Piper env
 
 ```bash
@@ -80,12 +99,25 @@ NAME="Alex" USERNAME="alex" TEMP_PASSWORD="temporary-password" \
 
 Unknown Slack accounts are **not** auto-provisioned. They get a clear thread reply to ask Derek.
 
+## Team usage (Mo / Gabe / Derek)
+
+Mapped Slack accounts (`SLACK_USER_MAP` or `User.slackUserId`):
+
+```
+/piper tasks          your open Regi tasks (board numbers)
+/piper list           same as tasks
+/piper add <title>    create a Regi task assigned to you
+/piper done <number>  mark that task done
+```
+
+`@Piper tasks` / `@Piper add …` / `@Piper done N` work the same way if slash commands are not installed yet.
+
 ## Local replies (no Grok Bot)
 
 Slack `@Piper` / allowed follow-ups are answered by Piper on this service:
 
-- **Remaining tasks** — `@Piper show me all tasks`, `show all tasks`, `list tasks`, `remaining tasks`, `open tasks` (and similar) recites the live Regi remaining list as numbered titles. No model, no Grok Bot webhook. These queries do not create a ledger task.
-- **Assignee status** — `my tasks`, `what are my tasks`, `my remaining tasks`, `status` recites remaining Regi tasks assigned to the mapped teammate. Also skips the ledger.
+- **Slash / verb commands** — `/piper tasks|list|add|done` (or `@Piper` with those verbs) hit the board store. List never creates a task.
+- **Remaining-task asks** — free-text that classifies as a list/status query recites the live Regi list and **does not** create a ledger task. Prefer `/piper tasks` instead of widening phrase matchers.
 - **Ack** — other messages get a ledger ack (`Got it — logged on Regi…` / `Updated Regi task #N`).
 
 Telnyx RCS still uses `GROK_BOT_DINA_WEBHOOK_URL` + `GROK_BOT_DINA_WEBHOOK_SECRET`. Slack inbound must not send that webhook.
@@ -99,6 +131,9 @@ Async Slack send (service token, unused by inbound Slack): `POST /api/grok/outbo
 curl -sS https://dina.clifsmama.com/api/slack/events
 # { ok, service: "slack-events", configured, projectKey: "regi", scope: "regi" }
 
+curl -sS https://dina.clifsmama.com/api/slack/commands
+# { ok, service: "slack-commands", configured, projectKey: "regi", scope: "regi" }
+
 curl -sS https://dina.clifsmama.com/api/health
 # checks.slack = configured | missing
 # checks.telnyx must still work independently
@@ -108,6 +143,7 @@ Local (after setting `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET`):
 
 1. `npm run dev` and point Slack Request URL at your ngrok `APP_URL` + `/api/slack/events`.
 2. Confirm Slack URL verification succeeds.
-3. Mention the bot in a Regi channel as a **mapped** user → task appears on Regi, reply lands in-thread.
-4. Mention the bot as an **unmapped** user → “ask Derek to add you”.
-5. Send a Telnyx RCS to Piper (4SL) → still replies via Telnyx; no Slack writes.
+3. `/piper tasks` as a **mapped** user → your open Regi tasks (no new task created).
+4. `/piper add Call the vendor` → task appears on Regi assigned to you.
+5. Mention the bot as an **unmapped** user → “ask Derek to add you”.
+6. Send a Telnyx RCS to Piper (4SL) → still replies via Telnyx; no Slack writes.

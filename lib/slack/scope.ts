@@ -34,6 +34,18 @@ export function isBlockedProjectKey(key: string): boolean {
   return (SLACK_BLOCKED_PROJECT_KEYS as readonly string[]).includes(key);
 }
 
+/** Infer Slack channel type from slash-command fields (no channel_type). */
+export function inferSlackChannelType(
+  channelId: string,
+  channelName?: string,
+): string {
+  const name = (channelName || "").toLowerCase();
+  if (name === "directmessage" || channelId.startsWith("D")) return "im";
+  if (name === "mpdm" || name.startsWith("mpdm-")) return "mpim";
+  if (name === "privategroup" || channelId.startsWith("G")) return "group";
+  return "channel";
+}
+
 export function isChannelAllowed(
   channelId: string,
   channelType?: string,
