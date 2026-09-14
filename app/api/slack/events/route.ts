@@ -5,8 +5,8 @@
  * 1. url_verification → echo challenge
  * 2. Verify Slack signing secret
  * 3. Parse app_mention / message events
- * 4. Roster lookup → Regi task/Attention → Grok Bot handoff
- * 5. Reply in the same Slack thread
+ * 4. Roster lookup → Regi task/Attention → local Piper reply
+ * 5. Reply in the same Slack thread (never wake Grok Bot)
  *
  * Telnyx RCS for 4SL is unchanged (see /api/telnyx/webhook).
  */
@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       ignored: result.ignored ?? false,
       reason: result.reason,
       handoff: result.handoff,
+      replyKind: result.replyKind,
       task: result.task
         ? {
             id: result.task.id,

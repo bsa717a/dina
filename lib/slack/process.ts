@@ -1,27 +1,26 @@
 /**
  * Slack inbound processing for the Regi-only Piper bot.
  *
- * Flow (mirrors Telnyx):
+ * Flow:
  * 1. Ignore bots / disallowed channels / irrelevant subtypes
  * 2. Roster lookup (Slack user → Piper member)
  * 3. Unknown / not-on-Regi → clear reply asking Derek
  * 4. Create or update a Regi task + Attention item
- * 5. Hand off to Grok Bot Dina (same webhook as Telnyx)
- * 6. Reply in-thread only when Grok returns sync text, or when
- *    handoff is logged/error (local ledger ack). A successful async
- *    handoff (`sent` without reply.text) stays silent so outbound-slack
- *    can post the real answer later.
+ * 5. Reply in-thread from local Piper logic (remaining tasks, assignee
+ *    status, or ledger ack). Do not call Grok Bot / Old Dina.
+ *
+ * Telnyx RCS still uses lib/telnyx/handoff.ts — that path is unchanged.
  */
 
 import { logger } from "@/lib/logger";
 import { postSlackMessage } from "./client";
-import { handoffSlackToGrokBot } from "./handoff";
 import {
   findSlackThreadAttention,
   upsertSlackThreadLedger,
   stripSlackMentions,
 } from "./ledger";
 import { lookupBySlackUserId } from "./roster";
+import { buildSlackLocalReply } from "./reply";
 import {
   isChannelAllowed,
   isOwnBotMessage,
@@ -137,33 +136,30 @@ export async function processSlackInbound(
     roster,
   });
 
-  const handoffResult = await handoffSlackToGrokBot(cleanedEvent, roster);
+  const localReply = await buildSlackLocalReply({
+    text: cleanedEvent.text,
+    roster,
+    ledger,
+  });
 
-  let replyText = handoffResult.response?.ok
-    ? handoffResult.response.reply?.text
-    : undefined;
-
-  // Async handoff accepted: Dina will POST the real answer via outbound-slack.
-  // Do not invent a local ledger ack — that double-posts and misleads.
-  if (!replyText && handoffResult.status !== "sent") {
-    replyText = ledger.task.created
-      ? `Got it — logged on Regi as “${ledger.task.title}” (task #${ledger.task.number}).`
-      : `Updated Regi task #${ledger.task.number} (“${ledger.task.title}”).`;
-  }
+  logger.info("slack_local_reply", {
+    messageId: event.ts,
+    kind: localReply.kind,
+    taskNumber: ledger.task.number,
+  });
 
   return {
     handled: true,
     reason: "ok",
-    reply: replyText
-      ? {
-          text: replyText,
-          channelId: event.channelId,
-          threadTs: event.threadTs,
-        }
-      : undefined,
+    reply: {
+      text: localReply.text,
+      channelId: event.channelId,
+      threadTs: event.threadTs,
+    },
     task: ledger.task,
     attention: ledger.attention,
-    handoff: handoffResult.status,
+    handoff: "skipped",
+    replyKind: localReply.kind,
     roster,
   };
 }

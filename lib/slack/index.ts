@@ -5,7 +5,7 @@
  * - Events API signature verification
  * - Roster lookup (Slack user → teammate)
  * - Regi task + Attention ledger
- * - Grok Bot Dina handoff (same pattern as Telnyx)
+ * - Local in-thread replies (no Grok Bot wake)
  * - Threaded Slack replies
  */
 
@@ -17,4 +17,5 @@ export * from "./roster";
 export * from "./client";
 export * from "./handoff";
 export * from "./ledger";
+export * from "./reply";
 export * from "./process";
