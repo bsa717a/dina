@@ -5,7 +5,8 @@
  * 1. Ignore bots / disallowed channels / irrelevant subtypes
  * 2. Roster lookup (Slack user → Piper member)
  * 3. Unknown / not-on-Regi → clear reply asking Derek
- * 4. Create or update a Regi task + Attention item
+ * 4. Work requests: create or update a Regi task + Attention item.
+ *    List/status queries skip the ledger so they do not create junk tasks.
  * 5. Reply in-thread from local Piper logic (remaining tasks, assignee
  *    status, or ledger ack). Do not call Grok Bot / Old Dina.
  *
@@ -20,7 +21,7 @@ import {
   stripSlackMentions,
 } from "./ledger";
 import { lookupBySlackUserId } from "./roster";
-import { buildSlackLocalReply } from "./reply";
+import { buildSlackLocalReply, classifySlackLocalIntent } from "./reply";
 import {
   isChannelAllowed,
   isOwnBotMessage,
@@ -131,10 +132,14 @@ export async function processSlackInbound(
     textLength: cleanedEvent.text.length,
   });
 
-  const ledger = await upsertSlackThreadLedger({
-    event: cleanedEvent,
-    roster,
-  });
+  const intent = classifySlackLocalIntent(cleanedEvent.text);
+  const ledger =
+    intent === "ack"
+      ? await upsertSlackThreadLedger({
+          event: cleanedEvent,
+          roster,
+        })
+      : undefined;
 
   const localReply = await buildSlackLocalReply({
     text: cleanedEvent.text,
@@ -145,7 +150,7 @@ export async function processSlackInbound(
   logger.info("slack_local_reply", {
     messageId: event.ts,
     kind: localReply.kind,
-    taskNumber: ledger.task.number,
+    taskNumber: ledger?.task.number,
   });
 
   return {
@@ -156,8 +161,8 @@ export async function processSlackInbound(
       channelId: event.channelId,
       threadTs: event.threadTs,
     },
-    task: ledger.task,
-    attention: ledger.attention,
+    task: ledger?.task,
+    attention: ledger?.attention,
     handoff: "skipped",
     replyKind: localReply.kind,
     roster,
