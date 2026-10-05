@@ -158,6 +158,42 @@ export async function createMember(input: {
   return toAuthUser(user);
 }
 
+export class PasswordChangeError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "PasswordChangeError";
+    this.status = status;
+  }
+}
+
+export async function changePassword(input: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  const row = await prisma.user.findUnique({ where: { id: input.userId } });
+  if (!row) throw new PasswordChangeError("User not found.", 404);
+  if (!verifyPassword(input.currentPassword, row.passwordHash)) {
+    throw new PasswordChangeError("Current password is incorrect.", 401);
+  }
+  if (!isValidPassword(input.newPassword)) {
+    throw new PasswordChangeError("Password must be at least 10 characters.");
+  }
+  if (input.currentPassword === input.newPassword) {
+    throw new PasswordChangeError("Choose a password that is different from the current one.");
+  }
+
+  await prisma.user.update({
+    where: { id: row.id },
+    data: {
+      passwordHash: hashPassword(input.newPassword),
+      mustChangePassword: false,
+    },
+  });
+}
+
 export async function completeOnboarding(input: {
   userId: string;
   password: string;
