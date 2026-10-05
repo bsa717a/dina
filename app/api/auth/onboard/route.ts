@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
     const session = await getSession(request);
     session.needsOnboarding = false;
     session.role = updated.role;
+    session.sessionVersion = updated.sessionVersion ?? 0;
     await session.save();
     logger.info("onboarding_complete", {
       userId: updated.id,

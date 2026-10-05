@@ -26,6 +26,15 @@ export function isValidPassword(value: string): boolean {
   return value.length >= MIN_PASSWORD_LENGTH && value.length <= 256;
 }
 
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function isValidEmail(value: string): boolean {
+  const email = normalizeEmail(value);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200;
+}
+
 export function generateTempPassword(): string {
   const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = randomBytes(16);

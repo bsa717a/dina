@@ -17,6 +17,10 @@ model User {
   assistantKey       String?
   passwordHash       String
   mustChangePassword Boolean  @default(false)
+  /// Bumped when the password changes so older session cookies stop working.
+  sessionVersion     Int      @default(0)
+  /// Inbox for password reset mail. Null until an invite or the owner records one.
+  email              String?  @unique
   /// E.164 phone number for RCS/SMS roster lookup (e.g. +14352382071)
   phoneNumber        String?  @unique
   /// Slack user id for Regi-project roster lookup (e.g. U012ABCDEF)
@@ -32,9 +36,22 @@ model User {
   pushSubscriptions   PushSubscription[]
   uploadedAttachments Attachment[]
   morningBriefPreference MorningBriefPreference?
+  passwordResets         PasswordReset[]
 
   @@index([phoneNumber])
   @@index([slackUserId])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 /// Live project registry. Dina can create and archive these without a code change.

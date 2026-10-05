@@ -12,6 +12,7 @@ export type SessionData = {
   role?: UserRole;
   needsOnboarding?: boolean;
   createdAt?: number;
+  sessionVersion?: number;
 };
 
 export async function getSessionOptions(request?: {
@@ -51,7 +52,13 @@ export async function requireSession(): Promise<AuthUser | null> {
   if (!session.authenticated || !session.userId) {
     return null;
   }
-  return getUserById(session.userId);
+  const user = await getUserById(session.userId);
+  if (!user) return null;
+  if ((session.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) {
+    await session.destroy();
+    return null;
+  }
+  return user;
 }
 
 export async function requireOwner(): Promise<AuthUser | null> {

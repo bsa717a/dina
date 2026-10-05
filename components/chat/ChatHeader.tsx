@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChangePasswordDialog } from "@/components/chat/ChangePasswordDialog";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 import {
   homepageInstallHelp,
@@ -141,6 +142,7 @@ function HeaderActions({
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [alreadyInstalled, setAlreadyInstalled] = useState(false);
   const [installHelp, setInstallHelp] = useState<ReturnType<
     typeof homepageInstallHelp
@@ -253,12 +255,23 @@ function HeaderActions({
           <button
             type="button"
             role="menuitem"
+            onClick={() => run(() => setPasswordOpen(true))}
+            className="block w-full px-3 py-2 text-left text-xs text-[var(--muted)] hover:bg-[var(--background)]"
+          >
+            Change password
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             onClick={() => run(onSignOut)}
             className="block w-full px-3 py-2 text-left text-xs text-[var(--muted)] hover:bg-[var(--background)]"
           >
             Sign out
           </button>
         </div>
+      )}
+      {passwordOpen && (
+        <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />
       )}
       {installHelp &&
         createPortal(

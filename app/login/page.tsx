@@ -77,6 +77,12 @@ export default function LoginPage() {
           required
         />
 
+        <div className="mt-3 text-right">
+          <a href="/forgot-password" className="text-sm text-[var(--accent)] hover:underline">
+            Forgot password?
+          </a>
+        </div>
+
         {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
 
         <button
