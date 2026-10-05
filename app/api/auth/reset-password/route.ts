@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
 import { resetPassword, ResetPasswordError } from "@/lib/auth/password-reset";
 import { jsonError } from "@/lib/http";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,9 @@ export async function POST(request: NextRequest) {
     if (error instanceof ResetPasswordError) {
       return jsonError(error.message, error.status);
     }
+    logger.error("password_reset_failed", {
+      error: error instanceof Error ? error.message : "unknown",
+    });
     return jsonError("Could not reset password.");
   }
 }
