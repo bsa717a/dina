@@ -1,4 +1,9 @@
-import { generateTempPassword, isValidUsername, normalizeUsername } from "@/lib/auth/password";
+import {
+  generateTempPassword,
+  isValidEmail,
+  isValidUsername,
+  normalizeUsername,
+} from "@/lib/auth/password";
 import { createMember, findUserByUsername } from "@/lib/auth/users";
 import { getAppUrl } from "@/lib/env";
 import { getMicrosoftConfig, isMicrosoftConfigured } from "@/lib/microsoft/config";
@@ -11,10 +16,8 @@ import {
   type ProjectKey,
 } from "@/lib/project-tasks/keys";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export function isValidInviteEmail(value: string): boolean {
-  return EMAIL_RE.test(value.trim()) && value.trim().length <= 200;
+  return isValidEmail(value);
 }
 
 export function usernameFromName(name: string): string {
@@ -134,6 +137,7 @@ export async function inviteTeammate(input: {
     username,
     password,
     projectKeys,
+    email,
   });
 
   const message = buildInviteEmail({

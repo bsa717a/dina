@@ -2,8 +2,10 @@ import { prisma } from "@/lib/db/client";
 import { verifyAccessCode } from "@/lib/auth/access-code";
 import {
   hashPassword,
+  isValidEmail,
   isValidPassword,
   isValidUsername,
+  normalizeEmail,
   normalizeUsername,
   verifyPassword,
 } from "@/lib/auth/password";
@@ -71,6 +73,7 @@ export async function seedOwner(input?: {
   if (existing) return toAuthUser(existing);
 
   const password = input?.password ?? getAccessCode();
+  const ownerEmail = process.env.OWNER_EMAIL?.trim();
   const user = await prisma.user.create({
     data: {
       name: input?.name ?? OWNER_NAME,
@@ -81,6 +84,8 @@ export async function seedOwner(input?: {
       assistantKey: "dina",
       passwordHash: hashPassword(password),
       mustChangePassword: false,
+      email:
+        ownerEmail && isValidEmail(ownerEmail) ? normalizeEmail(ownerEmail) : null,
     },
   });
 
@@ -108,6 +113,7 @@ export async function createMember(input: {
   username: string;
   password: string;
   projectKeys: string[];
+  email?: string | null;
 }): Promise<AuthUser> {
   const name = input.name.trim();
   if (!name) throw new Error("Name is required.");
@@ -136,6 +142,16 @@ export async function createMember(input: {
   const taken = await prisma.user.findUnique({ where: { username } });
   if (taken) throw new Error(`Username "${username}" is already taken.`);
 
+  let email: string | null = null;
+  if (input.email?.trim()) {
+    if (!isValidEmail(input.email)) {
+      throw new Error("A valid email address is required.");
+    }
+    email = normalizeEmail(input.email);
+    const takenEmail = await prisma.user.findUnique({ where: { email } });
+    if (takenEmail) throw new Error("That email is already on an account.");
+  }
+
   const user = await prisma.user.create({
     data: {
       name,
@@ -146,6 +162,7 @@ export async function createMember(input: {
       assistantKey: null,
       passwordHash: hashPassword(input.password),
       mustChangePassword: true,
+      email,
       memberships: {
         create: keys.map((projectKey) => ({
           projectKey,

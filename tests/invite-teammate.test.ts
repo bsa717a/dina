@@ -180,6 +180,7 @@ describe("invite_teammate tool", () => {
         name: "Alex Rivera",
         username: "alex",
         projectKeys: ["4studentlives"],
+        email: "alex@4studentlives.com",
       }),
     );
     expect(graphRequest).toHaveBeenCalledWith(
