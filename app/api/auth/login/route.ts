@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
   session.userId = user.id;
   session.role = user.role;
   session.needsOnboarding = onboarding;
+  session.sessionVersion = user.sessionVersion ?? 0;
   session.createdAt = Date.now();
   await session.save();
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
-import { requireReadySession } from "@/lib/auth/session";
+import { getSession, requireReadySession } from "@/lib/auth/session";
 import { changePassword, PasswordChangeError } from "@/lib/auth/users";
 import { jsonError } from "@/lib/http";
 import { logger } from "@/lib/logger";
@@ -34,11 +34,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await changePassword({
+    const updated = await changePassword({
       userId: ready.user.id,
       currentPassword: parsed.data.currentPassword,
       newPassword: parsed.data.newPassword,
     });
+    const session = await getSession(request);
+    session.sessionVersion = updated.sessionVersion;
+    await session.save();
     logger.info("password_changed", { userId: ready.user.id });
     return NextResponse.json({ ok: true });
   } catch (error) {

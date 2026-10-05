@@ -104,11 +104,6 @@ export async function requestPasswordReset(
   });
   if (recent >= MAX_RESETS_PER_HOUR) return { delivered: false };
 
-  await prisma.passwordReset.updateMany({
-    where: { userId: user.id, usedAt: null },
-    data: { usedAt: new Date() },
-  });
-
   const token = randomBytes(32).toString("base64url");
   const created = await prisma.passwordReset.create({
     data: {
@@ -125,8 +120,6 @@ export async function requestPasswordReset(
 
   try {
     await sendMail({ to: email, subject: message.subject, body: message.body });
-    logger.info("password_reset_sent", { userId: user.id });
-    return { delivered: true };
   } catch (error) {
     await prisma.passwordReset.delete({ where: { id: created.id } }).catch(() => undefined);
     logger.error("password_reset_send_failed", {
@@ -135,6 +128,13 @@ export async function requestPasswordReset(
     });
     return { delivered: false };
   }
+
+  await prisma.passwordReset.updateMany({
+    where: { userId: user.id, usedAt: null, id: { not: created.id } },
+    data: { usedAt: new Date() },
+  });
+  logger.info("password_reset_sent", { userId: user.id });
+  return { delivered: true };
 }
 
 export async function resetPassword(input: {
@@ -163,6 +163,7 @@ export async function resetPassword(input: {
       data: {
         passwordHash: hashPassword(input.newPassword),
         mustChangePassword: false,
+        sessionVersion: { increment: 1 },
       },
     }),
     prisma.passwordReset.update({

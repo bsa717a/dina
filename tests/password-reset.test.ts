@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createHash } from "crypto";
-import { authenticateUser, createMember } from "@/lib/auth/users";
+import { authenticateUser, changePassword, createMember } from "@/lib/auth/users";
 import {
   buildResetEmail,
   requestPasswordReset,
@@ -62,10 +62,55 @@ describe("password reset", () => {
     const signedIn = await authenticateUser(username, "replacement-password");
     expect(signedIn?.id).toBe(member.id);
     expect(signedIn?.mustChangePassword).toBe(false);
+    expect(signedIn?.sessionVersion).toBe(1);
 
     await expect(
       resetPassword({ token, newPassword: "another-password-ok" }),
     ).rejects.toThrow(/invalid or has expired/i);
+  });
+
+  it("keeps an older link when the next email fails to send", async () => {
+    const username = `retry_${stamp}`;
+    const member = await createMember({
+      name: "Retry Tester",
+      username,
+      password: "temporary-password",
+      projectKeys: ["4studentlives"],
+      email: `${username}@example.com`,
+    });
+    userIds.push(member.id);
+    const sendMail = vi.fn(async (_input: { to: string; subject: string; body: string }) => undefined);
+    await requestPasswordReset(username, { sendMail, mailConfigured: true });
+    const token = tokenFromBody(sendMail.mock.calls[0][0].body);
+    sendMail.mockRejectedValueOnce(new Error("mailbox unavailable"));
+    const failed = await requestPasswordReset(username, { sendMail, mailConfigured: true });
+    expect(failed.delivered).toBe(false);
+    await resetPassword({ token, newPassword: "replacement-password" });
+    expect((await authenticateUser(username, "replacement-password"))?.id).toBe(member.id);
+  });
+
+  it("cancels an unused reset link when the password is changed", async () => {
+    const username = `cancel_${stamp}`;
+    const member = await createMember({
+      name: "Cancel Tester",
+      username,
+      password: "temporary-password",
+      projectKeys: ["4studentlives"],
+      email: `${username}@example.com`,
+    });
+    userIds.push(member.id);
+    const sendMail = vi.fn(async (_input: { to: string; subject: string; body: string }) => undefined);
+    await requestPasswordReset(username, { sendMail, mailConfigured: true });
+    const token = tokenFromBody(sendMail.mock.calls[0][0].body);
+    await changePassword({
+      userId: member.id,
+      currentPassword: "temporary-password",
+      newPassword: "changed-password-1",
+    });
+    await expect(
+      resetPassword({ token, newPassword: "another-password-ok" }),
+    ).rejects.toThrow(/invalid or has expired/i);
+    expect((await authenticateUser(username, "changed-password-1"))?.id).toBe(member.id);
   });
 
   it("answers the same way when the username is unknown", async () => {

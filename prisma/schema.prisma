@@ -17,6 +17,8 @@ model User {
   assistantKey       String?
   passwordHash       String
   mustChangePassword Boolean  @default(false)
+  /// Bumped when the password changes so older session cookies stop working.
+  sessionVersion     Int      @default(0)
   /// Inbox for password reset mail. Null until an invite or the owner records one.
   email              String?  @unique
   /// E.164 phone number for RCS/SMS roster lookup (e.g. +14352382071)

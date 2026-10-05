@@ -189,7 +189,7 @@ export async function changePassword(input: {
   userId: string;
   currentPassword: string;
   newPassword: string;
-}): Promise<void> {
+}): Promise<{ sessionVersion: number }> {
   const row = await prisma.user.findUnique({ where: { id: input.userId } });
   if (!row) throw new PasswordChangeError("User not found.", 404);
   if (!verifyPassword(input.currentPassword, row.passwordHash)) {
@@ -202,13 +202,22 @@ export async function changePassword(input: {
     throw new PasswordChangeError("Choose a password that is different from the current one.");
   }
 
-  await prisma.user.update({
-    where: { id: row.id },
-    data: {
-      passwordHash: hashPassword(input.newPassword),
-      mustChangePassword: false,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({
+      where: { id: row.id },
+      data: {
+        passwordHash: hashPassword(input.newPassword),
+        mustChangePassword: false,
+        sessionVersion: { increment: 1 },
+      },
+    });
+    await tx.passwordReset.updateMany({
+      where: { userId: row.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return user;
   });
+  return { sessionVersion: updated.sessionVersion };
 }
 
 export async function completeOnboarding(input: {
@@ -236,15 +245,23 @@ export async function completeOnboarding(input: {
   const profile = getAssistantProfile(input.assistantKey);
   if (!profile) throw new Error("Choose a valid assistant personality.");
 
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash: hashPassword(input.password),
-      mustChangePassword: false,
-      assistantKey: profile.key,
-      assistantName: profile.name,
-      assistantPersona: formatAssistantPersona(profile),
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: hashPassword(input.password),
+        mustChangePassword: false,
+        sessionVersion: { increment: 1 },
+        assistantKey: profile.key,
+        assistantName: profile.name,
+        assistantPersona: formatAssistantPersona(profile),
+      },
+    });
+    await tx.passwordReset.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return row;
   });
   return toAuthUser(updated);
 }

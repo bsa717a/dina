@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireReadySession = vi.fn();
 const changePassword = vi.fn();
+const save = vi.fn();
+const getSession = vi.fn(async () => ({ save }));
 
 vi.mock("@/lib/auth/session", () => ({
   requireReadySession: () => requireReadySession(),
+  getSession: () => getSession(),
 }));
 
 vi.mock("@/lib/auth/users", () => ({
@@ -43,8 +46,10 @@ describe("POST /api/auth/password", () => {
     vi.resetModules();
     requireReadySession.mockReset();
     changePassword.mockReset();
+    save.mockReset();
+    getSession.mockClear();
     requireReadySession.mockResolvedValue({ ok: true, user });
-    changePassword.mockResolvedValue(undefined);
+    changePassword.mockResolvedValue({ sessionVersion: 1 });
   });
 
   it("requires a signed-in user", async () => {
