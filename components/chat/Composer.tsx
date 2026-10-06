@@ -352,8 +352,8 @@ export const Composer = forwardRef<
                   aria-hidden="true"
                   className={
                     collapsedTaskLists[selectedProject.key]
-                      ? "inline-block h-0 w-0 translate-x-px border-y-[5px] border-l-[6px] border-y-transparent border-l-current"
-                      : "inline-block h-0 w-0 translate-y-px border-x-[5px] border-t-[6px] border-x-transparent border-t-current"
+                      ? "inline-block h-0 w-0 translate-x-px border-y-[6px] border-l-[8px] border-y-transparent border-l-current"
+                      : "inline-block h-0 w-0 translate-y-px border-x-[6px] border-t-[8px] border-x-transparent border-t-current"
                   }
                 />
               </button>
