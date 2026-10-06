@@ -31,8 +31,10 @@ model User {
   smsConsentsRecorded User[]  @relation("SmsConsentRecorder")
   /// How consent was captured: verbal, written, web_form, or in_person.
   smsConsentMethod   String?
-  /// Set when the handset texts STOP (or an alias). Cleared on START.
+  /// Set when the handset texts STOP (or an alias). Cleared only by START from that number.
   smsOptedOutAt      DateTime?
+  /// E.164 that texted STOP. Kept if the saved number is cleared or replaced, until that number replies START.
+  smsOptedOutPhone   String?
   /// Slack user id for Regi-project roster lookup (e.g. U012ABCDEF)
   slackUserId        String?  @unique
   createdAt          DateTime @default(now())

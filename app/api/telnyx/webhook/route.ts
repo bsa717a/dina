@@ -95,7 +95,7 @@ async function processInboundMessage(
 
     if (keyword.kind === "stop" || keyword.kind === "start") {
       try {
-        await applyInboundKeyword(roster.user.id, keyword.kind);
+        await applyInboundKeyword(roster.user.id, keyword.kind, from);
       } catch (error) {
         logger.error("telnyx_keyword_opt_out_failed", {
           messageId,

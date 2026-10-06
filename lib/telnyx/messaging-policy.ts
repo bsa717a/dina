@@ -28,13 +28,28 @@ export function isSmsConsentMethod(value: string): value is SmsConsentMethod {
   return (SMS_CONSENT_METHODS as readonly string[]).includes(value);
 }
 
+/**
+ * STOP sticks to the E.164 that sent it. A different saved number is not opted out.
+ * Rows that predate smsOptedOutPhone treat the number currently on file as the STOP number.
+ */
+export function isOptedOutForNumber(user: {
+  phoneNumber: string | null;
+  smsOptedOutAt: Date | string | null;
+  smsOptedOutPhone?: string | null;
+}): boolean {
+  if (!user.smsOptedOutAt || !user.phoneNumber?.trim()) return false;
+  if (!user.smsOptedOutPhone) return true;
+  return user.smsOptedOutPhone === user.phoneNumber;
+}
+
 export function sendBlockReason(user: {
   phoneNumber: string | null;
   smsConsentAt: Date | string | null;
   smsOptedOutAt: Date | string | null;
+  smsOptedOutPhone?: string | null;
 }): SendBlockReason | null {
   if (!user.phoneNumber?.trim()) return "no_phone";
-  if (user.smsOptedOutAt) return "opted_out";
+  if (isOptedOutForNumber(user)) return "opted_out";
   if (!user.smsConsentAt) return "no_consent";
   return null;
 }

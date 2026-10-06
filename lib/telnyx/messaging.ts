@@ -2,7 +2,8 @@
  * Admin and service-token sends, SMS consent, and STOP/START opt-out.
  *
  * Outbound sends require a mobile number, recorded consent, and no STOP
- * opt-out. Keyword replies (HELP, STOP, START) do not go through this gate.
+ * on that E.164. Owner edits never clear STOP. Keyword replies (HELP, STOP,
+ * START) do not go through this gate.
  */
 
 import { Prisma } from "@prisma/client";
@@ -14,6 +15,7 @@ import { isCarrierRegistrationPending } from "./errors";
 import type { TelnyxKeywordKind } from "./keywords";
 import {
   channelAttempt,
+  isOptedOutForNumber,
   isSmsConsentMethod,
   MessagingRequestError,
   normalizeLoggedChannel,
@@ -41,6 +43,7 @@ export interface MessagingUserSummary {
   smsConsentMethod: string | null;
   smsConsentBy: { id: string; name: string } | null;
   smsOptedOutAt: string | null;
+  smsOptedOutPhone: string | null;
   canSend: boolean;
   blockReason: SendBlockReason | null;
   blockMessage: string | null;
@@ -70,6 +73,7 @@ const userSelect = {
   smsConsentAt: true,
   smsConsentMethod: true,
   smsOptedOutAt: true,
+  smsOptedOutPhone: true,
   smsConsentBy: { select: { id: true, name: true } },
 } as const;
 
@@ -82,6 +86,7 @@ type MessagingUserRow = {
   smsConsentAt: Date | null;
   smsConsentMethod: string | null;
   smsOptedOutAt: Date | null;
+  smsOptedOutPhone: string | null;
   smsConsentBy: { id: string; name: string } | null;
 };
 
@@ -97,6 +102,7 @@ function toSummary(row: MessagingUserRow): MessagingUserSummary {
     smsConsentMethod: row.smsConsentMethod,
     smsConsentBy: row.smsConsentBy,
     smsOptedOutAt: row.smsOptedOutAt?.toISOString() ?? null,
+    smsOptedOutPhone: row.smsOptedOutPhone,
     canSend: blockReason == null,
     blockReason,
     blockMessage: blockReason ? SEND_BLOCK_MESSAGES[blockReason] : null,
@@ -151,18 +157,36 @@ export async function listMessagingUsers(): Promise<MessagingUserSummary[]> {
 export async function applyInboundKeyword(
   userId: string,
   kind: TelnyxKeywordKind,
+  rawPhone?: string,
 ): Promise<void> {
+  const phone = rawPhone ? normalizePhoneNumber(rawPhone) : "";
+  const optedOutPhone = isValidE164(phone) ? phone : null;
+
   if (kind === "stop") {
     await prisma.user.update({
       where: { id: userId },
-      data: { smsOptedOutAt: new Date() },
+      data: {
+        smsOptedOutAt: new Date(),
+        ...(optedOutPhone ? { smsOptedOutPhone: optedOutPhone } : {}),
+      },
     });
     return;
   }
   if (kind === "start") {
+    const row = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { smsOptedOutPhone: true },
+    });
+    if (
+      row?.smsOptedOutPhone &&
+      optedOutPhone &&
+      row.smsOptedOutPhone !== optedOutPhone
+    ) {
+      return;
+    }
     await prisma.user.update({
       where: { id: userId },
-      data: { smsOptedOutAt: null },
+      data: { smsOptedOutAt: null, smsOptedOutPhone: null },
     });
   }
 }
@@ -170,9 +194,14 @@ export async function applyInboundKeyword(
 export async function isSmsOptedOut(userId: string): Promise<boolean> {
   const row = await prisma.user.findUnique({
     where: { id: userId },
-    select: { smsOptedOutAt: true },
+    select: {
+      phoneNumber: true,
+      smsOptedOutAt: true,
+      smsOptedOutPhone: true,
+    },
   });
-  return Boolean(row?.smsOptedOutAt);
+  if (!row) return false;
+  return isOptedOutForNumber(row);
 }
 
 export async function updateUserPhoneConsent(input: {
@@ -223,7 +252,6 @@ export async function updateUserPhoneConsent(input: {
     consentMethod = method;
   }
 
-  const phoneChanged = (existing.phoneNumber ?? null) !== phoneNumber;
   const now = new Date();
 
   try {
@@ -234,7 +262,6 @@ export async function updateUserPhoneConsent(input: {
         smsConsentAt: input.consent ? now : null,
         smsConsentByUserId: input.consent ? input.actorUserId : null,
         smsConsentMethod: input.consent ? consentMethod : null,
-        ...(phoneChanged ? { smsOptedOutAt: null } : {}),
       },
       select: userSelect,
     });
@@ -363,6 +390,32 @@ export async function sendToPhoneOrUser(input: {
 }): Promise<SendToUserResult | { raw: true; result: SendMessageResult }> {
   const phoneNumber = normalizePhoneNumber(input.to);
   if (isValidE164(phoneNumber)) {
+    const optedOut = await prisma.user.findFirst({
+      where: {
+        smsOptedOutPhone: phoneNumber,
+        smsOptedOutAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (optedOut) {
+      const channel = channelAttempt(input.channel);
+      await writeLog({
+        actor: input.actor,
+        recipientUserId: optedOut.id,
+        toPhone: phoneNumber,
+        channel,
+        status: "blocked",
+        error: SEND_BLOCK_MESSAGES.opted_out,
+      });
+      return {
+        ok: false,
+        status: 409,
+        error: SEND_BLOCK_MESSAGES.opted_out,
+        code: "opted_out",
+        channel,
+      };
+    }
+
     const user = await prisma.user.findUnique({
       where: { phoneNumber },
       select: { id: true },

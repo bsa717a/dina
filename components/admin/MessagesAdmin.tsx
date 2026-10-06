@@ -15,6 +15,7 @@ type MessagingUser = {
   smsConsentMethod: string | null;
   smsConsentBy: { id: string; name: string } | null;
   smsOptedOutAt: string | null;
+  smsOptedOutPhone?: string | null;
   canSend: boolean;
   blockReason: BlockReason | null;
   blockMessage: string | null;
@@ -41,7 +42,7 @@ function methodLabel(method: string | null) {
 }
 
 function statusLabel(user: MessagingUser) {
-  if (user.smsOptedOutAt) return "Opted out";
+  if (user.blockReason === "opted_out") return "Opted out";
   if (!user.phoneNumber) return "No number";
   if (!user.smsConsentAt) return "No consent";
   return "Ready";
@@ -556,10 +557,15 @@ function PhoneForm({
                 {user.smsConsentMethod ? methodLabel(user.smsConsentMethod) : "—"}
               </dd>
             </div>
-            {user.smsOptedOutAt && (
+            {user.blockReason === "opted_out" && user.smsOptedOutAt && (
               <div className="text-[var(--danger)]">
-                Opted out {formatWhen(user.smsOptedOutAt)} MT. A START reply clears this.
-                Changing the number also clears it.
+                Opted out {formatWhen(user.smsOptedOutAt)} MT. A START reply from this
+                number clears it. Saving this number again does not.
+              </div>
+            )}
+            {user.smsOptedOutPhone && user.phoneNumber !== user.smsOptedOutPhone && (
+              <div className="text-[var(--muted)]">
+                {user.smsOptedOutPhone} is still opted out until that number replies START.
               </div>
             )}
           </dl>

@@ -334,7 +334,7 @@ describe("POST /api/telnyx/webhook", () => {
       TELNYX_KEYWORD_REPLIES.stop,
       true,
     );
-    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "stop");
+    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "stop", "+19044030781");
     expect(mockApplyKeyword.mock.invocationCallOrder[0]).toBeLessThan(
       mockReply.mock.invocationCallOrder[0],
     );
@@ -351,7 +351,11 @@ describe("POST /api/telnyx/webhook", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "start");
+    expect(mockApplyKeyword).toHaveBeenCalledWith(
+      "user-1",
+      "start",
+      "+19044030781",
+    );
     expect(mockReply).toHaveBeenCalledWith(
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.start,
