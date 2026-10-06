@@ -19,11 +19,13 @@ export interface TaskChangePayload {
     title: string;
     description: string;
     status: ProjectTaskStatus;
+    section?: string | null;
   };
   changes?: {
     status?: ProjectTaskStatus;
     title?: string;
     description?: string;
+    section?: string | null;
   };
 }
 

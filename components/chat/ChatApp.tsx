@@ -745,6 +745,11 @@ export function ChatApp() {
           if (!selectedProject) return;
           void showRemainingTasks(selectedProject);
         }}
+        onProjectBoardChange={() => {
+          const project = selectedProjectRef.current;
+          if (!project) return;
+          void showRemainingTasks(project);
+        }}
         onSend={handleSend}
       />
     </div>

@@ -9,6 +9,7 @@ describe("action receipts", () => {
     expect(isMutatingTool("move_onedrive_item")).toBe(true);
     expect(isMutatingTool("write_onedrive_file")).toBe(true);
     expect(isMutatingTool("send_email")).toBe(true);
+    expect(isMutatingTool("add_project_section")).toBe(true);
     expect(isMutatingTool("get_onedrive_item")).toBe(false);
     expect(isMutatingTool("list_calendar_events")).toBe(false);
   });

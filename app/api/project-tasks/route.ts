@@ -11,6 +11,7 @@ import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { formatRemainingTasksMessage } from "@/lib/project-tasks/format";
 import { displayProjectName } from "@/lib/project-tasks/keys";
 import { userCanAccessProject } from "@/lib/project-tasks/membership";
+import { listProjectSections } from "@/lib/project-tasks/sections";
 import { listProjectTasks } from "@/lib/project-tasks/store";
 
 export const runtime = "nodejs";
@@ -22,21 +23,31 @@ const projectSchema = z.object({
 async function remainingForProject(user: AuthUser, rawProject: string) {
   const key = await userCanAccessProject(user, rawProject);
   if (!key) return null;
-  const tasks = await listProjectTasks({ project: key });
+  const [tasks, sections] = await Promise.all([
+    listProjectTasks({ project: key }),
+    listProjectSections(key),
+  ]);
   const name = displayProjectName(key);
   return {
     project: { key, name },
+    sections: sections.map((section) => ({
+      id: section.id,
+      name: section.name,
+    })),
     tasks: tasks.map((task) => ({
       number: task.number,
       id: task.id,
       title: task.title,
       description: task.description,
       status: task.status,
+      sectionId: task.sectionId,
+      sectionName: task.sectionName,
     })),
     markdown: formatRemainingTasksMessage({
       projectKey: key,
       projectName: name,
       tasks,
+      sections,
     }),
   };
 }

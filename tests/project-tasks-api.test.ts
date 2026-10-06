@@ -34,12 +34,18 @@ const listProjectTasks = vi.fn(async () => [
     source: "test",
     createdByUserId: null,
     assigneeUserId: null,
+    sectionId: null,
+    sectionName: null,
     completedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     number: 1,
   },
 ]);
+
+vi.mock("@/lib/project-tasks/sections", () => ({
+  listProjectSections: vi.fn(async () => []),
+}));
 
 vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks,

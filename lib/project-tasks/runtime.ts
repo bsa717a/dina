@@ -2,6 +2,7 @@ import {
   formatRemainingTasksRuntime,
   remainingTaskGroupsFromLists,
 } from "@/lib/project-tasks/format";
+import { listProjectSections } from "@/lib/project-tasks/sections";
 import { listProjectTasks } from "@/lib/project-tasks/store";
 
 export async function loadRemainingTasksBlocks(
@@ -15,6 +16,7 @@ export async function loadRemainingTasksBlocks(
     unique.map(async (projectKey) => ({
       projectKey,
       tasks: await listProjectTasks({ project: projectKey }),
+      sections: await listProjectSections(projectKey),
     })),
   );
   return formatRemainingTasksRuntime(remainingTaskGroupsFromLists(lists));

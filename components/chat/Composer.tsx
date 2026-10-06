@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ProjectAddButton, ProjectBoard } from "@/components/chat/ProjectBoard";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
@@ -50,6 +51,7 @@ export const Composer = forwardRef<
     projectSelectDisabled?: boolean;
     onSelectProject?: (project: UserProject | null) => void;
     onShowRemaining?: () => void;
+    onProjectBoardChange?: () => void;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
 >(function Composer(
@@ -60,6 +62,7 @@ export const Composer = forwardRef<
     projectSelectDisabled,
     onSelectProject,
     onShowRemaining,
+    onProjectBoardChange,
     onSend,
   },
   ref,
@@ -69,6 +72,7 @@ export const Composer = forwardRef<
   const [listening, setListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sectionsReload, setSectionsReload] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -258,7 +262,7 @@ export const Composer = forwardRef<
 
         {error && <p className="mb-2 text-xs text-[var(--danger)]">{error}</p>}
 
-        <div className="mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <ProjectsPill
             projects={projects}
             selected={selectedProject}
@@ -266,7 +270,29 @@ export const Composer = forwardRef<
             onSelectProject={onSelectProject}
             onShowRemaining={onShowRemaining}
           />
+          {selectedProject && (
+            <ProjectAddButton
+              key={selectedProject.key}
+              project={selectedProject}
+              disabled={disabled || projectSelectDisabled}
+              refreshKey={sectionsReload}
+              onChanged={() => {
+                setSectionsReload((value) => value + 1);
+                onProjectBoardChange?.();
+              }}
+            />
+          )}
         </div>
+
+        {selectedProject && (
+          <ProjectBoard
+            key={selectedProject.key}
+            project={selectedProject}
+            disabled={disabled}
+            refreshKey={sectionsReload}
+            onChanged={onProjectBoardChange}
+          />
+        )}
 
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-[var(--shadow)]">
           <div className="flex shrink-0 gap-1 pb-0.5">

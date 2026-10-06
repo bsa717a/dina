@@ -19,7 +19,18 @@ export type ProjectTaskRecord = {
   source: string;
   createdByUserId: string | null;
   assigneeUserId: string | null;
+  sectionId: string | null;
+  sectionName: string | null;
   completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ProjectSectionRecord = {
+  id: string;
+  projectKey: string;
+  name: string;
+  sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
 };

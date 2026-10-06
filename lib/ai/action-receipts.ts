@@ -17,6 +17,7 @@ export const MUTATING_TOOLS = new Set([
   "create_project",
   "archive_project",
   "add_project_task",
+  "add_project_section",
   "complete_project_task",
   "update_project_task",
   // Microsoft mail / calendar / files

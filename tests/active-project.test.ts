@@ -67,6 +67,8 @@ describe("remaining task runtime", () => {
     source: "test",
     createdByUserId: null,
     assigneeUserId: null,
+    sectionId: null,
+    sectionName: null,
     completedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -105,6 +107,54 @@ describe("remaining task runtime", () => {
         tasks: [],
       }),
     ).toBe("No remaining tasks for Dina.");
+  });
+
+  it("groups a project's tasks under its sections", () => {
+    const sales = {
+      ...task,
+      id: "t-sales",
+      title: "Call the district",
+      number: 1,
+      sectionId: "sec-sales",
+      sectionName: "Sales",
+    };
+    const loose = {
+      ...task,
+      id: "t-loose",
+      title: "Update the site",
+      number: 2,
+    };
+    expect(
+      formatRemainingTasksMessage({
+        projectKey: "4studentlives",
+        projectName: "4StudentLives",
+        tasks: [sales, loose],
+        sections: [{ id: "sec-sales", name: "Sales" }],
+      }),
+    ).toBe(
+      [
+        "Remaining tasks for 4StudentLives:",
+        "",
+        "Sales",
+        "1. Call the district",
+        "",
+        "Ungrouped",
+        "2. Update the site",
+      ].join("\n"),
+    );
+
+    const runtime = formatRemainingTasksRuntime([
+      {
+        projectKey: "4studentlives",
+        projectName: "4StudentLives",
+        tasks: [sales, loose],
+        sections: [{ id: "sec-sales", name: "Sales" }],
+      },
+    ]);
+    expect(runtime).toContain("Sales");
+    expect(runtime).toContain("1. [open] Call the district");
+    expect(runtime).toContain("Ungrouped");
+    expect(runtime).toContain("2. [open] Update the site");
   });
 
   it("formats a one-line remaining snapshot for the composer strip", () => {

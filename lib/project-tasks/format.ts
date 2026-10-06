@@ -5,15 +5,62 @@ export type RemainingTaskGroup = {
   projectKey: string;
   projectName: string;
   tasks: NumberedProjectTask[];
+  sections?: Array<{ id: string; name: string }>;
 };
 
+function taskBuckets(
+  tasks: NumberedProjectTask[],
+  sections: Array<{ id: string; name: string }> | undefined,
+): {
+  groups: Array<{ name: string; tasks: NumberedProjectTask[] }>;
+  ungrouped: NumberedProjectTask[];
+  hasSections: boolean;
+} {
+  const named = (sections ?? []).map((section) => ({
+    id: section.id,
+    name: section.name,
+    tasks: [] as NumberedProjectTask[],
+  }));
+  const byId = new Map(named.map((group) => [group.id, group]));
+  const extras = new Map<string, { name: string; tasks: NumberedProjectTask[] }>();
+  const ungrouped: NumberedProjectTask[] = [];
+
+  for (const task of tasks) {
+    const known = task.sectionId ? byId.get(task.sectionId) : undefined;
+    if (known) {
+      known.tasks.push(task);
+      continue;
+    }
+    const label = task.sectionName?.trim();
+    if (label) {
+      const key = label.toLowerCase();
+      const extra = extras.get(key) ?? { name: label, tasks: [] };
+      extra.tasks.push(task);
+      extras.set(key, extra);
+      continue;
+    }
+    ungrouped.push(task);
+  }
+
+  const groups = [
+    ...named.map((group) => ({ name: group.name, tasks: group.tasks })),
+    ...extras.values(),
+  ];
+  return { groups, ungrouped, hasSections: groups.length > 0 };
+}
+
 export function remainingTaskGroupsFromLists(
-  lists: Array<{ projectKey: string; tasks: NumberedProjectTask[] }>,
+  lists: Array<{
+    projectKey: string;
+    tasks: NumberedProjectTask[];
+    sections?: Array<{ id: string; name: string }>;
+  }>,
 ): RemainingTaskGroup[] {
   return lists.map((list) => ({
     projectKey: list.projectKey,
     projectName: displayProjectName(list.projectKey),
     tasks: list.tasks,
+    sections: list.sections,
   }));
 }
 
@@ -33,18 +80,38 @@ export function formatRemainingTasksRuntime(
   for (const group of groups) {
     lines.push(`${group.projectName} (key: ${group.projectKey}):`);
     if (!group.tasks.length) {
+      if (group.sections?.length) {
+        lines.push(
+          `Sections: ${group.sections.map((section) => section.name).join(", ")}`,
+        );
+      }
       lines.push("- (none remaining)");
       lines.push(
         `There is no task #1 on ${group.projectName}. Do not use an earlier chat list from another project.`,
       );
       continue;
     }
-    for (const task of group.tasks) {
-      lines.push(taskLine(task));
+    const grouped = taskBuckets(group.tasks, group.sections);
+    if (!grouped.hasSections) {
+      for (const task of group.tasks) {
+        lines.push(taskLine(task));
+      }
+      continue;
+    }
+    for (const section of grouped.groups) {
+      lines.push(section.name);
+      if (!section.tasks.length) lines.push("- (none yet)");
+      else {
+        for (const task of section.tasks) lines.push(taskLine(task));
+      }
+    }
+    if (grouped.ungrouped.length) {
+      lines.push("Ungrouped");
+      for (const task of grouped.ungrouped) lines.push(taskLine(task));
     }
   }
   lines.push(
-    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. Never show task IDs or UUIDs — numbered titles only. Do not invent sub-bullets, owners, timelines, or implementation plans unless asked to break a task down. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task.",
+    "Numbers are 1-based remaining lists per project. Recite this block when asked for remaining tasks. When it has section headings, keep them — a section groups that project's tasks. Never show task IDs, section IDs, or UUIDs — numbered titles only. Do not invent sub-bullets, owners, timelines, or implementation plans unless asked to break a task down. Do not call list_project_tasks just to read it. Call list_project_tasks only for includeDone, a status filter, or a project not listed here. Writes still use add_project_task / complete_project_task / update_project_task / add_project_section.",
   );
   return lines.join("\n");
 }
@@ -182,10 +249,26 @@ export function formatRemainingTaskLines(
 
 /** User-facing remaining list. No model involved. */
 export function formatRemainingTasksMessage(group: RemainingTaskGroup): string {
-  if (!group.tasks.length) {
+  const grouped = taskBuckets(group.tasks, group.sections);
+  if (!group.tasks.length && !grouped.hasSections) {
     return `No remaining tasks for ${group.projectName}.`;
   }
+  if (!grouped.hasSections) {
+    const lines = [`Remaining tasks for ${group.projectName}:`, ""];
+    lines.push(...formatRemainingTaskLines(group.tasks));
+    return lines.join("\n");
+  }
+
   const lines = [`Remaining tasks for ${group.projectName}:`, ""];
-  lines.push(...formatRemainingTaskLines(group.tasks));
-  return lines.join("\n");
+  for (const section of grouped.groups) {
+    lines.push(section.name);
+    if (!section.tasks.length) lines.push("(none yet)");
+    else lines.push(...formatRemainingTaskLines(section.tasks));
+    lines.push("");
+  }
+  if (grouped.ungrouped.length) {
+    lines.push("Ungrouped");
+    lines.push(...formatRemainingTaskLines(grouped.ungrouped));
+  }
+  return lines.join("\n").trimEnd();
 }

@@ -65,6 +65,8 @@ function task(partial: {
     source: "chat",
     createdByUserId: null,
     assigneeUserId: partial.assigneeUserId ?? null,
+    sectionId: null,
+    sectionName: null,
     completedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),

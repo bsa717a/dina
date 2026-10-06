@@ -10,10 +10,16 @@ import {
   assertUserCanAccessProjectKey,
 } from "@/lib/project-tasks/membership";
 import {
+  addProjectSection,
+  ensureProjectSection,
+  listProjectSections,
+} from "@/lib/project-tasks/sections";
+import {
   addProjectTask,
   completeProjectTask,
   getProjectTask,
   listProjectTasks,
+  remainingTaskNumber,
   resolveProjectTask,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
@@ -65,6 +71,7 @@ function publicTask(task: {
   description: string;
   status: string;
   projectKey: string;
+  sectionName?: string | null;
   number?: number;
 }) {
   return {
@@ -74,9 +81,24 @@ function publicTask(task: {
     title: task.title,
     description: task.description,
     status: task.status,
+    section: task.sectionName ?? null,
     projectKey: task.projectKey,
     projectName: displayProjectName(task.projectKey),
   };
+}
+
+/** undefined = leave the section alone. null = ungroup. string = section id. */
+async function sectionIdFromArgs(
+  projectKey: string,
+  section: unknown,
+): Promise<string | null | undefined> {
+  if (section === undefined) return undefined;
+  if (section === null) return null;
+  if (typeof section !== "string") throw new Error("Section must be a name.");
+  const trimmed = section.trim();
+  if (!trimmed) return null;
+  const row = await ensureProjectSection({ project: projectKey, name: trimmed });
+  return row.id;
 }
 
 const handlers: Record<
@@ -103,9 +125,33 @@ const handlers: Record<
       ).length,
     });
   },
+  list_project_sections: async (args) => {
+    const project = projectArgOrActive(args);
+    const key = await requireProjectAccess(project);
+    const sections = await listProjectSections(key);
+    return ok({
+      projectKey: key,
+      projectName: displayProjectName(key),
+      sections: sections.map((section) => ({ name: section.name })),
+      count: sections.length,
+    });
+  },
+  add_project_section: async (args) => {
+    const project = await requireProjectAccess(projectArgOrActive(args));
+    const section = await addProjectSection({
+      project,
+      name: String(args.name || ""),
+    });
+    return ok({
+      projectKey: project,
+      projectName: displayProjectName(project),
+      section: section.name,
+    });
+  },
   add_project_task: async (args) => {
     const project = await requireProjectAccess(projectArgOrActive(args));
     const user = getRequestUser();
+    const sectionId = await sectionIdFromArgs(project, args.section);
     const task = await addProjectTask({
       project,
       title: String(args.title || ""),
@@ -114,6 +160,7 @@ const handlers: Record<
       status: asStatus(args.status) === "in_progress" ? "in_progress" : "open",
       source: "chat",
       createdByUserId: user?.id,
+      ...(sectionId ? { sectionId } : {}),
     });
     const remaining = await listProjectTasks({ project });
     const number = remaining.find((t) => t.id === task.id)?.number;
@@ -148,13 +195,17 @@ const handlers: Record<
             });
           })();
     await requireTaskAccess(resolved.id);
+    const sectionId = await sectionIdFromArgs(resolved.projectKey, args.section);
     const task = await updateProjectTask(resolved.id, {
       title: typeof args.title === "string" ? args.title : undefined,
       description:
         typeof args.description === "string" ? args.description : undefined,
       status: asStatus(args.status),
+      ...(sectionId !== undefined ? { sectionId } : {}),
     });
-    return ok({ task: publicTask({ ...task, number: resolved.number }) });
+    const number =
+      (await remainingTaskNumber(resolved.projectKey, task.id)) ?? resolved.number;
+    return ok({ task: publicTask({ ...task, number }) });
   },
 };
 
