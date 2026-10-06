@@ -701,6 +701,7 @@ export function ChatApp() {
         onTestPush={() => void testPush()}
         onSignOut={() => void signOut()}
         isOwner={userRole === "owner"}
+        canSetUserPassword={userRole === "owner"}
       />
       {error && (
         <div className="mx-auto w-full max-w-3xl px-4 pt-2 sm:px-6">

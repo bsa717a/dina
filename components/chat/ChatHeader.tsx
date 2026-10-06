@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChangePasswordDialog } from "@/components/chat/ChangePasswordDialog";
+import { SetUserPasswordDialog } from "@/components/chat/SetUserPasswordDialog";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 import {
   homepageInstallHelp,
@@ -30,6 +31,7 @@ export function ChatHeader({
   onTestPush,
   onSignOut,
   isOwner = false,
+  canSetUserPassword = false,
 }: {
   assistantName?: string;
   assistantKey?: string | null;
@@ -47,6 +49,7 @@ export function ChatHeader({
   onTestPush: () => void;
   onSignOut: () => void;
   isOwner?: boolean;
+  canSetUserPassword?: boolean;
 }) {
   const color =
     status === "online"
@@ -120,6 +123,7 @@ export function ChatHeader({
           onTestPush={onTestPush}
           onSignOut={onSignOut}
           isOwner={isOwner}
+          canSetUserPassword={canSetUserPassword}
         />
       </div>
     </header>
@@ -136,6 +140,7 @@ function HeaderActions({
   onTestPush,
   onSignOut,
   isOwner,
+  canSetUserPassword,
 }: {
   assistantName: string;
   assistantKey: string | null;
@@ -146,9 +151,11 @@ function HeaderActions({
   onTestPush: () => void;
   onSignOut: () => void;
   isOwner: boolean;
+  canSetUserPassword: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [userPasswordOpen, setUserPasswordOpen] = useState(false);
   const [alreadyInstalled, setAlreadyInstalled] = useState(false);
   const [installHelp, setInstallHelp] = useState<ReturnType<
     typeof homepageInstallHelp
@@ -268,6 +275,16 @@ function HeaderActions({
               Text a teammate
             </Link>
           )}
+          {canSetUserPassword && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(() => setUserPasswordOpen(true))}
+              className="block w-full px-3 py-2 text-left text-xs text-[var(--muted)] hover:bg-[var(--background)]"
+            >
+              Set a user&apos;s password
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -288,6 +305,9 @@ function HeaderActions({
       )}
       {passwordOpen && (
         <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />
+      )}
+      {userPasswordOpen && (
+        <SetUserPasswordDialog onClose={() => setUserPasswordOpen(false)} />
       )}
       {installHelp &&
         createPortal(

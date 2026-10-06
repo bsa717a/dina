@@ -202,17 +202,43 @@ export async function changePassword(input: {
     throw new PasswordChangeError("Choose a password that is different from the current one.");
   }
 
+  return replaceStoredPassword(row.id, input.newPassword);
+}
+
+export async function setPasswordForUser(input: {
+  actorId: string;
+  username: string;
+  newPassword: string;
+}): Promise<{ username: string; sessionVersion: number }> {
+  const actor = await prisma.user.findUnique({ where: { id: input.actorId } });
+  if (!actor || actor.role !== "owner") {
+    throw new PasswordChangeError("Only the owner can set another user's password.", 403);
+  }
+  const username = normalizeUsername(input.username);
+  if (!username) throw new PasswordChangeError("Username is required.");
+  const row = await prisma.user.findUnique({ where: { username } });
+  if (!row || row.role !== "member") {
+    throw new PasswordChangeError("No teammate found with that username.", 404);
+  }
+  if (!isValidPassword(input.newPassword)) {
+    throw new PasswordChangeError("Password must be at least 10 characters.");
+  }
+  const updated = await replaceStoredPassword(row.id, input.newPassword);
+  return { username: row.username, sessionVersion: updated.sessionVersion };
+}
+
+async function replaceStoredPassword(userId: string, newPassword: string) {
   const updated = await prisma.$transaction(async (tx) => {
     const user = await tx.user.update({
-      where: { id: row.id },
+      where: { id: userId },
       data: {
-        passwordHash: hashPassword(input.newPassword),
+        passwordHash: hashPassword(newPassword),
         mustChangePassword: false,
         sessionVersion: { increment: 1 },
       },
     });
     await tx.passwordReset.updateMany({
-      where: { userId: row.id, usedAt: null },
+      where: { userId, usedAt: null },
       data: { usedAt: new Date() },
     });
     return user;
