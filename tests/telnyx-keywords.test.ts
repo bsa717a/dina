@@ -6,6 +6,20 @@ import {
 } from "@/lib/telnyx/keywords";
 import { isRcsMessageType } from "@/lib/telnyx/inbound";
 
+describe("TELNYX_KEYWORD_REPLIES", () => {
+  it("uses the registered 4StudentLives campaign wording", () => {
+    expect(TELNYX_KEYWORD_REPLIES.help).toBe(
+      "4StudentLives: For help, reply HELP or contact us at +14352382071. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
+    );
+    expect(TELNYX_KEYWORD_REPLIES.stop).toBe(
+      "4StudentLives: You have been unsubscribed and will no longer receive messages from us. Reply HELP for assistance.",
+    );
+    expect(TELNYX_KEYWORD_REPLIES.start).toBe(
+      "You have agreed to receive SMS updates from 4StudentLives. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
+    );
+  });
+});
+
 describe("matchTelnyxKeyword", () => {
   it("matches HELP and INFO regardless of case or trailing punctuation", () => {
     for (const text of ["Help", "HELP", "help!", "INFO", "info."]) {

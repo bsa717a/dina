@@ -2,13 +2,14 @@
  * Telnyx RCS/SMS inbound webhook.
  *
  * Flow:
- * 1. Verify Telnyx webhook signature (when signing secret is configured)
+ * 1. Verify the Telnyx Ed25519 signature when TELNYX_PUBLIC_KEY is set
  * 2. Parse the webhook payload
  * 3. Look up sender in the roster (User table by phone number)
  * 4. HELP / STOP / START (and aliases) send a local Telnyx reply immediately
- *    (RCS agent when inbound type is RCS). These must not wait on Grok.
- * 5. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
- * 6. Send a Telnyx reply if Grok Bot returns sync `reply.text`
+ *    (RCS agent when inbound type is RCS). STOP persists opt-out; START clears it.
+ * 5. Other traffic from an opted-out user is not forwarded or answered
+ * 6. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
+ * 7. Send a Telnyx reply if Grok Bot returns sync `reply.text`
  *
  * Unknown numbers are safely rejected (logged, not auto-provisioned).
  */
@@ -27,6 +28,8 @@ import {
   extractInboundText,
   isRcsMessageType,
   matchTelnyxKeyword,
+  applyInboundKeyword,
+  isSmsOptedOut,
   normalizeInboundMessage,
   type TelnyxWebhookPayload,
   type TelnyxMessagePayload,
@@ -71,6 +74,19 @@ async function processInboundMessage(
 
   const keyword = matchTelnyxKeyword(text);
   if (keyword) {
+    if (keyword.kind === "stop" || keyword.kind === "start") {
+      try {
+        await applyInboundKeyword(roster.user.id, keyword.kind);
+      } catch (error) {
+        logger.error("telnyx_keyword_opt_out_failed", {
+          messageId,
+          userId: roster.user.id,
+          keyword: keyword.kind,
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
     const preferRcs = isRcsMessageType(message.type);
     const replyResult = await sendReply(from, keyword.text, preferRcs);
 
@@ -99,6 +115,21 @@ async function processInboundMessage(
       handoff: "skipped",
       roster,
       reply: replyResult,
+    };
+  }
+
+  if (await isSmsOptedOut(roster.user.id)) {
+    logger.info("telnyx_inbound_opted_out", {
+      messageId,
+      from,
+      userId: roster.user.id,
+    });
+    return {
+      messageId,
+      from,
+      handled: true,
+      handoff: "skipped",
+      roster,
     };
   }
 

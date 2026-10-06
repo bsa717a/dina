@@ -7,6 +7,8 @@ const mockVerify = vi.fn();
 const mockLookup = vi.fn();
 const mockHandoff = vi.fn();
 const mockReply = vi.fn();
+const mockApplyKeyword = vi.fn();
+const mockOptedOut = vi.fn();
 
 vi.mock("@/lib/telnyx", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/telnyx")>();
@@ -21,6 +23,8 @@ vi.mock("@/lib/telnyx", async (importOriginal) => {
     lookupByPhoneNumber: (...args: unknown[]) => mockLookup(...args),
     handoffToGrokBot: (...args: unknown[]) => mockHandoff(...args),
     sendReply: (...args: unknown[]) => mockReply(...args),
+    applyInboundKeyword: (...args: unknown[]) => mockApplyKeyword(...args),
+    isSmsOptedOut: (...args: unknown[]) => mockOptedOut(...args),
   };
 });
 
@@ -109,6 +113,10 @@ describe("POST /api/telnyx/webhook", () => {
     mockLookup.mockReset();
     mockHandoff.mockReset();
     mockReply.mockReset();
+    mockApplyKeyword.mockReset();
+    mockOptedOut.mockReset();
+    mockApplyKeyword.mockResolvedValue(undefined);
+    mockOptedOut.mockResolvedValue(false);
     mockConfigured.mockReturnValue(true);
     mockVerify.mockReturnValue({ valid: true });
     mockLookup.mockResolvedValue(knownRoster);
@@ -141,6 +149,7 @@ describe("POST /api/telnyx/webhook", () => {
     expect(body.reply).toEqual({ sent: true, type: "rcs" });
     expect(mockLookup).toHaveBeenCalledWith("+19044030781");
     expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockApplyKeyword).not.toHaveBeenCalled();
     expect(mockReply).toHaveBeenCalledWith(
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
@@ -325,6 +334,48 @@ describe("POST /api/telnyx/webhook", () => {
       TELNYX_KEYWORD_REPLIES.stop,
       true,
     );
+    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "stop");
+    expect(mockApplyKeyword.mock.invocationCallOrder[0]).toBeLessThan(
+      mockReply.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("clears opt-out on START before the campaign reply", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "UNSTOP" },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "start");
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.start,
+      true,
+    );
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("does not hand off conversational texts from an opted-out user", async () => {
+    mockOptedOut.mockResolvedValue(true);
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "What is on the 4SL backlog?" },
+        }),
+      ),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
   });
 
   it("ignores outbound / non-received events with 2xx", async () => {

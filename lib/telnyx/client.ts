@@ -14,6 +14,7 @@
 
 import { logger } from "@/lib/logger";
 import { getTelnyxConfig } from "./config";
+import { TelnyxApiError } from "./errors";
 import { isRcsMessageType } from "./inbound";
 import type {
   TelnyxMessageType,
@@ -73,7 +74,7 @@ async function telnyxRequest<T>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Telnyx API error ${response.status}: ${errorText}`);
+    throw new TelnyxApiError(response.status, errorText);
   }
 
   return response.json() as Promise<T>;
@@ -137,6 +138,10 @@ async function sendSmsMessage(
     method: "POST",
     body,
   });
+}
+
+function errorDetail(error: unknown): string | undefined {
+  return error instanceof TelnyxApiError ? error.body : undefined;
 }
 
 function rcsFailure(
@@ -221,7 +226,7 @@ export async function sendMessage(
       const errorMsg =
         rcsError instanceof Error ? rcsError.message : "RCS send failed";
       if (!allowSmsFallback) {
-        return rcsFailure(to, errorMsg);
+        return rcsFailure(to, errorMsg, { detail: errorDetail(rcsError) });
       }
       logger.warn("telnyx_rcs_failed_trying_sms", {
         to,
@@ -248,6 +253,7 @@ export async function sendMessage(
     logger.error("telnyx_send_failed", {
       to,
       error: errorMsg,
+      detail: errorDetail(smsError),
     });
     return {
       sent: false,

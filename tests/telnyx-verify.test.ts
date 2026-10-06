@@ -1,159 +1,115 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { createHmac } from "crypto";
+import { generateKeyPairSync, sign } from "crypto";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { verifyTelnyxSignature, extractSignatureHeaders } from "@/lib/telnyx/verify";
 
-const TEST_SECRET = "test-webhook-secret-12345";
 const TEST_BODY = '{"data":{"event_type":"message.received"}}';
 
-function generateValidSignature(
-  body: string,
-  timestamp: number,
-  secret: string,
-): string {
-  const signedPayload = `${timestamp}.${body}`;
-  return createHmac("sha256", secret).update(signedPayload).digest("hex");
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const spki = publicKey.export({ type: "spki", format: "der" }) as Buffer;
+const PUBLIC_KEY_B64 = spki.subarray(spki.length - 32).toString("base64");
+
+function signBody(body: string, timestamp: string): string {
+  const signature = sign(null, Buffer.from(`${timestamp}|${body}`), privateKey);
+  return signature.toString("base64");
 }
-
-const mockGetTelnyxConfig = vi.fn();
-
-vi.mock("@/lib/telnyx/config", () => ({
-  getTelnyxConfig: () => mockGetTelnyxConfig(),
-}));
 
 describe("verifyTelnyxSignature", () => {
   beforeEach(() => {
-    vi.resetModules();
-    mockGetTelnyxConfig.mockReset();
+    delete process.env.TELNYX_PUBLIC_KEY;
   });
 
-  it("accepts valid signatures", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: TEST_SECRET,
+  it("accepts a valid Ed25519 signature", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const result = verifyTelnyxSignature(TEST_BODY, signBody(TEST_BODY, timestamp), timestamp, {
+      publicKey: PUBLIC_KEY_B64,
     });
-
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = generateValidSignature(TEST_BODY, timestamp, TEST_SECRET);
-
-    const result = verifyTelnyxSignature(
-      TEST_BODY,
-      `v1=${signature}`,
-      String(timestamp),
-    );
-
     expect(result.valid).toBe(true);
+    expect(result.reason).toBeUndefined();
   });
 
-  it("rejects invalid signatures", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: TEST_SECRET,
-    });
-
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const timestamp = Math.floor(Date.now() / 1000);
-
+  it("rejects a signature for a different body", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
     const result = verifyTelnyxSignature(
       TEST_BODY,
-      "v1=0000000000000000000000000000000000000000000000000000000000000000",
-      String(timestamp),
+      signBody('{"other":true}', timestamp),
+      timestamp,
+      { publicKey: PUBLIC_KEY_B64 },
     );
-
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("signature_mismatch");
   });
 
-  it("rejects missing signature headers", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: TEST_SECRET,
+  it("rejects missing signature headers when the public key is set", () => {
+    const result = verifyTelnyxSignature(TEST_BODY, null, null, {
+      publicKey: PUBLIC_KEY_B64,
     });
-
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const result = verifyTelnyxSignature(TEST_BODY, null, null);
-
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("missing_signature_headers");
   });
 
-  it("rejects old timestamps", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: TEST_SECRET,
+  it("rejects stale timestamps", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000) - 600);
+    const result = verifyTelnyxSignature(TEST_BODY, signBody(TEST_BODY, timestamp), timestamp, {
+      publicKey: PUBLIC_KEY_B64,
     });
-
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const oldTimestamp = Math.floor(Date.now() / 1000) - 600;
-    const signature = generateValidSignature(
-      TEST_BODY,
-      oldTimestamp,
-      TEST_SECRET,
-    );
-
-    const result = verifyTelnyxSignature(
-      TEST_BODY,
-      `v1=${signature}`,
-      String(oldTimestamp),
-    );
-
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("timestamp_out_of_tolerance");
   });
 
-  it("rejects invalid timestamp format", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: TEST_SECRET,
+  it("rejects a non-numeric timestamp", () => {
+    const result = verifyTelnyxSignature(TEST_BODY, signBody(TEST_BODY, "123"), "not-a-number", {
+      publicKey: PUBLIC_KEY_B64,
     });
-
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const signature = generateValidSignature(TEST_BODY, 12345, TEST_SECRET);
-
-    const result = verifyTelnyxSignature(
-      TEST_BODY,
-      `v1=${signature}`,
-      "not-a-number",
-    );
-
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("invalid_timestamp");
   });
 
-  it("accepts requests when no signing secret is configured", async () => {
-    mockGetTelnyxConfig.mockReturnValue({
-      apiKey: "test-key",
-      rcsAgentId: "test-agent",
-      smsFrom: "+14352382071",
-      messagingProfileId: "test-profile",
-      webhookSigningSecret: null,
+  it("fails closed when the configured public key cannot verify", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const result = verifyTelnyxSignature(TEST_BODY, signBody(TEST_BODY, timestamp), timestamp, {
+      publicKey: "not-a-valid-key",
     });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("signature_verification_error");
+  });
 
-    const { verifyTelnyxSignature } = await import("@/lib/telnyx/verify");
-    const result = verifyTelnyxSignature(TEST_BODY, null, null, undefined);
-
+  it("accepts requests when no public key is configured", () => {
+    const result = verifyTelnyxSignature(TEST_BODY, null, null);
     expect(result.valid).toBe(true);
-    expect(result.reason).toBe("no_signing_secret_configured");
+    expect(result.reason).toBe("no_public_key_configured");
+  });
+
+  it("fails closed in production once TELNYX_PUBLIC_KEY is set", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("TELNYX_PUBLIC_KEY", PUBLIC_KEY_B64);
+    try {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const missing = verifyTelnyxSignature(TEST_BODY, null, null);
+      expect(missing.valid).toBe(false);
+      expect(missing.reason).toBe("missing_signature_headers");
+
+      const bad = verifyTelnyxSignature(
+        TEST_BODY,
+        signBody('{"tampered":true}', timestamp),
+        timestamp,
+      );
+      expect(bad.valid).toBe(false);
+      expect(bad.reason).toBe("signature_mismatch");
+
+      const good = verifyTelnyxSignature(
+        TEST_BODY,
+        signBody(TEST_BODY, timestamp),
+        timestamp,
+      );
+      expect(good.valid).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
 describe("extractSignatureHeaders", () => {
-  it("extracts telnyx-signature-ed25519 header", async () => {
-    const { extractSignatureHeaders } = await import("@/lib/telnyx/verify");
+  it("extracts telnyx-signature-ed25519 header", () => {
     const headers = new Headers();
     headers.set("telnyx-signature-ed25519", "sig123");
     headers.set("telnyx-timestamp", "1234567890");
@@ -164,8 +120,7 @@ describe("extractSignatureHeaders", () => {
     expect(result.timestamp).toBe("1234567890");
   });
 
-  it("falls back to telnyx-signature header", async () => {
-    const { extractSignatureHeaders } = await import("@/lib/telnyx/verify");
+  it("falls back to telnyx-signature header", () => {
     const headers = new Headers();
     headers.set("telnyx-signature", "sig456");
     headers.set("telnyx-timestamp", "1234567890");
@@ -176,10 +131,8 @@ describe("extractSignatureHeaders", () => {
     expect(result.timestamp).toBe("1234567890");
   });
 
-  it("returns null for missing headers", async () => {
-    const { extractSignatureHeaders } = await import("@/lib/telnyx/verify");
+  it("returns null for missing headers", () => {
     const headers = new Headers();
-
     const result = extractSignatureHeaders(headers);
 
     expect(result.signature).toBeNull();
