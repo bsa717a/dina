@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Kalam } from "next/font/google";
 import { requireSession } from "@/lib/auth/session";
 import { pwaIdentityForKey, type PwaIdentity } from "@/lib/pwa/identity";
 import "./globals.css";
@@ -13,6 +13,13 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const whiteboard = Kalam({
+  variable: "--font-whiteboard",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  display: "swap",
 });
 
 async function pwaIdentityFromSession(): Promise<PwaIdentity> {
@@ -65,7 +72,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${whiteboard.variable} h-full antialiased`}
     >
       <head>
         {/* Must run before React so drops never navigate to the file URL. */}

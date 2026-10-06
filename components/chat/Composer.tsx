@@ -52,6 +52,7 @@ export const Composer = forwardRef<
     onSelectProject?: (project: UserProject | null) => void;
     onShowRemaining?: () => void;
     onProjectBoardChange?: () => void;
+    ownerName?: string | null;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
 >(function Composer(
@@ -63,6 +64,7 @@ export const Composer = forwardRef<
     onSelectProject,
     onShowRemaining,
     onProjectBoardChange,
+    ownerName = null,
     onSend,
   },
   ref,
@@ -288,6 +290,7 @@ export const Composer = forwardRef<
           <ProjectBoard
             key={selectedProject.key}
             project={selectedProject}
+            ownerName={ownerName}
             disabled={disabled}
             refreshKey={sectionsReload}
             onChanged={onProjectBoardChange}
