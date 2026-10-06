@@ -1,5 +1,5 @@
 /**
- * Re-export shared mail triage (Outlook + Gmail).
+ * Re-export shared mail triage.
  * Prefer importing from @/lib/mail/triage in new code.
  */
 export {

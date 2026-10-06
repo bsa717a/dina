@@ -2,13 +2,6 @@ import {
   attentionProviderFromSourceId,
   providerIdFromSourceId,
 } from "@/lib/attention/provider";
-import {
-  extractGmailTextBody,
-  getGmailMessage,
-  htmlToText,
-  parseFromHeader,
-  summarizeGmailHeaders,
-} from "@/lib/google/gmail";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 
 type GraphAddress = {
@@ -51,22 +44,27 @@ function formatAddressList(list: unknown): AttentionEmailAddress[] {
     .filter((entry): entry is AttentionEmailAddress => Boolean(entry));
 }
 
-function displayAddress(name: string | null, address: string | null): AttentionEmailAddress | null {
-  if (!name && !address) return null;
-  const display =
-    name && address ? `${name} <${address}>` : name || address || "";
-  return { name, address, display };
-}
-
-function parseAddressList(raw: string | null): AttentionEmailAddress[] {
-  if (!raw?.trim()) return [];
-  return raw
-    .split(",")
-    .map((part) => {
-      const parsed = parseFromHeader(part.trim());
-      return displayAddress(parsed.name, parsed.address);
-    })
-    .filter((entry): entry is AttentionEmailAddress => Boolean(entry));
+function htmlToText(html: string) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 export function canViewAttentionEmail(source: string): boolean {
@@ -112,32 +110,15 @@ async function fetchMicrosoftEmail(messageId: string): Promise<AttentionEmailVie
   };
 }
 
-async function fetchGoogleEmail(messageId: string): Promise<AttentionEmailView> {
-  const full = await getGmailMessage(messageId, "full");
-  const summary = summarizeGmailHeaders(full);
-  const textBody = extractGmailTextBody(full);
-  const clipped = textBody.slice(0, 50_000);
-
-  return {
-    id: summary.id,
-    subject: summary.subject,
-    from: displayAddress(summary.fromName, summary.fromAddress),
-    to: parseAddressList(summary.to),
-    cc: parseAddressList(summary.cc),
-    receivedDateTime: summary.internalDate,
-    hasAttachments: false,
-    importance: null,
-    bodyText: clipped || summary.snippet || "(No body)",
-    bodyTruncated: textBody.length > clipped.length,
-    accountLabel: "personal",
-  };
-}
-
 export async function fetchAttentionEmail(
   sourceId: string,
 ): Promise<AttentionEmailView> {
-  const messageId = providerIdFromSourceId(sourceId);
   const provider = attentionProviderFromSourceId(sourceId);
-  if (provider === "google") return fetchGoogleEmail(messageId);
+  if (provider === "google") {
+    throw new Error(
+      "Personal Google mail is no longer available in Piper. Dina and Post handle Gmail.",
+    );
+  }
+  const messageId = providerIdFromSourceId(sourceId);
   return fetchMicrosoftEmail(messageId);
 }

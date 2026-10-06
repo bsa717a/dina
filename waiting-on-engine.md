@@ -116,7 +116,7 @@ Use connected systems that can open *and* resolve items:
 
 ### Future
 
-* Gmail
+* Personal Gmail and Google Calendar stay with Dina and Post, not a Piper connector
 * Calendar
 * Teams
 * SharePoint

@@ -713,5 +713,37 @@ export function getMicrosoftToolDefinitions(): FunctionTool[] {
       },
       required: ["teamId", "channelId", "messageId", "message"],
     }),
+    fn(
+      "list_mail_accounts",
+      "List the Work Microsoft 365 mail and calendar account configured in Piper. Personal Gmail and Google Calendar are not connected here.",
+      { properties: {} },
+    ),
+    fn(
+      "block_attention_sender",
+      "Block a sender email or @domain from future Work Attention scans. Does not delete mail. Example: user@example.com or @newsletters.com",
+      {
+        properties: {
+          target: {
+            type: "string",
+            description: "Email address or @domain to block from Attention.",
+          },
+          reason: { type: "string" },
+        },
+        required: ["target"],
+      },
+    ),
+    fn(
+      "unblock_attention_sender",
+      "Remove a sender or @domain from the Attention blocklist.",
+      {
+        properties: {
+          target: { type: "string" },
+        },
+        required: ["target"],
+      },
+    ),
+    fn("list_attention_blocks", "List durable Attention sender/domain blocks.", {
+      properties: {},
+    }),
   ];
 }

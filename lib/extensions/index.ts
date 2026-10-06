@@ -5,7 +5,6 @@
 
 import { isGitHubConfigured } from "@/lib/github/config";
 import { listGitHubToolNames } from "@/lib/github/tools";
-import { listGoogleToolNames } from "@/lib/google/tools";
 import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { listMicrosoftToolNames } from "@/lib/microsoft/tools";
 
@@ -39,7 +38,6 @@ export const extensions = {
     listTools() {
       return [
         ...(isMicrosoftConfigured() ? listMicrosoftToolNames() : []),
-        ...listGoogleToolNames(),
         ...(isGitHubConfigured() ? listGitHubToolNames() : []),
       ];
     },

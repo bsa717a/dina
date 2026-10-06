@@ -22,7 +22,6 @@ import {
   graphIdFromSourceId,
   recipientFromAttentionRaw,
 } from "@/lib/attention/send";
-import { getGmailMessage, sendGmailMessage } from "@/lib/google/gmail";
 import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { scheduleLearnFromAttentionAction } from "@/lib/learning/distill";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
@@ -234,36 +233,9 @@ export async function PATCH(
 
     try {
       if (provider === "google") {
-        if (!fromAddress) {
-          return jsonError(
-            "Could not determine recipient email for this personal Google draft.",
-          );
-        }
-        let threadId: string | undefined;
-        let inReplyTo: string | undefined;
-        if (item.source === "email") {
-          try {
-            const original = await getGmailMessage(resourceId, "metadata", [
-              "Message-ID",
-              "Message-Id",
-            ]);
-            threadId = original.threadId;
-            const headers = original.payload?.headers || [];
-            inReplyTo =
-              headers.find((h) => (h.name || "").toLowerCase() === "message-id")
-                ?.value || undefined;
-          } catch {
-            // still send as new mail
-          }
-        }
-        await sendGmailMessage({
-          to: fromAddress,
-          subject: subject || `Re: ${item.subject || ""}`,
-          body: body.trim(),
-          threadId,
-          inReplyTo,
-          references: inReplyTo,
-        });
+        return jsonError(
+          "Personal Google mail is no longer sent from Piper. Dina and Post handle Gmail.",
+        );
       } else if (item.source === "email") {
         // Reply on the original message when possible; otherwise compose new mail.
         // Never fall back to sendMail after createReply succeeded — that can

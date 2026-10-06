@@ -113,7 +113,6 @@ export function ChatApp() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
   const [microsoftEnabled, setMicrosoftEnabled] = useState(false);
-  const [googleEnabled, setGoogleEnabled] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -330,7 +329,6 @@ export function ChatApp() {
         const data = await cfg.json();
         setVapidPublicKey(data.vapidPublicKey);
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
-        setGoogleEnabled(Boolean(data.googleEnabled));
         if (typeof data.user?.id === "string") setUserId(data.user.id);
         if (data.user?.assistantName) setAssistantName(data.user.assistantName);
         if (typeof data.user?.assistantKey === "string") {
@@ -690,7 +688,6 @@ export function ChatApp() {
         avatarUrl={assistantAvatarUrl}
         status={status}
         microsoftEnabled={microsoftEnabled}
-        googleEnabled={googleEnabled}
         dayUsageLabel={dayUsageLabel}
         pushSupported={
           userRole !== "member" && pushSupported && Boolean(vapidPublicKey)
