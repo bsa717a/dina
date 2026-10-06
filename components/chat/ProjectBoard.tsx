@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
+import { whiteboardHeading } from "@/lib/client/whiteboard";
 
 type BoardSection = {
   id: string;
@@ -344,11 +345,13 @@ export function ProjectAddButton({
 
 export function ProjectBoard({
   project,
+  ownerName,
   disabled,
   refreshKey = 0,
   onChanged,
 }: {
   project: UserProject;
+  ownerName?: string | null;
   disabled?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
@@ -430,50 +433,45 @@ export function ProjectBoard({
     (task) => !task.sectionId || !sectionIds.has(task.sectionId),
   );
   const locked = Boolean(disabled || busy);
-
-  if (!ready) {
-    return (
-      <p className="mb-2 px-1 text-sm text-[var(--muted)]">Loading sections…</p>
-    );
-  }
-  if (!sections.length && !tasks.length && !error) return null;
+  const heading = whiteboardHeading(ownerName);
 
   return (
-    <div
-      data-testid="project-board"
-      className="mb-2 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]"
-    >
-      <div className="max-h-64 overflow-y-auto py-1">
-        {sections.map((section) => (
-          <section key={section.id} data-testid={`section-${section.name}`}>
-            <h3 className="px-3 pt-2 text-sm font-medium">{section.name}</h3>
-            <TaskList
-              tasks={tasks.filter((task) => task.sectionId === section.id)}
-              sections={sections}
-              locked={locked}
-              onMove={moveTask}
-            />
-          </section>
-        ))}
-        {ungrouped.length > 0 && (
-          <section data-testid="section-ungrouped">
-            <h3 className="px-3 pt-2 text-sm font-medium text-[var(--muted)]">
-              Ungrouped
-            </h3>
-            <TaskList
-              tasks={ungrouped}
-              sections={sections}
-              locked={locked}
-              onMove={moveTask}
-            />
-          </section>
+    <div data-testid="project-board" className="whiteboard">
+      <div className="whiteboard-surface">
+        <h2 className="whiteboard-title">{heading}</h2>
+        {!ready ? (
+          <p className="whiteboard-muted">Loading sections…</p>
+        ) : (
+          <div className="whiteboard-scroll">
+            {sections.map((section) => (
+              <section key={section.id} data-testid={`section-${section.name}`}>
+                <h3 className="whiteboard-section">{section.name}</h3>
+                <TaskList
+                  tasks={tasks.filter((task) => task.sectionId === section.id)}
+                  sections={sections}
+                  locked={locked}
+                  onMove={moveTask}
+                />
+              </section>
+            ))}
+            {ungrouped.length > 0 && (
+              <section data-testid="section-ungrouped">
+                <h3 className="whiteboard-section">Ungrouped</h3>
+                <TaskList
+                  tasks={ungrouped}
+                  sections={sections}
+                  locked={locked}
+                  onMove={moveTask}
+                />
+              </section>
+            )}
+            {!sections.length && !tasks.length && !error && (
+              <p className="whiteboard-muted">Nothing on the board yet.</p>
+            )}
+          </div>
         )}
+        {error && <p className="whiteboard-error">{error}</p>}
       </div>
-      {error && (
-        <p className="border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--danger)]">
-          {error}
-        </p>
-      )}
     </div>
   );
 }
@@ -490,7 +488,7 @@ function TaskList({
   onMove: (task: BoardTask, sectionId: string) => void;
 }) {
   if (!tasks.length) {
-    return <p className="px-3 py-1 text-xs text-[var(--muted)]">(none yet)</p>;
+    return <p className="whiteboard-muted">(none yet)</p>;
   }
   return (
     <ul>
@@ -499,7 +497,7 @@ function TaskList({
           key={task.id}
           className="flex items-center justify-between gap-2 px-3 py-1.5"
         >
-          <span className="min-w-0 flex-1 truncate text-sm">
+          <span className="whiteboard-task">
             {task.number}. {task.title}
           </span>
           {sections.length > 0 && (
@@ -513,7 +511,7 @@ function TaskList({
               }
               disabled={locked}
               onChange={(event) => onMove(task, event.target.value)}
-              className="max-w-[9rem] shrink-0 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs outline-none disabled:opacity-40"
+              className="whiteboard-select"
             >
               <option value="">Ungrouped</option>
               {sections.map((section) => (

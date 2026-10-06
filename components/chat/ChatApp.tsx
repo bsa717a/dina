@@ -19,6 +19,7 @@ import {
   filterRemainingTaskChatMessages,
   mergeRemainingTaskChatMessages,
 } from "@/lib/project-tasks/format";
+import { whiteboardOwnerName } from "@/lib/client/whiteboard";
 
 function dragEventHasFiles(
   e: Pick<DragEvent, "dataTransfer"> | Pick<React.DragEvent, "dataTransfer">,
@@ -132,6 +133,7 @@ export function ChatApp() {
   const [userRole, setUserRole] = useState<"owner" | "member" | null>(null);
   const [projects, setProjects] = useState<UserProject[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [boardOwnerName, setBoardOwnerName] = useState("");
   const [selectedProject, setSelectedProject] = useState<UserProject | null>(
     null,
   );
@@ -332,6 +334,13 @@ export function ChatApp() {
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
         setGoogleEnabled(Boolean(data.googleEnabled));
         if (typeof data.user?.id === "string") setUserId(data.user.id);
+        setBoardOwnerName(
+          whiteboardOwnerName({
+            name: typeof data.user?.name === "string" ? data.user.name : "",
+            username:
+              typeof data.user?.username === "string" ? data.user.username : "",
+          }),
+        );
         if (data.user?.assistantName) setAssistantName(data.user.assistantName);
         if (typeof data.user?.assistantKey === "string") {
           setAssistantKey(data.user.assistantKey);
@@ -750,6 +759,7 @@ export function ChatApp() {
           if (!project) return;
           void showRemainingTasks(project);
         }}
+        ownerName={boardOwnerName}
         onSend={handleSend}
       />
     </div>
