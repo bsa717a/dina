@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
 
@@ -19,13 +19,293 @@ type BoardTask = {
   sectionName: string | null;
 };
 
-export function ProjectBoard({
+type AddMode = "section" | "task" | null;
+
+export function ProjectAddButton({
   project,
   disabled,
+  refreshKey = 0,
   onChanged,
 }: {
   project: UserProject;
   disabled?: boolean;
+  refreshKey?: number;
+  onChanged?: () => void;
+}) {
+  const router = useRouter();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [mode, setMode] = useState<AddMode>(null);
+  const [sections, setSections] = useState<BoardSection[]>([]);
+  const [sectionName, setSectionName] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskSectionId, setTaskSectionId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(
+          `/api/project-sections?project=${encodeURIComponent(project.key)}`,
+        );
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        const data = (await res.json().catch(() => ({}))) as {
+          sections?: BoardSection[];
+        };
+        if (cancelled || !res.ok) return;
+        setSections(Array.isArray(data.sections) ? data.sections : []);
+      } catch {
+        if (!cancelled) setSections([]);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.key, refreshKey, router]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
+
+  async function send(body: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/project-sections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: project.key, ...body }),
+      });
+      if (res.status === 401) {
+        router.replace("/login");
+        return false;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Could not update the project.");
+      onChanged?.();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the project.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function choose(next: AddMode) {
+    setMenuOpen(false);
+    setError(null);
+    setMode(next);
+    if (next === "task") setTaskSectionId("");
+  }
+
+  function addSection(event: FormEvent) {
+    event.preventDefault();
+    const name = sectionName.trim();
+    if (!name || busy || disabled) return;
+    void send({ name }).then((ok) => {
+      if (!ok) return;
+      setSectionName("");
+      setMode(null);
+    });
+  }
+
+  function addTask(event: FormEvent) {
+    event.preventDefault();
+    const title = taskTitle.trim();
+    if (!title || busy || disabled) return;
+    void send({
+      title,
+      ...(taskSectionId ? { sectionId: taskSectionId } : {}),
+    }).then((ok) => {
+      if (!ok) return;
+      setTaskTitle("");
+      setTaskSectionId("");
+      setMode(null);
+    });
+  }
+
+  const locked = Boolean(disabled || busy);
+
+  return (
+    <div ref={rootRef} className="relative">
+      {menuOpen && (
+        <div
+          id={panelId}
+          role="menu"
+          aria-label={`Add to ${project.name}`}
+          data-testid="project-add-menu"
+          className="absolute bottom-full left-0 z-20 mb-2 min-w-40 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] py-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="choose-add-section"
+            disabled={locked}
+            onClick={() => choose("section")}
+            className="block w-full px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+          >
+            Add section
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="choose-add-task"
+            disabled={locked}
+            onClick={() => choose("task")}
+            className="block w-full px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+          >
+            Add task
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        data-testid="project-add"
+        aria-expanded={menuOpen}
+        aria-controls={panelId}
+        aria-label={`Add section or task to ${project.name}`}
+        disabled={locked}
+        onClick={() => setMenuOpen((open) => !open)}
+        className={`flex h-7 w-7 items-center justify-center rounded-full border text-base leading-none transition disabled:opacity-40 ${
+          menuOpen
+            ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+            : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)]"
+        }`}
+      >
+        +
+      </button>
+      {mode === "section" && (
+        <form
+          onSubmit={addSection}
+          data-testid="add-section-form"
+          className="absolute left-0 top-full z-20 mt-2 flex w-[min(100vw-2rem,24rem)] items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg"
+        >
+          <label className="sr-only" htmlFor="project-section-name">
+            Section name
+          </label>
+          <input
+            id="project-section-name"
+            data-testid="add-section-name"
+            value={sectionName}
+            onChange={(event) => setSectionName(event.target.value)}
+            placeholder="Section name"
+            autoComplete="off"
+            disabled={locked}
+            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
+          />
+          <button
+            type="submit"
+            data-testid="add-section"
+            disabled={locked || !sectionName.trim()}
+            className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode(null);
+              setError(null);
+            }}
+            className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+      {mode === "task" && (
+        <form
+          onSubmit={addTask}
+          data-testid="add-task-form"
+          className="absolute left-0 top-full z-20 mt-2 flex w-[min(100vw-2rem,28rem)] items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg"
+        >
+          <label className="sr-only" htmlFor="project-task-title">
+            Task
+          </label>
+          <input
+            id="project-task-title"
+            data-testid="add-task-title"
+            value={taskTitle}
+            onChange={(event) => setTaskTitle(event.target.value)}
+            placeholder="Task"
+            autoComplete="off"
+            disabled={locked}
+            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
+          />
+          <select
+            aria-label="Section"
+            data-testid="add-task-section"
+            value={taskSectionId}
+            disabled={locked}
+            onChange={(event) => setTaskSectionId(event.target.value)}
+            className="w-28 shrink-0 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm outline-none disabled:opacity-40"
+          >
+            <option value=""></option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            data-testid="add-task"
+            disabled={locked || !taskTitle.trim()}
+            className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode(null);
+              setTaskSectionId("");
+              setError(null);
+            }}
+            className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+      {error && (
+        <p className="absolute left-0 top-full z-20 mt-14 w-64 text-xs text-[var(--danger)]">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function ProjectBoard({
+  project,
+  disabled,
+  refreshKey = 0,
+  onChanged,
+}: {
+  project: UserProject;
+  disabled?: boolean;
+  refreshKey?: number;
   onChanged?: () => void;
 }) {
   const router = useRouter();
@@ -34,8 +314,6 @@ export function ProjectBoard({
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sectionName, setSectionName] = useState("");
-  const [taskDrafts, setTaskDrafts] = useState<Record<string, string>>({});
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -70,66 +348,36 @@ export function ProjectBoard({
     return () => {
       cancelled = true;
     };
-  }, [project.key, router, version]);
+  }, [project.key, refreshKey, router, version]);
 
-  async function send(input: {
-    method: "POST" | "PATCH";
-    body: Record<string, unknown>;
-  }) {
+  async function moveTask(task: BoardTask, sectionId: string) {
+    const next = sectionId || null;
+    if ((task.sectionId ?? null) === next || busy || disabled) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/project-sections", {
-        method: input.method,
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: project.key, ...input.body }),
+        body: JSON.stringify({
+          project: project.key,
+          number: task.number,
+          sectionId: next,
+        }),
       });
       if (res.status === 401) {
         router.replace("/login");
-        return false;
+        return;
       }
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error || "Could not update the project.");
+      if (!res.ok) throw new Error(data.error || "Could not move the task.");
       setVersion((value) => value + 1);
       onChanged?.();
-      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update the project.");
-      return false;
+      setError(err instanceof Error ? err.message : "Could not move the task.");
     } finally {
       setBusy(false);
     }
-  }
-
-  function addSection(event: FormEvent) {
-    event.preventDefault();
-    const name = sectionName.trim();
-    if (!name || busy || disabled) return;
-    void send({ method: "POST", body: { name } }).then((ok) => {
-      if (ok) setSectionName("");
-    });
-  }
-
-  function addTask(event: FormEvent, sectionId: string | null) {
-    event.preventDefault();
-    const key = sectionId ?? "";
-    const title = (taskDrafts[key] || "").trim();
-    if (!title || busy || disabled) return;
-    void send({
-      method: "POST",
-      body: { title, ...(sectionId ? { sectionId } : {}) },
-    }).then((ok) => {
-      if (ok) setTaskDrafts((prev) => ({ ...prev, [key]: "" }));
-    });
-  }
-
-  function moveTask(task: BoardTask, sectionId: string) {
-    const next = sectionId || null;
-    if ((task.sectionId ?? null) === next || busy || disabled) return;
-    void send({
-      method: "PATCH",
-      body: { number: task.number, sectionId: next },
-    });
   }
 
   const sectionIds = new Set(sections.map((section) => section.id));
@@ -138,102 +386,42 @@ export function ProjectBoard({
   );
   const locked = Boolean(disabled || busy);
 
+  if (!ready) {
+    return (
+      <p className="mb-2 px-1 text-sm text-[var(--muted)]">Loading sections…</p>
+    );
+  }
+  if (!sections.length && !tasks.length && !error) return null;
+
   return (
     <div
       data-testid="project-board"
       className="mb-2 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]"
     >
-      <form
-        onSubmit={addSection}
-        className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2"
-      >
-        <label className="sr-only" htmlFor="project-section-name">
-          New section name
-        </label>
-        <input
-          id="project-section-name"
-          data-testid="add-section-name"
-          value={sectionName}
-          onChange={(event) => setSectionName(event.target.value)}
-          placeholder="New section"
-          autoComplete="off"
-          disabled={locked}
-          className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
-        />
-        <button
-          type="submit"
-          data-testid="add-section"
-          disabled={locked || !sectionName.trim()}
-          className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
-        >
-          Add section
-        </button>
-      </form>
-
       <div className="max-h-64 overflow-y-auto py-1">
-        {!ready ? (
-          <p className="px-3 py-2 text-sm text-[var(--muted)]">Loading sections…</p>
-        ) : (
-          <>
-            {sections.length === 0 && (
-              <p className="px-3 py-2 text-sm text-[var(--muted)]">
-                No sections yet. Add one, like sales, to group {project.name} tasks.
-              </p>
-            )}
-            {sections.map((section) => (
-              <section key={section.id} data-testid={`section-${section.name}`}>
-                <h3 className="px-3 pt-2 text-sm font-medium">{section.name}</h3>
-                <TaskList
-                  tasks={tasks.filter((task) => task.sectionId === section.id)}
-                  sections={sections}
-                  locked={locked}
-                  onMove={moveTask}
-                />
-                <TaskDraft
-                  label={`Add a task to ${section.name}`}
-                  value={taskDrafts[section.id] || ""}
-                  locked={locked}
-                  onChange={(value) =>
-                    setTaskDrafts((prev) => ({ ...prev, [section.id]: value }))
-                  }
-                  onSubmit={(event) => addTask(event, section.id)}
-                />
-              </section>
-            ))}
-            {(ungrouped.length > 0 || sections.length > 0) && (
-              <section data-testid="section-ungrouped">
-                <h3 className="px-3 pt-2 text-sm font-medium text-[var(--muted)]">
-                  Ungrouped
-                </h3>
-                <TaskList
-                  tasks={ungrouped}
-                  sections={sections}
-                  locked={locked}
-                  onMove={moveTask}
-                />
-                <TaskDraft
-                  label={`Add an ungrouped task to ${project.name}`}
-                  value={taskDrafts[""] || ""}
-                  locked={locked}
-                  onChange={(value) =>
-                    setTaskDrafts((prev) => ({ ...prev, "": value }))
-                  }
-                  onSubmit={(event) => addTask(event, null)}
-                />
-              </section>
-            )}
-            {sections.length === 0 && ungrouped.length === 0 && ready && (
-              <TaskDraft
-                label={`Add a task to ${project.name}`}
-                value={taskDrafts[""] || ""}
-                locked={locked}
-                onChange={(value) =>
-                  setTaskDrafts((prev) => ({ ...prev, "": value }))
-                }
-                onSubmit={(event) => addTask(event, null)}
-              />
-            )}
-          </>
+        {sections.map((section) => (
+          <section key={section.id} data-testid={`section-${section.name}`}>
+            <h3 className="px-3 pt-2 text-sm font-medium">{section.name}</h3>
+            <TaskList
+              tasks={tasks.filter((task) => task.sectionId === section.id)}
+              sections={sections}
+              locked={locked}
+              onMove={moveTask}
+            />
+          </section>
+        ))}
+        {ungrouped.length > 0 && (
+          <section data-testid="section-ungrouped">
+            <h3 className="px-3 pt-2 text-sm font-medium text-[var(--muted)]">
+              Ungrouped
+            </h3>
+            <TaskList
+              tasks={ungrouped}
+              sections={sections}
+              locked={locked}
+              onMove={moveTask}
+            />
+          </section>
         )}
       </div>
       {error && (
@@ -273,7 +461,11 @@ function TaskList({
             <select
               aria-label={`Section for ${task.title}`}
               data-testid={`task-section-${task.number}`}
-              value={task.sectionId && sections.some((s) => s.id === task.sectionId) ? task.sectionId : ""}
+              value={
+                task.sectionId && sections.some((section) => section.id === task.sectionId)
+                  ? task.sectionId
+                  : ""
+              }
               disabled={locked}
               onChange={(event) => onMove(task, event.target.value)}
               className="max-w-[9rem] shrink-0 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs outline-none disabled:opacity-40"
@@ -289,40 +481,5 @@ function TaskList({
         </li>
       ))}
     </ul>
-  );
-}
-
-function TaskDraft({
-  label,
-  value,
-  locked,
-  onChange,
-  onSubmit,
-}: {
-  label: string;
-  value: string;
-  locked: boolean;
-  onChange: (value: string) => void;
-  onSubmit: (event: FormEvent) => void;
-}) {
-  return (
-    <form onSubmit={onSubmit} className="flex items-center gap-2 px-3 py-1.5">
-      <input
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Add a task"
-        autoComplete="off"
-        disabled={locked}
-        className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
-      />
-      <button
-        type="submit"
-        disabled={locked || !value.trim()}
-        className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
-      >
-        Add
-      </button>
-    </form>
   );
 }

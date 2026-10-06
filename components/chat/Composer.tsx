@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ProjectBoard } from "@/components/chat/ProjectBoard";
+import { ProjectAddButton, ProjectBoard } from "@/components/chat/ProjectBoard";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
@@ -72,6 +72,7 @@ export const Composer = forwardRef<
   const [listening, setListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sectionsReload, setSectionsReload] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -261,7 +262,7 @@ export const Composer = forwardRef<
 
         {error && <p className="mb-2 text-xs text-[var(--danger)]">{error}</p>}
 
-        <div className="mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <ProjectsPill
             projects={projects}
             selected={selectedProject}
@@ -269,6 +270,18 @@ export const Composer = forwardRef<
             onSelectProject={onSelectProject}
             onShowRemaining={onShowRemaining}
           />
+          {selectedProject && (
+            <ProjectAddButton
+              key={selectedProject.key}
+              project={selectedProject}
+              disabled={disabled || projectSelectDisabled}
+              refreshKey={sectionsReload}
+              onChanged={() => {
+                setSectionsReload((value) => value + 1);
+                onProjectBoardChange?.();
+              }}
+            />
+          )}
         </div>
 
         {selectedProject && (
@@ -276,6 +289,7 @@ export const Composer = forwardRef<
             key={selectedProject.key}
             project={selectedProject}
             disabled={disabled}
+            refreshKey={sectionsReload}
             onChanged={onProjectBoardChange}
           />
         )}
