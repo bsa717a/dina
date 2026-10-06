@@ -359,6 +359,68 @@ describe("send gates and keyword opt-out", () => {
     );
   });
 
+  it("blocks a user-id send when STOP on that E.164 belongs to another user", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      ...readyUser,
+      id: "user-2",
+      name: "Alex",
+      username: "alex",
+      phoneNumber: "+19044030781",
+      smsOptedOutAt: null,
+      smsOptedOutPhone: null,
+    });
+    mockUserFindFirst.mockResolvedValue({ id: "user-1" });
+    const { sendToPiperUser } = await import("@/lib/telnyx/messaging");
+
+    const admin = await sendToPiperUser({
+      actor: { kind: "admin", userId: "owner-1" },
+      userId: "user-2",
+      text: "Hello",
+      channel: "rcs_first",
+    });
+    const service = await sendToPiperUser({
+      actor: { kind: "service" },
+      userId: "user-2",
+      text: "Hello",
+      channel: "sms_only",
+    });
+
+    expect(admin).toMatchObject({
+      ok: false,
+      status: 409,
+      code: "opted_out",
+      error: expect.stringMatching(/opted out/i),
+    });
+    expect(service).toMatchObject({ ok: false, status: 409, code: "opted_out" });
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockUserFindFirst).toHaveBeenCalledWith({
+      where: {
+        smsOptedOutPhone: "+19044030781",
+        smsOptedOutAt: { not: null },
+      },
+      select: { id: true },
+    });
+    expect(mockLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "blocked",
+          recipientUserId: "user-2",
+          toPhone: "+19044030781",
+          actorKind: "admin",
+        }),
+      }),
+    );
+    expect(mockLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "blocked",
+          recipientUserId: "user-2",
+          actorKind: "service",
+        }),
+      }),
+    );
+  });
+
   it("rejects consent without a valid number or method", async () => {
     mockUserFindUnique.mockResolvedValue({ id: "user-1", phoneNumber: null });
     const { updateUserPhoneConsent } = await import("@/lib/telnyx/messaging");

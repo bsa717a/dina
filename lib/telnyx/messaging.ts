@@ -2,8 +2,8 @@
  * Admin and service-token sends, SMS consent, and STOP/START opt-out.
  *
  * Outbound sends require a mobile number, recorded consent, and no STOP
- * on that E.164. Owner edits never clear STOP. Keyword replies (HELP, STOP,
- * START) do not go through this gate.
+ * on that E.164 from any user. Owner edits never clear STOP. Keyword replies
+ * (HELP, STOP, START) do not go through this gate.
  */
 
 import { Prisma } from "@prisma/client";
@@ -285,6 +285,17 @@ function failureCode(result: SendMessageResult): string {
   return "send_failed";
 }
 
+/** Any user who texted STOP from this E.164, including after the number moved. */
+async function smsOptOutHolder(phoneNumber: string): Promise<{ id: string } | null> {
+  return prisma.user.findFirst({
+    where: {
+      smsOptedOutPhone: phoneNumber,
+      smsOptedOutAt: { not: null },
+    },
+    select: { id: true },
+  });
+}
+
 export async function sendToPiperUser(input: {
   actor: MessagingActor;
   userId: string;
@@ -319,6 +330,27 @@ export async function sendToPiperUser(input: {
     };
   }
 
+  const phone = user.phoneNumber as string;
+  const holder = await smsOptOutHolder(phone);
+  if (holder) {
+    const channel = channelAttempt(input.channel);
+    await writeLog({
+      actor: input.actor,
+      recipientUserId: user.id,
+      toPhone: phone,
+      channel,
+      status: "blocked",
+      error: SEND_BLOCK_MESSAGES.opted_out,
+    });
+    return {
+      ok: false,
+      status: 409,
+      error: SEND_BLOCK_MESSAGES.opted_out,
+      code: "opted_out",
+      channel,
+    };
+  }
+
   if (!isTelnyxConfigured()) {
     return {
       ok: false,
@@ -328,7 +360,6 @@ export async function sendToPiperUser(input: {
     };
   }
 
-  const phone = user.phoneNumber as string;
   const preferRcs = input.channel === "rcs_first";
   const result = await sendMessage({
     to: phone,
@@ -390,13 +421,7 @@ export async function sendToPhoneOrUser(input: {
 }): Promise<SendToUserResult | { raw: true; result: SendMessageResult }> {
   const phoneNumber = normalizePhoneNumber(input.to);
   if (isValidE164(phoneNumber)) {
-    const optedOut = await prisma.user.findFirst({
-      where: {
-        smsOptedOutPhone: phoneNumber,
-        smsOptedOutAt: { not: null },
-      },
-      select: { id: true },
-    });
+    const optedOut = await smsOptOutHolder(phoneNumber);
     if (optedOut) {
       const channel = channelAttempt(input.channel);
       await writeLog({
