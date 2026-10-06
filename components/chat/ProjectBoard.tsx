@@ -436,7 +436,7 @@ export function ProjectBoard({
   const heading = whiteboardHeading(ownerName);
 
   return (
-    <div data-testid="project-board" className="whiteboard">
+    <div id="project-task-list" data-testid="project-board" className="whiteboard">
       <div className="whiteboard-surface">
         <h2 className="whiteboard-title">{heading}</h2>
         {!ready ? (

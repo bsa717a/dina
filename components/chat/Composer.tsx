@@ -11,6 +11,37 @@ import { ProjectAddButton, ProjectBoard } from "@/components/chat/ProjectBoard";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
+const TASK_LIST_STORAGE_KEY = "dina.taskListCollapsed";
+
+function readCollapsedTaskLists(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(TASK_LIST_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const next: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === true) next[key] = true;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function writeCollapsedTaskLists(value: Record<string, boolean>) {
+  try {
+    const stored: Record<string, boolean> = {};
+    for (const [key, collapsed] of Object.entries(value)) {
+      if (collapsed) stored[key] = true;
+    }
+    sessionStorage.setItem(TASK_LIST_STORAGE_KEY, JSON.stringify(stored));
+  } catch {
+    // Private browsing can block sessionStorage. In-memory state still lasts this view.
+  }
+}
+
 type PendingFile = {
   localId: string;
   file: File;
@@ -75,6 +106,10 @@ export const Composer = forwardRef<
   const [speechSupported, setSpeechSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sectionsReload, setSectionsReload] = useState(0);
+  const [collapsedTaskLists, setCollapsedTaskLists] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [taskListCollapseReady, setTaskListCollapseReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -86,6 +121,16 @@ export const Composer = forwardRef<
         Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
     );
   }, []);
+
+  useEffect(() => {
+    setCollapsedTaskLists(readCollapsedTaskLists());
+    setTaskListCollapseReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!taskListCollapseReady) return;
+    writeCollapsedTaskLists(collapsedTaskLists);
+  }, [collapsedTaskLists, taskListCollapseReady]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -273,20 +318,50 @@ export const Composer = forwardRef<
             onShowRemaining={onShowRemaining}
           />
           {selectedProject && (
-            <ProjectAddButton
-              key={selectedProject.key}
-              project={selectedProject}
-              disabled={disabled || projectSelectDisabled}
-              refreshKey={sectionsReload}
-              onChanged={() => {
-                setSectionsReload((value) => value + 1);
-                onProjectBoardChange?.();
-              }}
-            />
+            <div className="flex items-center gap-1">
+              <ProjectAddButton
+                key={selectedProject.key}
+                project={selectedProject}
+                disabled={disabled || projectSelectDisabled}
+                refreshKey={sectionsReload}
+                onChanged={() => {
+                  setSectionsReload((value) => value + 1);
+                  onProjectBoardChange?.();
+                }}
+              />
+              <button
+                type="button"
+                data-testid="project-task-list-toggle"
+                aria-expanded={!collapsedTaskLists[selectedProject.key]}
+                aria-controls="project-task-list"
+                aria-label={
+                  collapsedTaskLists[selectedProject.key]
+                    ? `Expand ${selectedProject.name} task list`
+                    : `Collapse ${selectedProject.name} task list`
+                }
+                onClick={() => {
+                  const projectKey = selectedProject.key;
+                  setCollapsedTaskLists((current) => ({
+                    ...current,
+                    [projectKey]: !current[projectKey],
+                  }));
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--accent)]/50 hover:text-[var(--accent)]"
+              >
+                <span
+                  aria-hidden="true"
+                  className={
+                    collapsedTaskLists[selectedProject.key]
+                      ? "inline-block h-0 w-0 translate-x-px border-y-[6px] border-l-[8px] border-y-transparent border-l-current"
+                      : "inline-block h-0 w-0 translate-y-px border-x-[6px] border-t-[8px] border-x-transparent border-t-current"
+                  }
+                />
+              </button>
+            </div>
           )}
         </div>
 
-        {selectedProject && (
+        {selectedProject && !collapsedTaskLists[selectedProject.key] && (
           <ProjectBoard
             key={selectedProject.key}
             project={selectedProject}
