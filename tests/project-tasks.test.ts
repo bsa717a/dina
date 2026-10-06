@@ -8,6 +8,7 @@ import {
   resetDinaProjectTaskSeedGate,
   seedDinaProjectTasks,
 } from "@/lib/project-tasks/seed-dina-tasks";
+import { addProjectSection } from "@/lib/project-tasks/sections";
 import {
   addProjectTask,
   completeProjectTask,
@@ -18,6 +19,9 @@ import { executeProjectTaskTool } from "@/lib/project-tasks/tools";
 afterEach(async () => {
   await prisma.projectTask.deleteMany({
     where: { source: "test" },
+  });
+  await prisma.projectSection.deleteMany({
+    where: { projectKey: "beacon", nameKey: { in: ["sales", "ops"] } },
   });
   resetDinaProjectTaskSeedGate();
 });
@@ -75,6 +79,55 @@ describe("ProjectTask store", () => {
       (t) => t.source === "test",
     );
     expect(remaining.map((t) => t.title)).toEqual(["Alpha", "Gamma"]);
+  });
+
+  it("groups tasks under a project section", async () => {
+    const section = await addProjectSection({ project: "beacon", name: "Sales" });
+    expect(section.name).toBe("Sales");
+    await expect(
+      addProjectSection({ project: "Beacon", name: " sales " }),
+    ).rejects.toThrow(/already a section/i);
+
+    await addProjectTask({
+      project: "beacon",
+      title: "Section test homepage",
+      source: "test",
+    });
+    await addProjectTask({
+      project: "beacon",
+      title: "Section test district call",
+      source: "test",
+      sectionId: section.id,
+    });
+
+    const listed = await listProjectTasks({ project: "beacon" });
+    const call = listed.find((task) => task.title === "Section test district call");
+    const homepage = listed.find((task) => task.title === "Section test homepage");
+    expect(call?.sectionName).toBe("Sales");
+    expect(homepage?.sectionName).toBeNull();
+    expect(call && homepage && call.number < homepage.number).toBe(true);
+
+    const owner = await ownerUser();
+    const moved = JSON.parse(
+      await runWithAuthUser(owner, () =>
+        executeProjectTaskTool(
+          "update_project_task",
+          JSON.stringify({
+            project: "beacon",
+            number: homepage?.number,
+            section: "sales",
+          }),
+        ),
+      ),
+    );
+    expect(moved.ok).toBe(true);
+    expect(moved.data.task.section).toBe("Sales");
+    expect(moved.data.task.id).toBeUndefined();
+
+    const again = await listProjectTasks({ project: "beacon" });
+    expect(
+      again.find((task) => task.title === "Section test homepage")?.sectionName,
+    ).toBe("Sales");
   });
 
   it("seeds Dina roadmap idempotently with Waiting On Engine done", async () => {

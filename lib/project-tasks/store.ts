@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db/client";
 import { assertProjectKey, type ProjectKey } from "@/lib/project-tasks/keys";
 import {
+  listProjectSections,
+  requireProjectSectionById,
+  sectionNameMap,
+} from "@/lib/project-tasks/sections";
+import {
   PROJECT_TASK_STATUSES,
   REMAINING_STATUSES,
   type NumberedProjectTask,
@@ -25,10 +30,11 @@ function toRecord(row: {
   source: string;
   createdByUserId: string | null;
   assigneeUserId: string | null;
+  sectionId: string | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-}): ProjectTaskRecord {
+}, sectionNames?: Map<string, string>): ProjectTaskRecord {
   return {
     id: row.id,
     projectKey: row.projectKey,
@@ -39,10 +45,33 @@ function toRecord(row: {
     source: row.source,
     createdByUserId: row.createdByUserId,
     assigneeUserId: row.assigneeUserId,
+    sectionId: row.sectionId,
+    sectionName: row.sectionId
+      ? (sectionNames?.get(row.sectionId) ?? null)
+      : null,
     completedAt: row.completedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function sectionRank(
+  sectionId: string | null,
+  order: Map<string, number>,
+): number {
+  if (!sectionId) return Number.MAX_SAFE_INTEGER;
+  return order.get(sectionId) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function compareSectioned(
+  a: ProjectTaskRecord,
+  b: ProjectTaskRecord,
+  order: Map<string, number>,
+): number {
+  const rank = sectionRank(a.sectionId, order) - sectionRank(b.sectionId, order);
+  if (rank !== 0) return rank;
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  return a.createdAt.getTime() - b.createdAt.getTime();
 }
 
 function withNumbers(tasks: ProjectTaskRecord[]): NumberedProjectTask[] {
@@ -61,22 +90,31 @@ export async function listProjectTasks(options: {
       ? [...PROJECT_TASK_STATUSES]
       : [...REMAINING_STATUSES]);
 
-  const rows = await prisma.projectTask.findMany({
-    where: {
-      projectKey,
-      status: { in: statuses },
-    },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  const [rows, sections] = await Promise.all([
+    prisma.projectTask.findMany({
+      where: {
+        projectKey,
+        status: { in: statuses },
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    listProjectSections(projectKey),
+  ]);
+  const names = new Map(sections.map((section) => [section.id, section.name]));
+  const order = new Map(sections.map((section, index) => [section.id, index]));
+  const records = rows.map((row) => toRecord(row, names));
+  records.sort((a, b) => compareSectioned(a, b, order));
 
-  return withNumbers(rows.map(toRecord));
+  return withNumbers(records);
 }
 
 export async function getProjectTask(
   id: string,
 ): Promise<ProjectTaskRecord | null> {
   const row = await prisma.projectTask.findUnique({ where: { id } });
-  return row ? toRecord(row) : null;
+  if (!row) return null;
+  const names = await sectionNameMap(row.projectKey);
+  return toRecord(row, names);
 }
 
 export async function addProjectTask(input: {
@@ -87,10 +125,14 @@ export async function addProjectTask(input: {
   source?: string;
   createdByUserId?: string;
   assigneeUserId?: string;
+  sectionId?: string | null;
 }): Promise<ProjectTaskRecord> {
   const projectKey = assertProjectKey(input.project);
   const title = input.title.trim();
   if (!title) throw new Error("Task title is required.");
+  if (input.sectionId) {
+    await requireProjectSectionById(projectKey, input.sectionId);
+  }
 
   const max = await prisma.projectTask.aggregate({
     where: { projectKey },
@@ -99,20 +141,35 @@ export async function addProjectTask(input: {
   const sortOrder = (max._max.sortOrder ?? 0) + 1;
   const status = input.status ?? "open";
 
-  const row = await prisma.projectTask.create({
-    data: {
-      projectKey,
-      title,
-      description: (input.description || "").trim(),
-      status,
-      sortOrder,
-      source: input.source || "chat",
-      createdByUserId: input.createdByUserId ?? null,
-      assigneeUserId: input.assigneeUserId ?? null,
-      completedAt: status === "done" ? new Date() : null,
-    },
-  });
-  return toRecord(row);
+  let row;
+  try {
+    row = await prisma.projectTask.create({
+      data: {
+        projectKey,
+        title,
+        description: (input.description || "").trim(),
+        status,
+        sortOrder,
+        source: input.source || "chat",
+        createdByUserId: input.createdByUserId ?? null,
+        assigneeUserId: input.assigneeUserId ?? null,
+        sectionId: input.sectionId ?? null,
+        completedAt: status === "done" ? new Date() : null,
+      },
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      throw new Error(`A task titled "${title}" already exists on this project.`);
+    }
+    throw error;
+  }
+  const names = await sectionNameMap(projectKey);
+  return toRecord(row, names);
 }
 
 export async function updateProjectTask(
@@ -122,10 +179,14 @@ export async function updateProjectTask(
     description?: string;
     status?: ProjectTaskStatus;
     sortOrder?: number;
+    sectionId?: string | null;
   },
 ): Promise<ProjectTaskRecord> {
   const existing = await prisma.projectTask.findUnique({ where: { id } });
   if (!existing) throw new Error("Project task not found.");
+  if (patch.sectionId) {
+    await requireProjectSectionById(existing.projectKey, patch.sectionId);
+  }
 
   const status = patch.status ?? asStatus(existing.status);
   const row = await prisma.projectTask.update({
@@ -136,6 +197,7 @@ export async function updateProjectTask(
         patch.description !== undefined ? patch.description.trim() : undefined,
       status: patch.status,
       sortOrder: patch.sortOrder,
+      sectionId: patch.sectionId,
       completedAt:
         status === "done"
           ? existing.completedAt ?? new Date()
@@ -144,7 +206,8 @@ export async function updateProjectTask(
             : null,
     },
   });
-  return toRecord(row);
+  const names = await sectionNameMap(existing.projectKey);
+  return toRecord(row, names);
 }
 
 /**

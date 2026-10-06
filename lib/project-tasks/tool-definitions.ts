@@ -62,6 +62,11 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             type: "string",
             enum: ["open", "in_progress"],
           },
+          section: {
+            type: "string",
+            description:
+              "Section name to group this task under, such as sales. Creates the section if the project does not have it yet. Omit to leave the task ungrouped.",
+          },
         },
         required: ["title"],
       },
@@ -86,7 +91,7 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
     ),
     fn(
       "update_project_task",
-      "Update a project task title, description, or status (open / in_progress / done / cancelled). Prefer project + number from the remaining list. Omit project when the user has a selected/active project. Confirm with number and title only — never an id.",
+      "Update a project task title, description, status (open / in_progress / done / cancelled), or section. Prefer project + number from the remaining list. Omit project when the user has a selected/active project. Confirm with number, title, and section name only — never an id.",
       {
         properties: {
           project: {
@@ -104,8 +109,45 @@ export function getProjectTaskToolDefinitions(): FunctionTool[] {
             type: "string",
             enum: [...PROJECT_TASK_STATUSES],
           },
+          section: {
+            type: "string",
+            description:
+              "Section name to group this task under. Empty string removes it from its section. Creates the section if needed.",
+          },
         },
         required: [],
+      },
+    ),
+    fn(
+      "list_project_sections",
+      "List the sections that group tasks inside a project (for example Sales under 4StudentLives). Returns names only — never ids. Omit project when the user has a selected/active project.",
+      {
+        properties: {
+          project: {
+            type: "string",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project.",
+          },
+        },
+        required: [],
+      },
+    ),
+    fn(
+      "add_project_section",
+      "Add a section to a project so tasks can be grouped under it. Example: add a sales section to 4StudentLives. Does not create a task. Omit project when the user has a selected/active project. Confirm with the section name only — never an id.",
+      {
+        properties: {
+          project: {
+            type: "string",
+            description:
+              "Project name or key. Optional when SESSION RUNTIME names an Active project.",
+          },
+          name: {
+            type: "string",
+            description: "Section name, such as sales",
+          },
+        },
+        required: ["name"],
       },
     ),
   ];

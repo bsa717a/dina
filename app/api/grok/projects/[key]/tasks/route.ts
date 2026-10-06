@@ -24,6 +24,7 @@ import {
   ensureProjectCatalog,
   resolveProjectKey,
 } from "@/lib/projects/catalog";
+import { ensureProjectSection } from "@/lib/project-tasks/sections";
 import {
   listProjectTasks,
   addProjectTask,
@@ -72,9 +73,23 @@ function formatTask(t: NumberedProjectTask) {
     title: t.title,
     description: t.description,
     status: t.status,
+    section: t.sectionName ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
+}
+
+async function sectionIdFromName(
+  projectKey: string,
+  section: unknown,
+): Promise<string | null | undefined> {
+  if (section === undefined) return undefined;
+  if (section === null || section === "") return null;
+  if (typeof section !== "string") {
+    throw new Error("section must be a string");
+  }
+  const row = await ensureProjectSection({ project: projectKey, name: section });
+  return row.id;
 }
 
 export async function GET(request: NextRequest, context: RouteParams) {
@@ -137,7 +152,10 @@ export async function POST(request: NextRequest, context: RouteParams) {
     return jsonError("Request body must be an object", 400);
   }
 
-  const { title, description, status: rawStatus } = body as Record<string, unknown>;
+  const { title, description, status: rawStatus, section } = body as Record<
+    string,
+    unknown
+  >;
 
   if (typeof title !== "string" || !title.trim()) {
     return jsonError("title is required and must be a non-empty string", 400);
@@ -160,6 +178,14 @@ export async function POST(request: NextRequest, context: RouteParams) {
 
   const descStr = typeof description === "string" ? description : "";
 
+  let sectionId: string | null | undefined;
+  try {
+    sectionId = await sectionIdFromName(projectKey, section);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Invalid section";
+    return jsonError(msg, 400);
+  }
+
   try {
     const created = await addProjectTask({
       project: projectKey,
@@ -167,6 +193,7 @@ export async function POST(request: NextRequest, context: RouteParams) {
       description: descStr,
       status,
       source: "grok-api",
+      ...(sectionId ? { sectionId } : {}),
     });
 
     const tasks = await listProjectTasks({
@@ -185,6 +212,7 @@ export async function POST(request: NextRequest, context: RouteParams) {
         title: created.title,
         description: created.description,
         status: created.status,
+        section: created.sectionName,
       },
     });
 
@@ -197,6 +225,7 @@ export async function POST(request: NextRequest, context: RouteParams) {
         title: created.title,
         description: created.description,
         status: created.status,
+        section: created.sectionName,
         createdAt: created.createdAt.toISOString(),
         updatedAt: created.updatedAt.toISOString(),
       },
@@ -236,6 +265,7 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
     status: rawStatus,
     title,
     description,
+    section,
   } = body as Record<string, unknown>;
 
   if (taskId === undefined && taskNumber === undefined) {
@@ -273,6 +303,7 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
     title?: string;
     description?: string;
     status?: ProjectTaskStatus;
+    sectionId?: string | null;
   } = {};
 
   if (rawStatus !== undefined) {
@@ -303,9 +334,19 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
     patch.description = description;
   }
 
+  if (section !== undefined) {
+    try {
+      const sectionId = await sectionIdFromName(projectKey, section);
+      if (sectionId !== undefined) patch.sectionId = sectionId;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Invalid section";
+      return jsonError(msg, 400);
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     return jsonError(
-      "At least one field to update is required (status, title, or description)",
+      "At least one field to update is required (status, title, description, or section)",
       400,
     );
   }
@@ -322,8 +363,16 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
         title: updated.title,
         description: updated.description,
         status: updated.status,
+        section: updated.sectionName,
       },
-      changes: patch,
+      changes: {
+        ...(patch.status ? { status: patch.status } : {}),
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.description !== undefined
+          ? { description: patch.description }
+          : {}),
+        ...(patch.sectionId !== undefined ? { section: updated.sectionName } : {}),
+      },
     });
 
     return NextResponse.json({
@@ -335,6 +384,7 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
         title: updated.title,
         description: updated.description,
         status: updated.status,
+        section: updated.sectionName,
         createdAt: updated.createdAt.toISOString(),
         updatedAt: updated.updatedAt.toISOString(),
       },

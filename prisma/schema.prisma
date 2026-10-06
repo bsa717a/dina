@@ -303,12 +303,30 @@ model ProjectTask {
   createdBy       User?     @relation("TaskCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   assigneeUserId  String?
   assignee        User?     @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  /// ProjectSection.id when this task is grouped. Null means ungrouped.
+  sectionId       String?
   completedAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   @@unique([projectKey, title])
   @@index([projectKey, status])
+  @@index([projectKey, sortOrder])
+  @@index([sectionId])
+}
+
+/// Named group of tasks inside one project, e.g. Sales under 4StudentLives.
+model ProjectSection {
+  id         String   @id @default(cuid())
+  projectKey String
+  name       String
+  /// Lowercased name so "Sales" and "sales" are the same section.
+  nameKey    String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([projectKey, nameKey])
   @@index([projectKey, sortOrder])
 }
 

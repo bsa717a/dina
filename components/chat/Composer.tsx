@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ProjectBoard } from "@/components/chat/ProjectBoard";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
 
@@ -50,6 +51,7 @@ export const Composer = forwardRef<
     projectSelectDisabled?: boolean;
     onSelectProject?: (project: UserProject | null) => void;
     onShowRemaining?: () => void;
+    onProjectBoardChange?: () => void;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
 >(function Composer(
@@ -60,6 +62,7 @@ export const Composer = forwardRef<
     projectSelectDisabled,
     onSelectProject,
     onShowRemaining,
+    onProjectBoardChange,
     onSend,
   },
   ref,
@@ -267,6 +270,15 @@ export const Composer = forwardRef<
             onShowRemaining={onShowRemaining}
           />
         </div>
+
+        {selectedProject && (
+          <ProjectBoard
+            key={selectedProject.key}
+            project={selectedProject}
+            disabled={disabled}
+            onChanged={onProjectBoardChange}
+          />
+        )}
 
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-[var(--shadow)]">
           <div className="flex shrink-0 gap-1 pb-0.5">
