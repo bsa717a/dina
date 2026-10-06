@@ -1,5 +1,7 @@
 /**
- * Cheap header/preview triage for mail (Outlook + Gmail).
+ * Cheap header/preview triage for mail.
+ * Gmail category label ids still score as noise if a payload includes them.
+ * Piper does not call the Gmail API.
  * High-confidence marketing/spam → mark read without fetching bodies.
  * When unsure, treat as maybe-real so important mail is not buried.
  */

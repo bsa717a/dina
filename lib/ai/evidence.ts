@@ -24,11 +24,6 @@ export const EVIDENCE_TOOLS = new Set([
   "get_emails",
   "list_calendar_events",
   "get_calendar_event",
-  "gmail_brief_inbox",
-  "gmail_list_messages",
-  "gmail_get_email",
-  "google_list_calendar_events",
-  "google_get_calendar_event",
   "list_mail_accounts",
   // Files / Office / SharePoint / Planner
   "list_onedrive_children",
@@ -153,16 +148,11 @@ const DOMAIN_TOOLS: Record<EvidenceDomain, ReadonlySet<string>> = {
     "list_inbox_messages",
     "get_email",
     "get_emails",
-    "gmail_brief_inbox",
-    "gmail_list_messages",
-    "gmail_get_email",
     "list_mail_accounts",
   ]),
   calendar: new Set([
     "list_calendar_events",
     "get_calendar_event",
-    "google_list_calendar_events",
-    "google_get_calendar_event",
   ]),
   github: new Set([
     "list_github_accounts",

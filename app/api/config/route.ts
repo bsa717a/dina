@@ -9,8 +9,6 @@ import {
   listGitHubAccountSummaries,
 } from "@/lib/github/config";
 import { listGitHubToolNames } from "@/lib/github/tools";
-import { getGoogleConfig, isGoogleConfigured } from "@/lib/google/config";
-import { listGoogleToolNames } from "@/lib/google/tools";
 import { getMicrosoftConfig, isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { listMicrosoftToolNames } from "@/lib/microsoft/tools";
 import { displayProjectName } from "@/lib/project-tasks/keys";
@@ -34,7 +32,6 @@ export async function GET() {
   const isOwner = user.role === "owner";
   const projectKeys = await listMemberProjectKeys(user);
   const ms = isOwner ? getMicrosoftConfig() : null;
-  const google = isOwner ? getGoogleConfig() : null;
 
   return NextResponse.json({
     user: {
@@ -56,10 +53,6 @@ export async function GET() {
     microsoftEnabled: isOwner && isMicrosoftConfigured(),
     microsoftUser: isOwner ? ms?.userEmail ?? null : null,
     microsoftTools: isOwner && isMicrosoftConfigured() ? listMicrosoftToolNames() : [],
-    googleEnabled: isOwner && isGoogleConfigured(),
-    googleUser: isOwner ? google?.userEmail ?? null : null,
-    googleLabel: isOwner ? google?.label ?? null : null,
-    googleTools: isOwner ? listGoogleToolNames() : [],
     githubEnabled: isOwner && isGitHubConfigured(),
     githubAccounts: isOwner && isGitHubConfigured() ? listGitHubAccountSummaries() : [],
     githubTools: isOwner && isGitHubConfigured() ? listGitHubToolNames() : [],

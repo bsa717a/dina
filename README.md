@@ -65,11 +65,6 @@ Open [http://localhost:8080](http://localhost:8080).
 | `MS_USER_EMAIL` | for M365 | Mailbox / user UPN for app-only calls |
 | `MS_SHAREPOINT_SITE` | no | Graph site path, e.g. `contoso.sharepoint.com:/sites/Site` |
 | `MS_SHAREPOINT_DEFAULT_FOLDER` | no | Default folder for notes |
-| `GOOGLE_CLIENT_ID` | for Google | OAuth client id |
-| `GOOGLE_CLIENT_SECRET` | for Google | OAuth client secret (`.env` only) |
-| `GOOGLE_REFRESH_TOKEN` | for Google | Long-lived refresh token from `npm run google-oauth` |
-| `GOOGLE_USER_EMAIL` | for Google | Personal Gmail address |
-| `GOOGLE_LABEL` | no | Account label (default `personal`) |
 | `SLACK_BOT_TOKEN` | for Slack | Bot User OAuth Token (`xoxb-…`) — Regi bot only |
 | `SLACK_SIGNING_SECRET` | for Slack | Events API signing secret |
 | `SLACK_REGI_PROJECT_SLUG` | no | Piper project the Slack bot writes (default `regi`; never 4SL / Metabolic) |
@@ -112,35 +107,15 @@ Grant **application** permissions with admin consent as needed:
 
 If a tool fails with 403, Dina will surface the Graph error — add the missing permission and re-consent.
 
-## Google (personal Gmail + Calendar)
+## Personal Gmail and Google Calendar
 
-Personal Google stays **separate** from Microsoft 365. Chat tools are prefixed (`gmail_*`, `google_*`); Attention events use `google:email:…` / `google:calendar:…`. Dina should label results Work vs Personal.
+Piper does not connect to Gmail or Google Calendar. Dina and Post handle personal mail and calendar through their own connectors.
 
-### Setup
+Do not set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, or `GOOGLE_USER_EMAIL`. On Cloud Run, do not mount Secret Manager secrets `dina-google-client-id`, `dina-google-client-secret`, `dina-google-refresh-token`, or `dina-google-user-email`. Leave those secrets in Secret Manager; this service does not read or delete them.
 
-1. In Google Cloud Console: create an OAuth client, enable **Gmail API** + **Google Calendar API**.
-2. Put the OAuth consent screen in **Production** (Testing expires refresh tokens after 7 days).
-3. Add redirect URI `http://127.0.0.1:8080/oauth2/callback` (or set `GOOGLE_REDIRECT_URI`).
-4. Run:
+Work mail and calendar stay on Microsoft Graph. `list_mail_accounts` lists that Work account. Attention block tools (`block_attention_sender`, `unblock_attention_sender`, `list_attention_blocks`) still suppress a sender or `@domain` on the Work Attention scan. Mail is not deleted.
 
-```bash
-GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... npm run google-oauth
-```
-
-5. Paste the printed `GOOGLE_REFRESH_TOKEN` (and related vars) into `.env`, then restart Dina.
-
-Scopes requested: `gmail.modify`, `gmail.send`, `calendar`, `userinfo.email`.
-
-When configured, chat can call:
-
-- Personal Gmail (brief/list/read/send/draft/labels)
-- Personal Google Calendar (list/create/update/delete/respond)
-- `list_mail_accounts` to see Work vs Personal
-- Attention block tools (`block_attention_sender`, `unblock_attention_sender`, `list_attention_blocks`)
-
-### Attention blocklist
-
-Marketing/spam is triaged before CoS (shared header/label scoring). Derek can also **Block sender** on an Attention card (or via chat tools) to durably suppress that email or `@domain` from future Attention scans on **both** Work and Personal mail. Mail is not deleted.
+Older Attention rows may still use `google:email:…` / `google:calendar:…` ids. Piper does not call Gmail for those rows, and it does not send those ids to Microsoft Graph.
 
 ## Database
 
@@ -369,8 +344,8 @@ Reply text is generated later, when Derek taps **Draft reply** on a card (Writin
 ### Connectors (today)
 
 - Microsoft 365 → work mail, calendar/invites, To Do reminders
-- Google → personal Gmail + Google Calendar
 - GitHub (multi-account) → **off the regular scan** (chat tools still work). Re-enable later as a once-a-day pass via `includeGitHub`.
+- Personal Gmail and Google Calendar are not scanned here (Dina and Post)
 
 Adding Slack, Apple Reminders, etc. means writing a connector that emits the same normalized events — not changing the engine.
 
@@ -453,7 +428,7 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 ## Limitations (v1)
 
 - Single continuous conversation (single-user)
-- Access-code auth for the app; Google uses a stored OAuth refresh token (no in-app Sign in with Google UI yet)
+- Access-code auth for the app (no Google sign-in)
 - Memory retrieval is keyword-based today (embedding fields reserved for later)
 - Microsoft 365 uses app-only credentials (not delegated user OAuth); some Teams APIs may still 403 depending on tenant permissions
 - Apple Notes / Apple Reminders not integrated
@@ -464,7 +439,6 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 
 - OpenAI access goes through `lib/ai/provider.ts` so Claude or another provider can be added later without rewriting the chat UI.
 - Microsoft Graph tools live in `lib/microsoft/` and are registered into the Responses API tool loop when `MS_*` env vars are set.
-- Google tools live in `lib/google/` (separate credentials, tool names, and Attention connector id).
 - Extension stubs remain in `lib/extensions/` for additional providers.
 - Prisma + SQLite today; switch `DATABASE_URL` / provider for PostgreSQL later without changing route shapes.
 
@@ -480,7 +454,6 @@ This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs 
 | Upload rejected | Stay within size limits; use image/PDF/text — not Office files |
 | Port in use | Stop the other process on 8080 or change the `-p` flag in scripts |
 | `microsoft: error` in health | Check `MS_*` env vars, client secret validity, and Entra admin consent for app permissions |
-| `google: error` in health | Check `GOOGLE_*` env vars; re-run `npm run google-oauth` if the refresh token was revoked or expired (Testing consent screen = 7-day tokens) |
 | Tool returns 403 | Missing Graph application permission — grant + admin consent, then retry |
 
 ## Tests

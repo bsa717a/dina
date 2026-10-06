@@ -19,10 +19,6 @@ vi.mock("@/lib/microsoft/graph", () => ({
   checkMicrosoftGraph: vi.fn(async () => ({ ok: true, configured: true })),
 }));
 
-vi.mock("@/lib/google/auth", () => ({
-  checkGoogleApis: vi.fn(async () => ({ ok: true, configured: false })),
-}));
-
 describe("GET /api/health", () => {
   beforeEach(() => {
     vi.resetModules();

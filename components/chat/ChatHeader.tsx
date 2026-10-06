@@ -22,7 +22,6 @@ export function ChatHeader({
   avatarUrl,
   status,
   microsoftEnabled = false,
-  googleEnabled = false,
   dayUsageLabel,
   pushSupported,
   pushEnabled,
@@ -39,7 +38,6 @@ export function ChatHeader({
   avatarUrl?: string | null;
   status: Status;
   microsoftEnabled?: boolean;
-  googleEnabled?: boolean;
   /** e.g. "Today ~$0.12" */
   dayUsageLabel?: string | null;
   pushSupported: boolean;
@@ -100,7 +98,6 @@ export function ChatHeader({
               />
               <span>{statusLabel}</span>
               {microsoftEnabled && <span className="hidden sm:inline">· M365</span>}
-              {googleEnabled && <span className="hidden sm:inline">· Google</span>}
               {dayUsageLabel && (
                 <span
                   className="tabular-nums text-[var(--muted)]"

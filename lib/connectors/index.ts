@@ -1,9 +1,7 @@
 import type { NormalizedEvent } from "@/lib/chief-of-staff/types";
 import { githubConnector } from "@/lib/connectors/github";
-import { googleConnector } from "@/lib/connectors/google";
 import { microsoftConnector } from "@/lib/connectors/microsoft";
 import type { Connector } from "@/lib/connectors/types";
-import { isGoogleConfigured } from "@/lib/google/config";
 import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { isGitHubConfigured } from "@/lib/github/config";
 import { logger } from "@/lib/logger";
@@ -20,7 +18,6 @@ export type CollectOptions = {
 export function getConnectors(options?: CollectOptions): Connector[] {
   const connectors: Connector[] = [];
   if (isMicrosoftConfigured()) connectors.push(microsoftConnector);
-  if (isGoogleConfigured()) connectors.push(googleConnector);
   if (options?.includeGitHub && isGitHubConfigured()) {
     connectors.push(githubConnector);
   }

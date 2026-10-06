@@ -53,9 +53,6 @@ import {
   getMemoryToolDefinitions,
 } from "@/lib/memory/tool-definitions";
 import { executeMemoryTool, listMemoryToolNames } from "@/lib/memory/tools";
-import { isGoogleConfigured } from "@/lib/google/config";
-import { getGoogleToolDefinitions } from "@/lib/google/tool-definitions";
-import { executeGoogleTool, listGoogleToolNames } from "@/lib/google/tools";
 import { isMicrosoftConfigured } from "@/lib/microsoft/config";
 import { getMicrosoftToolDefinitions } from "@/lib/microsoft/tool-definitions";
 import { executeMicrosoftTool, listMicrosoftToolNames } from "@/lib/microsoft/tools";
@@ -231,9 +228,7 @@ function collectFunctionCalls(output: OpenAI.Responses.ResponseOutputItem[]): Fu
 
 function buildInstructions(
   msConfigured: boolean,
-  googleConfigured: boolean,
   msCount: number,
-  googleCount: number,
   ghCount: number,
   memoryBlock: string,
   lessonsBlock: string,
@@ -257,7 +252,7 @@ function buildInstructions(
   if (starsBlock) parts.push(starsBlock);
   parts.push(
     "ACTION RECEIPTS (critical): Never tell Derek you sent, moved, uploaded, deleted, created, marked, blocked, or otherwise completed an action unless a tool in THIS turn returned ok=true for that action. Intent, prior chat claims, and 'I was going to' are not proof. If ok=false or you did not call the tool, say it failed or was not done. Prefer quoting path/link from the tool payload. Never quote project task IDs, even if an older chat message or tool payload included one.",
-    "Chat attachments are local to Dina — they are NOT on OneDrive/Gmail until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
+    "Chat attachments are local to Dina — they are NOT on OneDrive until a write/upload tool succeeds with ok=true. Never say you 'moved' a chat file unless write_onedrive_file (or equivalent) succeeded and verified.",
     "NEVER INVENT (critical): Do not invent people, talks, quotes, emails, meetings, file contents, GitHub status, or action outcomes. For Derek’s mail/calendar/files/GitHub/Planner/SharePoint/memory/tasks/Church citations: call a live tool THIS turn and cite ONLY ok=true facts. If you lack evidence, say you do not know / cannot verify — never fill with plausible fiction.",
     "Church citation tools are enabled: search_church_site, fetch_church_url.",
     "Memory tools are enabled (search_memory, remember, correct_memory, approve_memory, archive_memory, merge_memories, list_memories).",
@@ -294,33 +289,8 @@ function buildInstructions(
       "For SharePoint document folders, call list_sharepoint_folder. For SharePoint Lists (Network Info, contacts, etc.), call list_sharepoint_lists or get_sharepoint_list_items — never look for lists inside Dev Docs.",
       "Never claim SharePoint is unavailable.",
       'Never include a Links section, Outlook/OWA links, SendGrid/click-tracking URLs, or CTA buttons like "Save My Seat" / "Read More".',
-    );
-  }
-  if (googleConfigured) {
-    parts.push(
-      `${googleCount} Google tools are enabled for the PERSONAL Gmail / Google Calendar account (gmail_brief_inbox, gmail_get_email, google_list_calendar_events, …).`,
-      "Always label Google results as Personal/Gmail or Personal/Google Calendar. Never mix with Work/Outlook tools or results.",
-      "For PERSONAL email digests, call gmail_brief_inbox (not brief_inbox).",
-      "For PERSONAL calendar questions, call google_list_calendar_events (not list_calendar_events).",
-      "When Derek does not specify which inbox/calendar, call list_mail_accounts first, then check both if needed.",
-      "After gmail_brief_inbox, treat emails[].index as #1/#2/…. For 'block #N': block_attention_sender(target=emails[N-1].from.address) then gmail_mark_read(messageId=emails[N-1].id). For 'show #N': gmail_get_email with the FULL emails[N-1].id — never truncate ids.",
-      "If a Gmail tool errors, report the tool error and retry with the exact id from the latest brief — do not claim the message is inaccessible without retrying.",
-    );
-  }
-  if (msConfigured || googleConfigured) {
-    parts.push(
-      "Multi-account mail/calendar: Work = Microsoft 365 tools (unprefixed). Personal = gmail_* / google_* tools. Never assume one account. Name the account in every answer.",
-      "Attention block tools (block_attention_sender / unblock / list) apply to both Work and Personal Attention scans when mail is configured.",
-    );
-  }
-  if (msConfigured && !googleConfigured) {
-    parts.push(
-      "Personal Gmail/Google is NOT configured. Do not invent personal inbox results. If Derek asks about personal Gmail, say Google is not connected yet and only report Work/Outlook if you checked it.",
-    );
-  }
-  if (!msConfigured && googleConfigured) {
-    parts.push(
-      "Work Microsoft 365 is NOT configured. Do not invent Outlook results. Only report Personal Google if you checked it.",
+      "Personal Gmail and Google Calendar are not connected in Piper. Dina and Post handle personal mail and calendar. Do not invent personal inbox or calendar results. If asked about personal Gmail or Google Calendar, say Piper does not have that account and only report Work/Outlook when a Work tool in this turn returned ok=true.",
+      "Attention block tools (block_attention_sender, unblock_attention_sender, list_attention_blocks) suppress senders on the Work Attention scan. They do not delete mail.",
     );
   }
   if (ghCount) {
@@ -384,9 +354,6 @@ async function executeTool(
   if (listMicrosoftToolNames().includes(name)) {
     return executeMicrosoftTool(name, argsJson);
   }
-  if (listGoogleToolNames().includes(name)) {
-    return executeGoogleTool(name, argsJson);
-  }
   if (listTeamToolNames().includes(name)) {
     return executeTeamTool(name, argsJson);
   }
@@ -420,7 +387,6 @@ export class OpenAIProvider implements ModelProvider {
     const model = getOpenAIChatModel();
     const isMember = input.actor?.role === "member";
     const msTools = isMember ? [] : getMicrosoftToolDefinitions();
-    const googleTools = isMember ? [] : getGoogleToolDefinitions();
     const ghTools = isMember ? [] : getGitHubToolDefinitions();
     const memoryTools = isMember
       ? getMemberMemoryToolDefinitions()
@@ -436,7 +402,6 @@ export class OpenAIProvider implements ModelProvider {
     const teamTools = isMember ? [] : getTeamToolDefinitions();
     const tools = [
       ...msTools,
-      ...googleTools,
       ...ghTools,
       ...memoryTools,
       ...starTools,
@@ -474,9 +439,7 @@ export class OpenAIProvider implements ModelProvider {
             .join("\n")
         : buildInstructions(
             isMicrosoftConfigured(),
-            isGoogleConfigured(),
             msTools.length,
-            googleTools.length,
             ghTools.length,
             input.memoryBlock || "",
             lessonsBlock,
@@ -590,14 +553,10 @@ export class OpenAIProvider implements ModelProvider {
             }
             if (domain === "mail") {
               if (toolNames.has("brief_inbox")) return "brief_inbox";
-              if (toolNames.has("gmail_brief_inbox")) return "gmail_brief_inbox";
             }
             if (domain === "calendar") {
               if (toolNames.has("list_calendar_events")) {
                 return "list_calendar_events";
-              }
-              if (toolNames.has("google_list_calendar_events")) {
-                return "google_list_calendar_events";
               }
             }
             if (domain === "github" && toolNames.has("github_activity")) {
@@ -643,13 +602,9 @@ export class OpenAIProvider implements ModelProvider {
             if (toolNames.has("list_calendar_events")) {
               return "list_calendar_events";
             }
-            if (toolNames.has("google_list_calendar_events")) {
-              return "google_list_calendar_events";
-            }
           }
           if (forceEmail && round === 0) {
             if (toolNames.has("brief_inbox")) return "brief_inbox";
-            if (toolNames.has("gmail_brief_inbox")) return "gmail_brief_inbox";
           }
           if (forceGitHub && round === 0 && toolNames.has("github_activity")) {
             return "github_activity";

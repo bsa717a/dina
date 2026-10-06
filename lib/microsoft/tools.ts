@@ -7,6 +7,8 @@ import {
   userPath,
 } from "@/lib/microsoft/graph";
 import {
+  createAttentionBlock,
+  deleteAttentionBlock,
   listAttentionBlocks,
   partitionByAttentionBlocks,
 } from "@/lib/attention/blocks";
@@ -2408,6 +2410,47 @@ async function replyChannelMessage(args: {
   return ok(data);
 }
 
+async function listMailAccounts() {
+  const config = requireConfig();
+  return ok({
+    count: 1,
+    accounts: [
+      {
+        id: "microsoft365",
+        provider: "microsoft365",
+        label: "work",
+        email: config.userEmail,
+        capabilities: ["mail", "calendar"],
+        note: "Work Outlook. Personal Gmail and Google Calendar are not connected in Piper.",
+      },
+    ],
+    guidance:
+      "Piper only has the Work Microsoft 365 account. Do not invent personal Gmail or Google Calendar results.",
+  });
+}
+
+async function blockAttentionSender(args: { target?: string; reason?: string }) {
+  const block = await createAttentionBlock({
+    target: String(args.target || ""),
+    reason: typeof args.reason === "string" ? args.reason : null,
+    source: "tool",
+  });
+  return ok({
+    blocked: block,
+    note: "Future Work Attention scans will skip this sender or domain. Mail is not deleted.",
+  });
+}
+
+async function unblockAttentionSender(args: { target?: string }) {
+  const removed = await deleteAttentionBlock(String(args.target || ""));
+  return ok({ removed, target: args.target });
+}
+
+async function listAttentionBlockTool() {
+  const blocks = await listAttentionBlocks();
+  return ok({ count: blocks.length, blocks });
+}
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 export type MicrosoftToolHandler = (args: Record<string, unknown>) => Promise<string>;
@@ -2715,6 +2758,12 @@ export const microsoftToolHandlers: Record<string, MicrosoftToolHandler> = {
         message: string;
       },
     ).catch(fail),
+  list_mail_accounts: () => listMailAccounts().catch(fail),
+  block_attention_sender: (args) =>
+    blockAttentionSender(args as { target?: string; reason?: string }).catch(fail),
+  unblock_attention_sender: (args) =>
+    unblockAttentionSender(args as { target?: string }).catch(fail),
+  list_attention_blocks: () => listAttentionBlockTool().catch(fail),
 };
 
 export function listMicrosoftToolNames() {

@@ -319,9 +319,8 @@ For each active project, I should understand:
 I should infer project state from evidence wherever possible:
 
 - Conversation.
-- Microsoft 365.
-- Gmail.
-- Calendar.
+- Microsoft 365 (work mail and calendar).
+- Personal Gmail and Google Calendar stay with Dina and Post, not Piper.
 - Teams.
 - SharePoint.
 - OneDrive.

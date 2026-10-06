@@ -6,7 +6,6 @@ import { graphIdFromSourceId } from "@/lib/attention/send";
 import { prisma } from "@/lib/db/client";
 import { getGitHubAccount } from "@/lib/github/config";
 import { githubRequest } from "@/lib/github/client";
-import { markGmailRead } from "@/lib/google/gmail";
 import { graphRequest, userPath } from "@/lib/microsoft/graph";
 import { logger } from "@/lib/logger";
 
@@ -70,10 +69,9 @@ async function markEmailRead(sourceId: string) {
   const messageId = providerIdFromSourceId(sourceId) || graphIdFromSourceId(sourceId);
   if (!messageId) return false;
   const provider = attentionProviderFromSourceId(sourceId);
-  if (provider === "google") {
-    await markGmailRead(messageId, true);
-    return true;
-  }
+  // Historical personal Gmail cards stay in the database. Piper no longer
+  // calls Gmail, and must not send those ids to Microsoft Graph.
+  if (provider === "google") return false;
   await graphRequest(userPath(`/messages/${encodeURIComponent(messageId)}`), {
     method: "PATCH",
     body: { isRead: true },

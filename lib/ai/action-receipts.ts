@@ -54,13 +54,6 @@ export const MUTATING_TOOLS = new Set([
   "reply_channel_message",
   "block_attention_sender",
   "unblock_attention_sender",
-  // Google
-  "gmail_send_email",
-  "gmail_mark_read",
-  "gmail_create_draft",
-  "google_create_calendar_event",
-  "google_update_calendar_event",
-  "google_delete_calendar_event",
   // GitHub (writes if any exist — keep names defensive)
   "create_github_issue",
   "comment_on_github_issue",
