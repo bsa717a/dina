@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { ChangePasswordDialog } from "@/components/chat/ChangePasswordDialog";
 import { DinaAvatar } from "@/components/chat/DinaAvatar";
 import {
@@ -28,6 +29,7 @@ export function ChatHeader({
   onEnablePush,
   onTestPush,
   onSignOut,
+  isOwner = false,
 }: {
   assistantName?: string;
   assistantKey?: string | null;
@@ -44,6 +46,7 @@ export function ChatHeader({
   onEnablePush: () => void;
   onTestPush: () => void;
   onSignOut: () => void;
+  isOwner?: boolean;
 }) {
   const color =
     status === "online"
@@ -116,6 +119,7 @@ export function ChatHeader({
           onEnablePush={onEnablePush}
           onTestPush={onTestPush}
           onSignOut={onSignOut}
+          isOwner={isOwner}
         />
       </div>
     </header>
@@ -131,6 +135,7 @@ function HeaderActions({
   onEnablePush,
   onTestPush,
   onSignOut,
+  isOwner,
 }: {
   assistantName: string;
   assistantKey: string | null;
@@ -140,6 +145,7 @@ function HeaderActions({
   onEnablePush: () => void;
   onTestPush: () => void;
   onSignOut: () => void;
+  isOwner: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
@@ -251,6 +257,16 @@ function HeaderActions({
             >
               Add to Homepage
             </button>
+          )}
+          {isOwner && (
+            <Link
+              href="/admin/messages"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block w-full px-3 py-2 text-left text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+            >
+              Text a teammate
+            </Link>
           )}
           <button
             type="button"

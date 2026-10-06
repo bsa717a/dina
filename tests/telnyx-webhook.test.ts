@@ -7,6 +7,8 @@ const mockVerify = vi.fn();
 const mockLookup = vi.fn();
 const mockHandoff = vi.fn();
 const mockReply = vi.fn();
+const mockApplyKeyword = vi.fn();
+const mockOptedOut = vi.fn();
 
 vi.mock("@/lib/telnyx", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/telnyx")>();
@@ -21,6 +23,8 @@ vi.mock("@/lib/telnyx", async (importOriginal) => {
     lookupByPhoneNumber: (...args: unknown[]) => mockLookup(...args),
     handoffToGrokBot: (...args: unknown[]) => mockHandoff(...args),
     sendReply: (...args: unknown[]) => mockReply(...args),
+    applyInboundKeyword: (...args: unknown[]) => mockApplyKeyword(...args),
+    isSmsOptedOut: (...args: unknown[]) => mockOptedOut(...args),
   };
 });
 
@@ -109,8 +113,12 @@ describe("POST /api/telnyx/webhook", () => {
     mockLookup.mockReset();
     mockHandoff.mockReset();
     mockReply.mockReset();
+    mockApplyKeyword.mockReset();
+    mockOptedOut.mockReset();
+    mockApplyKeyword.mockResolvedValue(undefined);
+    mockOptedOut.mockResolvedValue(false);
     mockConfigured.mockReturnValue(true);
-    mockVerify.mockReturnValue({ valid: true });
+    mockVerify.mockReturnValue({ valid: true, verified: true });
     mockLookup.mockResolvedValue(knownRoster);
     mockHandoff.mockResolvedValue({ status: "logged" });
     mockReply.mockResolvedValue({
@@ -141,6 +149,7 @@ describe("POST /api/telnyx/webhook", () => {
     expect(body.reply).toEqual({ sent: true, type: "rcs" });
     expect(mockLookup).toHaveBeenCalledWith("+19044030781");
     expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockApplyKeyword).not.toHaveBeenCalled();
     expect(mockReply).toHaveBeenCalledWith(
       "+19044030781",
       TELNYX_KEYWORD_REPLIES.help,
@@ -325,6 +334,116 @@ describe("POST /api/telnyx/webhook", () => {
       TELNYX_KEYWORD_REPLIES.stop,
       true,
     );
+    expect(mockApplyKeyword).toHaveBeenCalledWith("user-1", "stop", "+19044030781");
+    expect(mockApplyKeyword.mock.invocationCallOrder[0]).toBeLessThan(
+      mockReply.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("clears opt-out on START before the campaign reply", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "UNSTOP" },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockApplyKeyword).toHaveBeenCalledWith(
+      "user-1",
+      "start",
+      "+19044030781",
+    );
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      TELNYX_KEYWORD_REPLIES.start,
+      true,
+    );
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("does not hand off conversational texts from an opted-out user", async () => {
+    mockOptedOut.mockResolvedValue(true);
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "What is on the 4SL backlog?" },
+        }),
+      ),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("does not persist opt-out or send keyword replies when the signature is unverified", async () => {
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+
+    const stop = await POST(
+      post(rcsHelpPayload({ body: { text: "STOP" } })),
+    );
+    const start = await POST(
+      post(rcsHelpPayload({ body: { text: "START" } })),
+    );
+    const help = await POST(post(rcsHelpPayload()));
+
+    expect(stop.status).toBe(200);
+    expect(start.status).toBe(200);
+    expect(help.status).toBe(200);
+    expect(mockApplyKeyword).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("does not send a Grok reply when the signature is unverified", async () => {
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    mockHandoff.mockResolvedValue({
+      status: "sent",
+      response: { ok: true, reply: { text: "Here is the backlog." } },
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(rcsHelpPayload({ body: { text: "What is on the 4SL backlog?" } })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("rejects the webhook in production unless Ed25519 verification succeeded", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    try {
+      const { POST } = await import("@/app/api/telnyx/webhook/route");
+      const res = await POST(
+        post(rcsHelpPayload({ body: { text: "STOP" } })),
+      );
+      expect(res.status).toBe(401);
+      expect(mockLookup).not.toHaveBeenCalled();
+      expect(mockApplyKeyword).not.toHaveBeenCalled();
+      expect(mockReply).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("ignores outbound / non-received events with 2xx", async () => {

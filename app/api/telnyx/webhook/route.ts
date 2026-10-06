@@ -2,13 +2,17 @@
  * Telnyx RCS/SMS inbound webhook.
  *
  * Flow:
- * 1. Verify Telnyx webhook signature (when signing secret is configured)
+ * 1. Verify the Telnyx Ed25519 signature. Production rejects the request
+ *    when TELNYX_PUBLIC_KEY is unset. STOP/START and any reply run only
+ *    after verification succeeds.
  * 2. Parse the webhook payload
  * 3. Look up sender in the roster (User table by phone number)
  * 4. HELP / STOP / START (and aliases) send a local Telnyx reply immediately
- *    (RCS agent when inbound type is RCS). These must not wait on Grok.
- * 5. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
- * 6. Send a Telnyx reply if Grok Bot returns sync `reply.text`
+ *    (RCS agent when inbound type is RCS) when the signature verified.
+ *    STOP persists opt-out; START clears it. Unsigned requests do neither.
+ * 5. Other traffic from an opted-out user is not forwarded or answered
+ * 6. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
+ * 7. Send a Telnyx reply if Grok Bot returns sync `reply.text`
  *
  * Unknown numbers are safely rejected (logged, not auto-provisioned).
  */
@@ -27,6 +31,8 @@ import {
   extractInboundText,
   isRcsMessageType,
   matchTelnyxKeyword,
+  applyInboundKeyword,
+  isSmsOptedOut,
   normalizeInboundMessage,
   type TelnyxWebhookPayload,
   type TelnyxMessagePayload,
@@ -37,6 +43,7 @@ export const runtime = "nodejs";
 
 async function processInboundMessage(
   message: TelnyxMessagePayload,
+  signatureVerified: boolean,
 ): Promise<InboundMessageResult> {
   const from = extractInboundFromPhone(message);
   const text = extractInboundText(message);
@@ -71,6 +78,34 @@ async function processInboundMessage(
 
   const keyword = matchTelnyxKeyword(text);
   if (keyword) {
+    if (!signatureVerified) {
+      logger.warn("telnyx_keyword_unverified", {
+        messageId,
+        from,
+        keyword: keyword.kind,
+      });
+      return {
+        messageId,
+        from,
+        handled: true,
+        handoff: "skipped",
+        roster,
+      };
+    }
+
+    if (keyword.kind === "stop" || keyword.kind === "start") {
+      try {
+        await applyInboundKeyword(roster.user.id, keyword.kind, from);
+      } catch (error) {
+        logger.error("telnyx_keyword_opt_out_failed", {
+          messageId,
+          userId: roster.user.id,
+          keyword: keyword.kind,
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
     const preferRcs = isRcsMessageType(message.type);
     const replyResult = await sendReply(from, keyword.text, preferRcs);
 
@@ -102,6 +137,21 @@ async function processInboundMessage(
     };
   }
 
+  if (await isSmsOptedOut(roster.user.id)) {
+    logger.info("telnyx_inbound_opted_out", {
+      messageId,
+      from,
+      userId: roster.user.id,
+    });
+    return {
+      messageId,
+      from,
+      handled: true,
+      handoff: "skipped",
+      roster,
+    };
+  }
+
   const handoffResult = await handoffToGrokBot(message, roster);
 
   const result: InboundMessageResult = {
@@ -113,6 +163,7 @@ async function processInboundMessage(
   };
 
   if (
+    signatureVerified &&
     handoffResult.status === "sent" &&
     handoffResult.response?.ok &&
     handoffResult.response.reply?.text
@@ -154,9 +205,13 @@ export async function POST(request: NextRequest) {
   const { signature, timestamp } = extractSignatureHeaders(request.headers);
   const verification = verifyTelnyxSignature(rawBody, signature, timestamp);
 
-  if (!verification.valid) {
+  const signatureVerified = verification.verified === true;
+  if (
+    !verification.valid ||
+    (process.env.NODE_ENV === "production" && !signatureVerified)
+  ) {
     logger.warn("telnyx_signature_invalid", {
-      reason: verification.reason,
+      reason: verification.reason ?? "unverified",
     });
     return jsonError("Invalid webhook signature", 401);
   }
@@ -198,7 +253,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await processInboundMessage(message);
+    const result = await processInboundMessage(message, signatureVerified);
     return NextResponse.json({
       ok: true,
       messageId: result.messageId,

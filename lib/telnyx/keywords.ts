@@ -13,10 +13,12 @@ export interface TelnyxKeywordReply {
   text: string;
 }
 
+/** Registered 4StudentLives campaign wording. Do not paraphrase. */
 export const TELNYX_KEYWORD_REPLIES: Record<TelnyxKeywordKind, string> = {
-  help: "Dina (4StudentLives). Send your question and I'll help. Text STOP to opt out.",
-  stop: "You are unsubscribed from Dina messages. Text START to resume.",
-  start: "You are subscribed to Dina. Send a message anytime. Text HELP for help.",
+  help: "4StudentLives: For help, reply HELP or contact us at +14352382071. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
+  stop: "4StudentLives: You have been unsubscribed and will no longer receive messages from us. Reply HELP for assistance.",
+  start:
+    "You have agreed to receive SMS updates from 4StudentLives. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
 };
 
 const HELP_ALIASES = new Set(["help", "info"]);

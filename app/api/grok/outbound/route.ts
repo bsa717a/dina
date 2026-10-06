@@ -13,8 +13,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireServiceToken } from "@/lib/grok-api/auth";
-import { sendMessage } from "@/lib/telnyx/client";
-import { isTelnyxConfigured } from "@/lib/telnyx/config";
+import { isCarrierRegistrationPending } from "@/lib/telnyx/errors";
+import { sendToPhoneOrUser } from "@/lib/telnyx/messaging";
 import { jsonError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
@@ -30,10 +30,6 @@ export async function POST(request: NextRequest) {
   const auth = requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
-  if (!isTelnyxConfigured()) {
-    return jsonError("Telnyx is not configured", 503);
-  }
-
   let json: unknown;
   try {
     json = await request.json();
@@ -47,6 +43,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { to, text, preferRcs } = parsed.data;
+  const channel = preferRcs ? "rcs_first" : "sms_only";
 
   logger.info("grok_api_outbound_request", {
     to,
@@ -54,31 +51,68 @@ export async function POST(request: NextRequest) {
     preferRcs,
   });
 
-  const result = await sendMessage({ to, text, preferRcs });
+  const outcome = await sendToPhoneOrUser({
+    actor: { kind: "service" },
+    to,
+    text,
+    channel,
+  });
 
-  if (!result.sent) {
+  if ("raw" in outcome) {
+    const result = outcome.result;
+    if (!result.sent) {
+      logger.error("grok_api_outbound_failed", {
+        to,
+        error: result.error,
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: result.error ?? "Failed to send message",
+          ...(isCarrierRegistrationPending(result.error)
+            ? { code: "carrier_registration_pending" }
+            : {}),
+        },
+        { status: 502 },
+      );
+    }
+
+    logger.info("grok_api_outbound_sent", {
+      to,
+      messageId: result.messageId,
+      type: result.type,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      messageId: result.messageId,
+      type: result.type,
+    });
+  }
+
+  if (!outcome.ok) {
     logger.error("grok_api_outbound_failed", {
       to,
-      error: result.error,
+      error: outcome.error,
+      code: outcome.code,
     });
     return NextResponse.json(
-      {
-        ok: false,
-        error: result.error ?? "Failed to send message",
-      },
-      { status: 502 },
+      { ok: false, error: outcome.error, code: outcome.code },
+      { status: outcome.status },
     );
   }
 
   logger.info("grok_api_outbound_sent", {
     to,
-    messageId: result.messageId,
-    type: result.type,
+    messageId: outcome.messageId,
+    type: outcome.type,
+    channel: outcome.channel,
   });
 
   return NextResponse.json({
     ok: true,
-    messageId: result.messageId,
-    type: result.type,
+    messageId: outcome.messageId,
+    type: outcome.type,
+    channel: outcome.channel,
   });
 }

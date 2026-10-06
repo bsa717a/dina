@@ -194,8 +194,7 @@ describe("sendMessage", () => {
 
     expect(result.sent).toBe(false);
     expect(result.type).toBeUndefined();
-    expect(result.error).toContain("400");
-    expect(result.error).toContain("40010");
+    expect(result.error).toBe("SMS carrier registration pending");
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][0]).toBe(
       "https://api.telnyx.com/v2/messages/rcs",
@@ -203,7 +202,37 @@ describe("sendMessage", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "telnyx_rcs_failed",
       expect.objectContaining({
-        error: expect.stringContaining("40010"),
+        error: "SMS carrier registration pending",
+        detail: expect.stringContaining("40010"),
+      }),
+    );
+  });
+
+  it("maps SMS error 40010 to the carrier registration message", async () => {
+    getTelnyxConfig.mockReturnValue(configured);
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: () =>
+        Promise.resolve(
+          '{"errors":[{"code":"40010","title":"Number not on a 10DLC campaign"}]}',
+        ),
+    });
+
+    const { sendMessage } = await import("@/lib/telnyx/client");
+    const result = await sendMessage({
+      to: "+19044030781",
+      text: "Hello!",
+      preferRcs: false,
+    });
+
+    expect(result.sent).toBe(false);
+    expect(result.error).toBe("SMS carrier registration pending");
+    expect(logger.error).toHaveBeenCalledWith(
+      "telnyx_send_failed",
+      expect.objectContaining({
+        error: "SMS carrier registration pending",
+        detail: expect.stringContaining("40010"),
       }),
     );
   });

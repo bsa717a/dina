@@ -1,73 +1,120 @@
 /**
- * Telnyx webhook signature verification.
+ * Telnyx v2 webhook signature verification.
  *
- * Telnyx signs webhooks using a timestamp + HMAC-SHA256 signature.
- * The signature is in the `telnyx-signature-ed25519` header (or `telnyx-signature`).
- * The timestamp is in the `telnyx-timestamp` header.
+ * Telnyx signs the raw body with Ed25519. The signature is the base64
+ * `telnyx-signature-ed25519` header. The unix timestamp (seconds) is
+ * `telnyx-timestamp`. The signed payload is `${timestamp}|${rawBody}`.
+ * The account public key is TELNYX_PUBLIC_KEY (base64 raw 32-byte key,
+ * or a PEM / SPKI public key).
  *
- * Reference: https://developers.telnyx.com/docs/v2/development/webhooks
+ * `verified` is true only after Ed25519 verification succeeds. Callers
+ * must not persist STOP/START or send replies unless that is true.
+ *
+ * In production, a missing TELNYX_PUBLIC_KEY fails closed (`valid: false`).
+ * Outside production, a missing key can accept the POST for local pipe
+ * tests, but `verified` stays false so SMS state and replies stay blocked.
+ * Once the key is set, missing, stale, or invalid signatures are rejected.
+ *
+ * Reference: https://developers.telnyx.com/development/api-fundamentals/webhooks/receiving-webhooks
  */
 
-import { createHmac, timingSafeEqual } from "crypto";
-import { getTelnyxConfig } from "./config";
+import { createPublicKey, verify, type KeyObject } from "crypto";
+import { getTelnyxPublicKey } from "@/lib/env";
 
 const SIGNATURE_TOLERANCE_SECONDS = 300;
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 export interface WebhookVerificationResult {
+  /** Whether the HTTP request may be processed at all. */
   valid: boolean;
+  /**
+   * True only when the Ed25519 signature checked out.
+   * Never persist opt-out or send a reply unless this is true.
+   */
+  verified: boolean;
   reason?: string;
+}
+
+export interface VerifyTelnyxOptions {
+  /** Pass null to force "no key" even if TELNYX_PUBLIC_KEY is set. */
+  publicKey?: string | null;
+}
+
+function publicKeyObject(rawKey: string): KeyObject {
+  const trimmed = rawKey.trim();
+  if (trimmed.includes("BEGIN PUBLIC KEY")) {
+    return createPublicKey(trimmed);
+  }
+
+  const decoded = Buffer.from(trimmed, "base64");
+  if (decoded.length === 32) {
+    return createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, decoded]),
+      format: "der",
+      type: "spki",
+    });
+  }
+
+  return createPublicKey({
+    key: decoded,
+    format: "der",
+    type: "spki",
+  });
 }
 
 export function verifyTelnyxSignature(
   rawBody: string,
   signatureHeader: string | null,
   timestampHeader: string | null,
-  signingSecret?: string,
+  options?: VerifyTelnyxOptions,
 ): WebhookVerificationResult {
-  const config = getTelnyxConfig();
-  const secret = signingSecret ?? config?.webhookSigningSecret;
+  const publicKey =
+    options && "publicKey" in options
+      ? options.publicKey?.trim() || undefined
+      : getTelnyxPublicKey();
 
-  if (!secret) {
-    return { valid: true, reason: "no_signing_secret_configured" };
+  if (!publicKey) {
+    if (process.env.NODE_ENV === "production") {
+      return {
+        valid: false,
+        verified: false,
+        reason: "public_key_required",
+      };
+    }
+    return {
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    };
   }
 
   if (!signatureHeader || !timestampHeader) {
-    return { valid: false, reason: "missing_signature_headers" };
+    return { valid: false, verified: false, reason: "missing_signature_headers" };
   }
 
-  const timestamp = parseInt(timestampHeader, 10);
-  if (isNaN(timestamp)) {
-    return { valid: false, reason: "invalid_timestamp" };
+  const timestamp = Number(timestampHeader);
+  if (!Number.isFinite(timestamp)) {
+    return { valid: false, verified: false, reason: "invalid_timestamp" };
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - timestamp) > SIGNATURE_TOLERANCE_SECONDS) {
-    return { valid: false, reason: "timestamp_out_of_tolerance" };
+    return { valid: false, verified: false, reason: "timestamp_out_of_tolerance" };
   }
 
-  const signedPayload = `${timestampHeader}.${rawBody}`;
-
-  const expectedSignature = createHmac("sha256", secret)
-    .update(signedPayload)
-    .digest("hex");
-
-  const providedSignature = signatureHeader.replace(/^v1=/, "").toLowerCase();
-
   try {
-    const expected = Buffer.from(expectedSignature, "hex");
-    const provided = Buffer.from(providedSignature, "hex");
-
-    if (expected.length !== provided.length) {
-      return { valid: false, reason: "signature_length_mismatch" };
-    }
-
-    if (!timingSafeEqual(expected, provided)) {
-      return { valid: false, reason: "signature_mismatch" };
-    }
-
-    return { valid: true };
+    const key = publicKeyObject(publicKey);
+    const signature = Buffer.from(signatureHeader, "base64");
+    const ok = verify(
+      null,
+      Buffer.from(`${timestampHeader}|${rawBody}`),
+      key,
+      signature,
+    );
+    if (!ok) return { valid: false, verified: false, reason: "signature_mismatch" };
+    return { valid: true, verified: true };
   } catch {
-    return { valid: false, reason: "signature_verification_error" };
+    return { valid: false, verified: false, reason: "signature_verification_error" };
   }
 }
 

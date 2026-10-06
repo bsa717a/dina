@@ -94,6 +94,15 @@ export function getTelnyxWebhookSigningSecret(): string | undefined {
   return process.env.TELNYX_WEBHOOK_SIGNING_SECRET?.trim() || undefined;
 }
 
+/**
+ * Telnyx account Ed25519 public key (base64 raw key or PEM).
+ * Production rejects webhooks when this is unset. Replies and STOP/START
+ * updates run only after the signature verifies.
+ */
+export function getTelnyxPublicKey(): string | undefined {
+  return process.env.TELNYX_PUBLIC_KEY?.trim() || undefined;
+}
+
 export function getGrokBotDinaWebhookUrl(): string | undefined {
   return process.env.GROK_BOT_DINA_WEBHOOK_URL?.trim() || undefined;
 }

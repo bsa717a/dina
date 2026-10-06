@@ -16,3 +16,6 @@ export * from "./client";
 export * from "./handoff";
 export * from "./inbound";
 export * from "./keywords";
+export * from "./errors";
+export * from "./messaging-policy";
+export * from "./messaging";

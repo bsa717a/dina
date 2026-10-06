@@ -23,6 +23,18 @@ model User {
   email              String?  @unique
   /// E.164 phone number for RCS/SMS roster lookup (e.g. +14352382071)
   phoneNumber        String?  @unique
+  /// When an admin recorded SMS consent. Null means consent is not on file.
+  smsConsentAt       DateTime?
+  /// Admin who recorded SMS consent.
+  smsConsentByUserId String?
+  smsConsentBy       User?    @relation("SmsConsentRecorder", fields: [smsConsentByUserId], references: [id], onDelete: SetNull)
+  smsConsentsRecorded User[]  @relation("SmsConsentRecorder")
+  /// How consent was captured: verbal, written, web_form, or in_person.
+  smsConsentMethod   String?
+  /// Set when the handset texts STOP (or an alias). Cleared only by START from that number.
+  smsOptedOutAt      DateTime?
+  /// E.164 that texted STOP. Kept if the saved number is cleared or replaced, until that number replies START.
+  smsOptedOutPhone   String?
   /// Slack user id for Regi-project roster lookup (e.g. U012ABCDEF)
   slackUserId        String?  @unique
   createdAt          DateTime @default(now())
@@ -37,9 +49,34 @@ model User {
   uploadedAttachments Attachment[]
   morningBriefPreference MorningBriefPreference?
   passwordResets         PasswordReset[]
+  smsSendsAuthored       SmsMessageLog[] @relation("SmsLogActor")
+  smsSendsReceived       SmsMessageLog[] @relation("SmsLogRecipient")
 
   @@index([phoneNumber])
   @@index([slackUserId])
+  @@index([smsConsentByUserId])
+}
+
+/// Audit row for an admin or service-token text. Does not store message body.
+model SmsMessageLog {
+  id              String   @id @default(cuid())
+  actorUserId     String?
+  actor           User?    @relation("SmsLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  /// "admin" for a signed-in owner, "service" for the Grok service token.
+  actorKind       String
+  recipientUserId String
+  recipient       User     @relation("SmsLogRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  toPhone         String
+  /// rcs, sms, or mms. The channel actually used, or the one that was attempted.
+  channel         String
+  telnyxMessageId String?
+  /// sent, failed, or blocked
+  status          String
+  error           String?
+  createdAt       DateTime @default(now())
+
+  @@index([recipientUserId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model PasswordReset {
