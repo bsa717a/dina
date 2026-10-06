@@ -78,8 +78,8 @@ export default function LoginPage() {
         />
 
         <div className="mt-3 text-right">
-          <a href="/forgot-password" className="text-sm text-[var(--accent)] hover:underline">
-            Forgot password?
+          <a href="/change-password" className="text-sm text-[var(--accent)] hover:underline">
+            Change password
           </a>
         </div>
 

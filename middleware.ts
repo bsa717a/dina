@@ -7,11 +7,13 @@ import { SECURITY_HEADERS } from "@/lib/http";
 const PUBLIC_PATHS = new Set([
   "/login",
   "/forgot-password",
+  "/change-password",
   "/reset-password",
   "/offline",
   "/api/health",
   "/api/auth/login",
   "/api/auth/forgot-password",
+  "/api/auth/password",
   "/api/auth/reset-password",
   "/api/telnyx/webhook",
   "/api/slack/events",
