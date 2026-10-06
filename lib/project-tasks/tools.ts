@@ -19,6 +19,7 @@ import {
   completeProjectTask,
   getProjectTask,
   listProjectTasks,
+  remainingTaskNumber,
   resolveProjectTask,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
@@ -202,7 +203,9 @@ const handlers: Record<
       status: asStatus(args.status),
       ...(sectionId !== undefined ? { sectionId } : {}),
     });
-    return ok({ task: publicTask({ ...task, number: resolved.number }) });
+    const number =
+      (await remainingTaskNumber(resolved.projectKey, task.id)) ?? resolved.number;
+    return ok({ task: publicTask({ ...task, number }) });
   },
 };
 

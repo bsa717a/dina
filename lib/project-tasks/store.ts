@@ -108,6 +108,15 @@ export async function listProjectTasks(options: {
   return withNumbers(records);
 }
 
+/** 1-based number on the remaining list after the current sort, including section order. */
+export async function remainingTaskNumber(
+  project: string,
+  taskId: string,
+): Promise<number | undefined> {
+  const remaining = await listProjectTasks({ project });
+  return remaining.find((task) => task.id === taskId)?.number;
+}
+
 export async function getProjectTask(
   id: string,
 ): Promise<ProjectTaskRecord | null> {
@@ -164,7 +173,12 @@ export async function addProjectTask(input: {
       "code" in error &&
       (error as { code?: string }).code === "P2002"
     ) {
-      throw new Error(`A task titled "${title}" already exists on this project.`);
+      // Slack ledger retries a colliding title only while code stays P2002.
+      const duplicate = new Error(
+        `A task titled "${title}" already exists on this project.`,
+      );
+      (duplicate as Error & { code: string }).code = "P2002";
+      throw duplicate;
     }
     throw error;
   }

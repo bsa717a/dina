@@ -304,7 +304,9 @@ model ProjectTask {
   assigneeUserId  String?
   assignee        User?     @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
   /// ProjectSection.id when this task is grouped. Null means ungrouped.
+  /// Deleting a section ungroups its tasks instead of deleting them.
   sectionId       String?
+  section         ProjectSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   completedAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -325,6 +327,7 @@ model ProjectSection {
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  tasks      ProjectTask[]
 
   @@unique([projectKey, nameKey])
   @@index([projectKey, sortOrder])

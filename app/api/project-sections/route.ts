@@ -15,6 +15,7 @@ import {
 import {
   addProjectTask,
   listProjectTasks,
+  remainingTaskNumber,
   resolveProjectTask,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
@@ -222,8 +223,9 @@ export async function PATCH(request: Request) {
     }
     const sectionId = await sectionIdForTask(key, parsed.data);
     const updated = await updateProjectTask(task.id, { sectionId });
+    const number = (await remainingTaskNumber(key, updated.id)) ?? task.number;
     return NextResponse.json({
-      task: publicTask({ ...updated, number: task.number }),
+      task: publicTask({ ...updated, number }),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not group the task.";

@@ -30,6 +30,7 @@ import {
   addProjectTask,
   updateProjectTask,
   resolveProjectTask,
+  remainingTaskNumber,
 } from "@/lib/project-tasks/store";
 import {
   PROJECT_TASK_STATUSES,
@@ -353,13 +354,17 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
 
   try {
     const updated = await updateProjectTask(task.id, patch);
+    const number =
+      patch.sectionId !== undefined
+        ? ((await remainingTaskNumber(projectKey, updated.id)) ?? task.number)
+        : task.number;
 
     void notifyTaskChange({
       event: "task.updated",
       projectKey,
       task: {
         id: updated.id,
-        number: task.number,
+        number,
         title: updated.title,
         description: updated.description,
         status: updated.status,
@@ -380,7 +385,7 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
       projectKey,
       task: {
         id: updated.id,
-        number: task.number,
+        number,
         title: updated.title,
         description: updated.description,
         status: updated.status,

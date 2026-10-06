@@ -33,6 +33,11 @@ const mockListProjectTasks = vi.fn();
 const mockAddProjectTask = vi.fn();
 const mockUpdateProjectTask = vi.fn();
 const mockResolveProjectTask = vi.fn();
+const mockEnsureProjectSection = vi.fn();
+
+vi.mock("@/lib/project-tasks/sections", () => ({
+  ensureProjectSection: (input: unknown) => mockEnsureProjectSection(input),
+}));
 
 vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks: (opts: unknown) => mockListProjectTasks(opts),
@@ -40,6 +45,13 @@ vi.mock("@/lib/project-tasks/store", () => ({
   updateProjectTask: (id: string, patch: unknown) =>
     mockUpdateProjectTask(id, patch),
   resolveProjectTask: (input: unknown) => mockResolveProjectTask(input),
+  remainingTaskNumber: async (project: unknown, taskId: unknown) => {
+    const listed = (await mockListProjectTasks({ project })) as {
+      id: string;
+      number: number;
+    }[];
+    return listed.find((task) => task.id === taskId)?.number;
+  },
 }));
 
 const createTestTask = (overrides?: Record<string, unknown>) => ({
@@ -84,9 +96,11 @@ describe("Grok Task API", () => {
     mockGetGrokBotDinaApiToken.mockReset();
     mockResolveProjectKey.mockReset();
     mockListProjectTasks.mockReset();
+    mockListProjectTasks.mockResolvedValue([]);
     mockAddProjectTask.mockReset();
     mockUpdateProjectTask.mockReset();
     mockResolveProjectTask.mockReset();
+    mockEnsureProjectSection.mockReset();
   });
 
   describe("Authentication", () => {
@@ -239,6 +253,52 @@ describe("Grok Task API", () => {
         project: "4sl",
         number: 2,
       });
+    });
+
+    it("returns the task number after a section move", async () => {
+      mockGetGrokBotDinaApiToken.mockReturnValue("test-api-token");
+      mockResolveProjectKey.mockReturnValue("4sl");
+
+      const existingTask = createTestTask({
+        number: 2,
+        id: "task-2",
+        sectionId: null,
+        sectionName: null,
+      });
+      mockResolveProjectTask.mockResolvedValue(existingTask);
+      mockEnsureProjectSection.mockResolvedValue({
+        id: "sec-sales",
+        projectKey: "4sl",
+        name: "sales",
+      });
+      mockUpdateProjectTask.mockResolvedValue({
+        ...existingTask,
+        sectionId: "sec-sales",
+        sectionName: "sales",
+      });
+      mockListProjectTasks.mockResolvedValue([
+        { ...existingTask, number: 1, sectionId: "sec-sales", sectionName: "sales" },
+      ]);
+
+      const { PATCH } = await import(
+        "@/app/api/grok/projects/[key]/tasks/route"
+      );
+      const res = await PATCH(
+        createAuthenticatedRequest(
+          "http://localhost/api/grok/projects/4sl/tasks",
+          {
+            method: "PATCH",
+            body: JSON.stringify({ number: 2, section: "sales" }),
+          },
+        ),
+        { params: Promise.resolve({ key: "4sl" }) },
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.task.number).toBe(1);
+      expect(body.task.section).toBe("sales");
+      expect(mockListProjectTasks).toHaveBeenCalledWith({ project: "4sl" });
     });
 
     it("returns 404 for missing task", async () => {

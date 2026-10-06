@@ -119,11 +119,14 @@ const resolveProjectTask = vi.fn(async () => ({
   number: 2,
 }));
 
+const remainingTaskNumber = vi.fn(async () => 1);
+
 vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks,
   addProjectTask,
   updateProjectTask,
   resolveProjectTask,
+  remainingTaskNumber,
 }));
 
 describe("project sections API", () => {
@@ -210,6 +213,7 @@ describe("project sections API", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.task.sectionName).toBe("Sales");
+    expect(data.task.number).toBe(1);
     expect(updateProjectTask).toHaveBeenCalledWith("t2", {
       sectionId: "sec-sales",
     });

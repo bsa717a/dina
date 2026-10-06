@@ -81,6 +81,21 @@ describe("ProjectTask store", () => {
     expect(remaining.map((t) => t.title)).toEqual(["Alpha", "Gamma"]);
   });
 
+  it("reports a duplicate title with the Prisma unique code", async () => {
+    await addProjectTask({
+      project: "beacon",
+      title: "Duplicate title probe",
+      source: "test",
+    });
+    await expect(
+      addProjectTask({
+        project: "beacon",
+        title: "Duplicate title probe",
+        source: "test",
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
+
   it("groups tasks under a project section", async () => {
     const section = await addProjectSection({ project: "beacon", name: "Sales" });
     expect(section.name).toBe("Sales");
@@ -125,9 +140,10 @@ describe("ProjectTask store", () => {
     expect(moved.data.task.id).toBeUndefined();
 
     const again = await listProjectTasks({ project: "beacon" });
-    expect(
-      again.find((task) => task.title === "Section test homepage")?.sectionName,
-    ).toBe("Sales");
+    const homepageAfter = again.find((task) => task.title === "Section test homepage");
+    expect(homepageAfter?.sectionName).toBe("Sales");
+    expect(moved.data.task.number).toBe(homepageAfter?.number);
+    expect(moved.data.task.number).not.toBe(homepage?.number);
   });
 
   it("seeds Dina roadmap idempotently with Waiting On Engine done", async () => {

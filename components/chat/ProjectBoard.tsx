@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useRef, useState } from "react";
+import { FormEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
 
@@ -20,6 +20,24 @@ type BoardTask = {
 };
 
 type AddMode = "section" | "task" | null;
+
+type PopoverBox = { top: number; left: number; width: number };
+
+function placePopover(anchor: HTMLElement): PopoverBox {
+  const rect = anchor.getBoundingClientRect();
+  const margin = 12;
+  const width = Math.min(448, window.innerWidth - margin * 2);
+  const left = Math.min(
+    Math.max(margin, rect.left),
+    Math.max(margin, window.innerWidth - margin - width),
+  );
+  const height = 132;
+  let top = rect.bottom + 8;
+  if (top + height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - 8 - height);
+  }
+  return { top, left, width };
+}
 
 export function ProjectAddButton({
   project,
@@ -145,6 +163,30 @@ export function ProjectAddButton({
   }
 
   const locked = Boolean(disabled || busy);
+  const formOpen = mode !== null;
+  const [popover, setPopover] = useState<PopoverBox | null>(null);
+
+  useLayoutEffect(() => {
+    if (!formOpen) return;
+    function place() {
+      const anchor = rootRef.current;
+      if (!anchor) return;
+      setPopover(placePopover(anchor));
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [formOpen]);
+
+  const popoverStyle = popover
+    ? { top: popover.top, left: popover.left, width: popover.width }
+    : undefined;
+  const popoverClass =
+    "fixed z-30 flex flex-col gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg sm:flex-row sm:items-center";
 
   return (
     <div ref={rootRef} className="relative">
@@ -194,11 +236,12 @@ export function ProjectAddButton({
       >
         +
       </button>
-      {mode === "section" && (
+      {mode === "section" && popoverStyle && (
         <form
           onSubmit={addSection}
           data-testid="add-section-form"
-          className="absolute left-0 top-full z-20 mt-2 flex w-[min(100vw-2rem,24rem)] items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg"
+          style={popoverStyle}
+          className={popoverClass}
         >
           <label className="sr-only" htmlFor="project-section-name">
             Section name
@@ -211,33 +254,37 @@ export function ProjectAddButton({
             placeholder="Section name"
             autoComplete="off"
             disabled={locked}
-            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
+            className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40 sm:flex-1"
           />
-          <button
-            type="submit"
-            data-testid="add-section"
-            disabled={locked || !sectionName.trim()}
-            className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode(null);
-              setError(null);
-            }}
-            className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            Cancel
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              data-testid="add-section"
+              disabled={locked || !sectionName.trim()}
+              className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode(null);
+                setError(null);
+              }}
+              className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="w-full text-xs text-[var(--danger)]">{error}</p>}
         </form>
       )}
-      {mode === "task" && (
+      {mode === "task" && popoverStyle && (
         <form
           onSubmit={addTask}
           data-testid="add-task-form"
-          className="absolute left-0 top-full z-20 mt-2 flex w-[min(100vw-2rem,28rem)] items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg"
+          style={popoverStyle}
+          className={popoverClass}
         >
           <label className="sr-only" htmlFor="project-task-title">
             Task
@@ -250,48 +297,46 @@ export function ProjectAddButton({
             placeholder="Task"
             autoComplete="off"
             disabled={locked}
-            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40"
+            className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm outline-none ring-[var(--accent)] focus:ring-2 disabled:opacity-40 sm:flex-1"
           />
-          <select
-            aria-label="Section"
-            data-testid="add-task-section"
-            value={taskSectionId}
-            disabled={locked}
-            onChange={(event) => setTaskSectionId(event.target.value)}
-            className="w-28 shrink-0 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm outline-none disabled:opacity-40"
-          >
-            <option value=""></option>
-            {sections.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            data-testid="add-task"
-            disabled={locked || !taskTitle.trim()}
-            className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode(null);
-              setTaskSectionId("");
-              setError(null);
-            }}
-            className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
-          >
-            Cancel
-          </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <select
+              aria-label="Section"
+              data-testid="add-task-section"
+              value={taskSectionId}
+              disabled={locked}
+              onChange={(event) => setTaskSectionId(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm outline-none disabled:opacity-40 sm:w-28 sm:flex-none"
+            >
+              <option value=""></option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              data-testid="add-task"
+              disabled={locked || !taskTitle.trim()}
+              className="shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-40"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode(null);
+                setTaskSectionId("");
+                setError(null);
+              }}
+              className="shrink-0 px-1 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="w-full text-xs text-[var(--danger)]">{error}</p>}
         </form>
-      )}
-      {error && (
-        <p className="absolute left-0 top-full z-20 mt-14 w-64 text-xs text-[var(--danger)]">
-          {error}
-        </p>
       )}
     </div>
   );
