@@ -7,10 +7,13 @@
  * The account public key is TELNYX_PUBLIC_KEY (base64 raw 32-byte key,
  * or a PEM / SPKI public key).
  *
- * When the key is unset, webhooks are accepted so the current production
- * webhook keeps working. Once TELNYX_PUBLIC_KEY is set, missing, stale,
- * or invalid signatures are rejected in every environment, including
- * production (fail closed).
+ * `verified` is true only after Ed25519 verification succeeds. Callers
+ * must not persist STOP/START or send replies unless that is true.
+ *
+ * In production, a missing TELNYX_PUBLIC_KEY fails closed (`valid: false`).
+ * Outside production, a missing key can accept the POST for local pipe
+ * tests, but `verified` stays false so SMS state and replies stay blocked.
+ * Once the key is set, missing, stale, or invalid signatures are rejected.
  *
  * Reference: https://developers.telnyx.com/development/api-fundamentals/webhooks/receiving-webhooks
  */
@@ -22,7 +25,13 @@ const SIGNATURE_TOLERANCE_SECONDS = 300;
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 export interface WebhookVerificationResult {
+  /** Whether the HTTP request may be processed at all. */
   valid: boolean;
+  /**
+   * True only when the Ed25519 signature checked out.
+   * Never persist opt-out or send a reply unless this is true.
+   */
+  verified: boolean;
   reason?: string;
 }
 
@@ -65,21 +74,32 @@ export function verifyTelnyxSignature(
       : getTelnyxPublicKey();
 
   if (!publicKey) {
-    return { valid: true, reason: "no_public_key_configured" };
+    if (process.env.NODE_ENV === "production") {
+      return {
+        valid: false,
+        verified: false,
+        reason: "public_key_required",
+      };
+    }
+    return {
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    };
   }
 
   if (!signatureHeader || !timestampHeader) {
-    return { valid: false, reason: "missing_signature_headers" };
+    return { valid: false, verified: false, reason: "missing_signature_headers" };
   }
 
   const timestamp = Number(timestampHeader);
   if (!Number.isFinite(timestamp)) {
-    return { valid: false, reason: "invalid_timestamp" };
+    return { valid: false, verified: false, reason: "invalid_timestamp" };
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - timestamp) > SIGNATURE_TOLERANCE_SECONDS) {
-    return { valid: false, reason: "timestamp_out_of_tolerance" };
+    return { valid: false, verified: false, reason: "timestamp_out_of_tolerance" };
   }
 
   try {
@@ -91,10 +111,10 @@ export function verifyTelnyxSignature(
       key,
       signature,
     );
-    if (!ok) return { valid: false, reason: "signature_mismatch" };
-    return { valid: true };
+    if (!ok) return { valid: false, verified: false, reason: "signature_mismatch" };
+    return { valid: true, verified: true };
   } catch {
-    return { valid: false, reason: "signature_verification_error" };
+    return { valid: false, verified: false, reason: "signature_verification_error" };
   }
 }
 

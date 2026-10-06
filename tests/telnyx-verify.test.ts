@@ -24,6 +24,7 @@ describe("verifyTelnyxSignature", () => {
       publicKey: PUBLIC_KEY_B64,
     });
     expect(result.valid).toBe(true);
+    expect(result.verified).toBe(true);
     expect(result.reason).toBeUndefined();
   });
 
@@ -36,6 +37,7 @@ describe("verifyTelnyxSignature", () => {
       { publicKey: PUBLIC_KEY_B64 },
     );
     expect(result.valid).toBe(false);
+    expect(result.verified).toBe(false);
     expect(result.reason).toBe("signature_mismatch");
   });
 
@@ -73,10 +75,24 @@ describe("verifyTelnyxSignature", () => {
     expect(result.reason).toBe("signature_verification_error");
   });
 
-  it("accepts requests when no public key is configured", () => {
+  it("does not treat a missing key as a verified signature outside production", () => {
     const result = verifyTelnyxSignature(TEST_BODY, null, null);
     expect(result.valid).toBe(true);
+    expect(result.verified).toBe(false);
     expect(result.reason).toBe("no_public_key_configured");
+  });
+
+  it("fails closed in production when TELNYX_PUBLIC_KEY is unset", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    delete process.env.TELNYX_PUBLIC_KEY;
+    try {
+      const result = verifyTelnyxSignature(TEST_BODY, null, null);
+      expect(result.valid).toBe(false);
+      expect(result.verified).toBe(false);
+      expect(result.reason).toBe("public_key_required");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("fails closed in production once TELNYX_PUBLIC_KEY is set", () => {
@@ -102,6 +118,7 @@ describe("verifyTelnyxSignature", () => {
         timestamp,
       );
       expect(good.valid).toBe(true);
+      expect(good.verified).toBe(true);
     } finally {
       vi.unstubAllEnvs();
     }

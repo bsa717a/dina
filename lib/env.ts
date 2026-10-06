@@ -96,7 +96,8 @@ export function getTelnyxWebhookSigningSecret(): string | undefined {
 
 /**
  * Telnyx account Ed25519 public key (base64 raw key or PEM).
- * Once set, inbound webhooks fail closed on a bad or stale signature.
+ * Production rejects webhooks when this is unset. Replies and STOP/START
+ * updates run only after the signature verifies.
  */
 export function getTelnyxPublicKey(): string | undefined {
   return process.env.TELNYX_PUBLIC_KEY?.trim() || undefined;

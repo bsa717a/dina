@@ -118,7 +118,7 @@ describe("POST /api/telnyx/webhook", () => {
     mockApplyKeyword.mockResolvedValue(undefined);
     mockOptedOut.mockResolvedValue(false);
     mockConfigured.mockReturnValue(true);
-    mockVerify.mockReturnValue({ valid: true });
+    mockVerify.mockReturnValue({ valid: true, verified: true });
     mockLookup.mockResolvedValue(knownRoster);
     mockHandoff.mockResolvedValue({ status: "logged" });
     mockReply.mockResolvedValue({
@@ -376,6 +376,70 @@ describe("POST /api/telnyx/webhook", () => {
     expect(body.handoff).toBe("skipped");
     expect(mockHandoff).not.toHaveBeenCalled();
     expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("does not persist opt-out or send keyword replies when the signature is unverified", async () => {
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+
+    const stop = await POST(
+      post(rcsHelpPayload({ body: { text: "STOP" } })),
+    );
+    const start = await POST(
+      post(rcsHelpPayload({ body: { text: "START" } })),
+    );
+    const help = await POST(post(rcsHelpPayload()));
+
+    expect(stop.status).toBe(200);
+    expect(start.status).toBe(200);
+    expect(help.status).toBe(200);
+    expect(mockApplyKeyword).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
+  });
+
+  it("does not send a Grok reply when the signature is unverified", async () => {
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    mockHandoff.mockResolvedValue({
+      status: "sent",
+      response: { ok: true, reply: { text: "Here is the backlog." } },
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(rcsHelpPayload({ body: { text: "What is on the 4SL backlog?" } })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it("rejects the webhook in production unless Ed25519 verification succeeded", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    try {
+      const { POST } = await import("@/app/api/telnyx/webhook/route");
+      const res = await POST(
+        post(rcsHelpPayload({ body: { text: "STOP" } })),
+      );
+      expect(res.status).toBe(401);
+      expect(mockLookup).not.toHaveBeenCalled();
+      expect(mockApplyKeyword).not.toHaveBeenCalled();
+      expect(mockReply).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("ignores outbound / non-received events with 2xx", async () => {
