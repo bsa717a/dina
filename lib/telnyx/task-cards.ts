@@ -13,10 +13,13 @@
  * card is a standalone rich card, because a carousel cannot contain 1 card.
  */
 
+import { taskOwnedByViewer, taskOwnerLabel } from "@/lib/client/whiteboard";
 import type {
   TelnyxRcsCardContent,
   TelnyxRcsContentMessage,
 } from "./types";
+
+export { taskOwnerLabel };
 
 export const RCS_CAROUSEL_MIN = 2;
 export const RCS_CAROUSEL_MAX = 10;
@@ -58,13 +61,6 @@ export function truncateRcsText(value: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-/** Owner written into a title, e.g. "Survey Lost Deals (owner: Adam, due 10/9/2026)". */
-export function taskOwnerLabel(title: string): string | null {
-  const match = title.match(/\bowner:\s*([^,)\n]+)/i);
-  const label = match?.[1]?.trim().replace(/[.\s]+$/g, "") ?? "";
-  return label || null;
-}
-
 export function taskDueLabel(title: string, description = ""): string | null {
   const match = `${title}\n${description}`.match(DUE_PATTERN);
   const label = match?.[1]?.trim() ?? "";
@@ -98,43 +94,14 @@ export function taskIdFromPostback(postback: string | null | undefined): string 
   return id;
 }
 
-function normalizePerson(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function samePerson(label: string, candidate: string): boolean {
-  const left = normalizePerson(label);
-  const right = normalizePerson(candidate);
-  if (!left || !right) return false;
-  if (left === right) return true;
-  const leftFirst = left.split(" ")[0] ?? "";
-  const rightFirst = right.split(" ")[0] ?? "";
-  if (!left.includes(" ") && left === rightFirst) return true;
-  if (!right.includes(" ") && right === leftFirst) return true;
-  return false;
-}
-
-function usernameAsName(username: string): string {
-  return normalizePerson(username).replace(/[_./-]+/g, " ");
-}
-
 /**
- * Their task when the assignee is this user.
- * With no assignee, match "owner: …" in the title to the display name or username.
+ * Same Mine rule as the whiteboard: assignee id, otherwise "owner: …" in the title.
  */
 export function taskBelongsToUser(
   task: { title: string; assigneeUserId?: string | null },
   user: TaskCardViewer,
 ): boolean {
-  const assigneeId = task.assigneeUserId?.trim() ?? "";
-  if (assigneeId) return assigneeId === user.id;
-  const label = taskOwnerLabel(task.title);
-  if (!label) return false;
-  const name = user.name?.trim() ?? "";
-  const username = user.username?.trim() ?? "";
-  if (name && samePerson(label, name)) return true;
-  if (!username) return false;
-  return samePerson(label, username) || samePerson(label, usernameAsName(username));
+  return taskOwnedByViewer(task, user);
 }
 
 export function buildTaskRcsCard(input: OpenTaskCardInput): TaskRcsCard {
