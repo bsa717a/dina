@@ -415,3 +415,98 @@ describe("sendReply", () => {
     expect(body.sms_fallback).toBeUndefined();
   });
 });
+
+describe("sendRcsContent", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockFetch.mockReset();
+    getTelnyxConfig.mockReset();
+    getTelnyxConfig.mockReturnValue(configured);
+  });
+
+  it("posts a rich card carousel without sms_fallback", async () => {
+    mockFetch.mockResolvedValue(rcsOk({ id: "msg-cards" }));
+    const { sendRcsContent } = await import("@/lib/telnyx/client");
+    const result = await sendRcsContent({
+      to: "+19044030781",
+      smsText: "Open tasks:\n1. Survey — Derek — due 10/9/2026",
+      content: {
+        rich_card: {
+          carousel_card: {
+            card_width: "MEDIUM",
+            card_contents: [
+              {
+                title: "Survey",
+                description: "Owner: Derek\nDue: 10/9/2026",
+                suggestions: [
+                  {
+                    action: {
+                      text: "Done",
+                      postback_data: "piper-task-done:task-1",
+                    },
+                  },
+                ],
+              },
+              {
+                title: "Call",
+                description: "Owner: Derek\nDue: No due date",
+                suggestions: [
+                  {
+                    action: {
+                      text: "Done",
+                      postback_data: "piper-task-done:task-2",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      sent: true,
+      messageId: "msg-cards",
+      type: "RCS",
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.sms_fallback).toBeUndefined();
+    expect(body.agent_message.content_message.rich_card.carousel_card.card_contents).toHaveLength(2);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://api.telnyx.com/v2/messages/rcs");
+  });
+
+  it("sends the numbered SMS only after the rich card request fails", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve("rcs rejected"),
+      })
+      .mockResolvedValueOnce(smsOk("msg-list"));
+
+    const { sendRcsContent } = await import("@/lib/telnyx/client");
+    const result = await sendRcsContent({
+      to: "+19044030781",
+      smsText: "Open tasks:\n1. Survey — Derek — due 10/9/2026\nReply done N to complete task N.",
+      content: {
+        rich_card: {
+          standalone_card: {
+            card_orientation: "VERTICAL",
+            card_content: { title: "Survey", description: "Owner: Derek\nDue: 10/9/2026" },
+          },
+        },
+      },
+    });
+
+    expect(result.sent).toBe(true);
+    expect(result.type).toBe("SMS");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[1][0]).toBe("https://api.telnyx.com/v2/messages");
+    const smsBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(smsBody.text).toContain("1. Survey");
+    expect(smsBody.text).toContain("done N");
+    expect(smsBody.sms_fallback).toBeUndefined();
+  });
+});

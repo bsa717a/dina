@@ -106,6 +106,18 @@ export function extractInboundTo(payload: unknown): string {
   return "";
 }
 
+/** Postback from a tapped RCS suggestion (`body.suggestion_response.postback_data`). */
+export function extractSuggestionPostback(raw: unknown): string {
+  const obj = asRecord(raw);
+  if (!obj) return "";
+
+  const body = asRecord(obj.body);
+  const nested = body ? asRecord(body.suggestion_response) : null;
+  const top = asRecord(obj.suggestion_response);
+  const data = nested?.postback_data ?? top?.postback_data;
+  return typeof data === "string" ? data.trim() : "";
+}
+
 export function isRcsMessageType(
   type: TelnyxMessageType | string | undefined,
 ): boolean {

@@ -3,6 +3,7 @@ import {
   extractInboundFromPhone,
   extractInboundText,
   extractInboundTo,
+  extractSuggestionPostback,
   normalizeInboundMessage,
 } from "@/lib/telnyx/inbound";
 
@@ -149,6 +150,23 @@ describe("normalizeInboundMessage", () => {
     });
 
     expect(normalized?.text).toBe("Help");
+  });
+
+  it("reads suggestion postback data from an RCS Done tap", () => {
+    const normalized = normalizeInboundMessage({
+      id: "rcs-done",
+      direction: "inbound",
+      type: "RCS",
+      from: { phone_number: "+19044030781" },
+      body: {
+        suggestion_response: {
+          text: "Done",
+          postback_data: "piper-task-done:task-1",
+        },
+      },
+    });
+    expect(normalized?.text).toBe("Done");
+    expect(extractSuggestionPostback(normalized)).toBe("piper-task-done:task-1");
   });
 
   it("returns null when the message id is missing", () => {
