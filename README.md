@@ -1,6 +1,6 @@
 # Dina
 
-Private, mobile-first AI chief-of-staff chat app. Runs locally on a Mac mini, reachable via ngrok, installable as a PWA, with streaming OpenAI responses and Web Push.
+Private, mobile-first AI chief-of-staff chat app. Production is Cloud Run service `dina` in project `dina-pm` (`us-central1`), deployed by Cloud Build on every push to `main`. Local development can still run on a Mac, reachable via ngrok, installable as a PWA, with streaming OpenAI responses and Web Push.
 
 ## Requirements
 
@@ -367,9 +367,9 @@ Or `POST /api/attention/scan` (session or `ATTENTION_SCAN_SECRET`).
 
 ### launchd (attention scan schedule)
 
-Scans on local time: **every 30 minutes from 6:00–17:00**. No scans from 18:00–05:00 (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)).
+Scans on local time: **every 30 minutes from 6:00–17:00**. No scans from 18:00–05:00 (`StartCalendarInterval` in [`deploy/com.dina.attention.plist`](deploy/com.dina.attention.plist)). This schedule is local. It is not how production is deployed. Production deploys are [Cloud Build](#production-deploy).
 
-1. Ensure Dina is running (`com.dina.app` or `npm run start`).
+1. For a local scan, run Dina with `npm run dev` or `npm run start`.
 2. Confirm the plist paths match this Mac (`which node`, repo path).
 3. Load:
 
@@ -381,36 +381,13 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dina.attention.plist
 
 Push only works when the browser/PWA has an active notification subscription. If Apple returns 403, Dina drops the dead subscription — re-enable notifications in the app.
 
-## Production on a Mac mini (launchd)
+## Production deploy
 
-1. Build once:
+Production deploys from Cloud Build, not from a Mac mini and not from a personal `gcloud auth login`. A push to `main` builds this repo and deploys Cloud Run service `dina` in `dina-pm` / `us-central1`. Traffic moves to that revision only when the commit is still the head of `main`.
 
-```bash
-npm run build
-```
+The trigger is regional in `us-central1` on the existing Cloud Build connection `Piper-Dina`. [`deploy/com.dina.app.plist`](deploy/com.dina.app.plist) is retired. Do not load it to deploy Dina.
 
-2. Confirm [`deploy/com.dina.app.plist`](deploy/com.dina.app.plist) paths match this Mac (`which npm`, repo path).
-
-3. Create log directory:
-
-```bash
-mkdir -p ~/Library/Logs/dina
-```
-
-4. Install and load:
-
-```bash
-cp deploy/com.dina.app.plist ~/Library/LaunchAgents/com.dina.app.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dina.app.plist
-```
-
-Unload:
-
-```bash
-launchctl bootout gui/$(id -u)/com.dina.app
-```
-
-This starts Dina after reboot, restarts on crash (`KeepAlive`), and writes logs under `~/Library/Logs/dina/`.
+One-time setup (enable APIs, create `dina-cloudbuild@dina-pm.iam.gserviceaccount.com`, finish the `Piper-Dina` GitHub link, create the trigger) is in [`deploy/cloud-build.md`](deploy/cloud-build.md). The build does not run migrations and does not delete or rebind secrets.
 
 ## Manual verification checklist
 
