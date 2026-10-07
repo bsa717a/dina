@@ -1,6 +1,9 @@
 /**
  * Send a user's open tasks over RCS as rich cards, or as a numbered SMS list.
  * Done uses completeProjectTask — the same status: "done" path as the whiteboard.
+ * A Done tap can complete any open task on the sender's projects, including
+ * tasks the All filter shows for someone else. The numbered SMS list is still
+ * that sender's own tasks.
  */
 
 import { prisma } from "@/lib/db/client";
@@ -157,14 +160,12 @@ export async function sendOpenTaskList(input: {
   return last;
 }
 
-async function completeOwnedTask(
-  user: TaskCardViewer,
+async function completeVisibleTask(
   projectKeys: string[],
   taskId: string,
 ): Promise<string> {
   const task = await getProjectTask(taskId);
   if (!task || !projectKeys.includes(task.projectKey)) return NOT_ON_LIST;
-  if (!taskBelongsToUser(task, user)) return NOT_ON_LIST;
   if (task.status === "done") return formatTaskDoneReply(task.title, true);
   if (!REMAINING_STATUSES.includes(task.status)) return NOT_ON_LIST;
 
@@ -184,7 +185,7 @@ async function completeOwnedTaskByNumber(
     const noun = tasks.length === 1 ? "task" : "tasks";
     return `No open task ${number}. You have ${tasks.length} open ${noun}.`;
   }
-  return completeOwnedTask(user, projectKeys, task.id);
+  return completeVisibleTask(projectKeys, task.id);
 }
 
 export async function deliverInboundTaskIntent(input: {
@@ -206,11 +207,7 @@ export async function deliverInboundTaskIntent(input: {
 
     const text =
       input.intent.kind === "done-id"
-        ? await completeOwnedTask(
-            input.user,
-            input.projectKeys,
-            input.intent.taskId,
-          )
+        ? await completeVisibleTask(input.projectKeys, input.intent.taskId)
         : await completeOwnedTaskByNumber(
             input.user,
             input.projectKeys,

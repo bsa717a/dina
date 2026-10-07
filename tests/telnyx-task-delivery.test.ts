@@ -186,10 +186,41 @@ describe("deliverInboundTaskIntent", () => {
     );
   });
 
-  it("does not complete a task the user does not own", async () => {
+  it("completes a Done tap on a task someone else owns and confirms", async () => {
     getProjectTask.mockResolvedValue(
-      task({ title: "Survey Lost Deals (owner: Adam)", assigneeUserId: "other" }),
+      task({
+        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
+        assigneeUserId: "user-adam",
+      }),
     );
+    completeProjectTask.mockResolvedValue({
+      ...task({
+        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
+        assigneeUserId: "user-adam",
+        status: "done",
+      }),
+    });
+
+    const { deliverInboundTaskIntent } = await import("@/lib/telnyx/task-delivery");
+    await deliverInboundTaskIntent({
+      to: "+19044030781",
+      preferRcs: true,
+      user,
+      projectKeys: ["4studentlives"],
+      intent: { kind: "done-id", taskId: "task-1" },
+    });
+
+    expect(completeProjectTask).toHaveBeenCalledWith({ taskId: "task-1" });
+    expect(sendReply).toHaveBeenCalledWith(
+      "+19044030781",
+      "✅ Survey Lost Deals",
+      true,
+      { allowSmsFallback: true },
+    );
+  });
+
+  it("does not complete a task outside the sender's projects", async () => {
+    getProjectTask.mockResolvedValue(task({ projectKey: "other-project" }));
 
     const { deliverInboundTaskIntent } = await import("@/lib/telnyx/task-delivery");
     await deliverInboundTaskIntent({

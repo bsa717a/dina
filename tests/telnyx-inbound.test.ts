@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyNonTextInbound,
   extractInboundFromPhone,
   extractInboundText,
   extractInboundTo,
@@ -150,6 +151,35 @@ describe("normalizeInboundMessage", () => {
     });
 
     expect(normalized?.text).toBe("Help");
+  });
+
+  it("classifies the 1:49 PM is_typing payload as a non-text inbound", () => {
+    const delivery = {
+      event_type: "message.received",
+      id: "5a1c559e-cda4-406f-9955-82c808c4eb8e",
+      occurred_at: "2026-10-07T19:49:56.983+00:00",
+      payload: {
+        autoresponse_type: null,
+        body: { event_type: "is_typing" },
+        direction: "inbound",
+        errors: [],
+        from: { phone_number: "+19044030781" },
+        id: "1b5735ab-33ba-4921-b96b-c76d958b02a0",
+        record_type: "message",
+        to: [
+          {
+            agent_id: "42257dc9-586a-4f72-bba3-6b816d1ec6ed",
+            agent_name: "Dina",
+          },
+        ],
+        type: "RCS",
+      },
+    };
+    const normalized = normalizeInboundMessage(delivery.payload, delivery.occurred_at);
+    expect(normalized?.text).toBe("");
+    expect(extractSuggestionPostback(normalized)).toBe("");
+    expect(classifyNonTextInbound(normalized)).toBe("is_typing");
+    expect(classifyNonTextInbound(delivery.payload)).toBe("is_typing");
   });
 
   it("reads a Done reply-suggestion tap from suggestion_response", () => {
