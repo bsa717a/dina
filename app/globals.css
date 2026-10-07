@@ -179,6 +179,16 @@ input {
   }
 }
 
+.whiteboard-scroll:has(.whiteboard-task-edit) {
+  max-height: 28rem;
+}
+
+@media (min-width: 640px) {
+  .whiteboard-scroll:has(.whiteboard-task-edit) {
+    max-height: 32rem;
+  }
+}
+
 .whiteboard-section {
   margin: 0.45rem 0.85rem 0;
   font-size: 1.2rem;
@@ -279,4 +289,116 @@ input {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 0.75rem;
   color: #a33b3b;
+}
+
+.whiteboard-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.whiteboard-task-item {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.whiteboard-task-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+}
+
+.whiteboard-task-line:focus-within {
+  outline: none;
+}
+
+.whiteboard-task[role="button"]:focus-visible {
+  outline: 2px solid var(--marker-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.whiteboard-task-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 0.75rem 0.55rem 2.35rem;
+}
+
+.whiteboard-task-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.whiteboard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.whiteboard-field > span {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--marker-green);
+}
+
+.whiteboard-field-control {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  font-size: 1rem;
+  color-scheme: light;
+}
+
+.whiteboard-notes {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 4.25rem;
+  resize: vertical;
+  box-sizing: border-box;
+  border-radius: 0.5rem;
+  border: 1px solid #d9d0c0;
+  background: #fffdf8;
+  padding: 0.4rem 0.55rem;
+  font-family: var(--font-whiteboard), cursive;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  color: var(--marker-blue);
+  outline: none;
+}
+
+.whiteboard-notes:focus,
+.whiteboard-field-control:focus {
+  border-color: var(--marker-blue);
+}
+
+.whiteboard-notes:disabled,
+.whiteboard-field-control:disabled {
+  opacity: 0.45;
+}
+
+.whiteboard-task-edit .whiteboard-error {
+  border-top: 0;
+  padding: 0;
+}
+
+@media (max-width: 520px) {
+  .whiteboard-task-edit {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .whiteboard-task-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

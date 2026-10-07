@@ -13,13 +13,19 @@
  * card is a standalone rich card, because a carousel cannot contain 1 card.
  */
 
-import { taskOwnedByViewer, taskOwnerLabel } from "@/lib/client/whiteboard";
+import {
+  formatDueOn,
+  isoToDueLabel,
+  taskDueLabel,
+  taskOwnedByViewer,
+  taskOwnerLabel,
+} from "@/lib/client/whiteboard";
 import type {
   TelnyxRcsCardContent,
   TelnyxRcsContentMessage,
 } from "./types";
 
-export { taskOwnerLabel };
+export { taskDueLabel, taskOwnerLabel };
 
 export const RCS_CAROUSEL_MIN = 2;
 export const RCS_CAROUSEL_MAX = 10;
@@ -51,9 +57,6 @@ export type TaskRcsPart =
   | { kind: "carousel"; cards: TaskRcsCard[] }
   | { kind: "standalone"; card: TaskRcsCard };
 
-const DUE_PATTERN =
-  /\bdue:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,\s*\d{4})?)/i;
-
 export function truncateRcsText(value: string, max: number): string {
   const text = value.trim();
   if (text.length <= max) return text;
@@ -61,10 +64,15 @@ export function truncateRcsText(value: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-export function taskDueLabel(title: string, description = ""): string | null {
-  const match = `${title}\n${description}`.match(DUE_PATTERN);
-  const label = match?.[1]?.trim() ?? "";
-  return label || null;
+/** Prefer a stored due date. Otherwise read "due …" from the title or description. */
+export function taskCardDue(task: {
+  dueAt?: Date | null;
+  title: string;
+  description?: string | null;
+}): string | null {
+  const stored = formatDueOn(task.dueAt);
+  if (stored) return isoToDueLabel(stored);
+  return taskDueLabel(task.title, task.description ?? "");
 }
 
 /** Card title without the owner/due parenthetical. */

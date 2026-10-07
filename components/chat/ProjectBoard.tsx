@@ -1,8 +1,19 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
+import {
+  createNotesWriteGuard,
+  shouldApplyServerNotes,
+} from "@/lib/client/notes-save";
 import {
   taskOwnedByViewer,
   whiteboardHeading,
@@ -16,6 +27,11 @@ type BoardSection = {
   sortOrder: number;
 };
 
+type BoardPerson = {
+  id: string;
+  name: string;
+};
+
 type BoardTask = {
   number: number;
   id: string;
@@ -24,6 +40,14 @@ type BoardTask = {
   sectionId: string | null;
   sectionName: string | null;
   assigneeUserId: string | null;
+  notes: string;
+  dueAt: string | null;
+};
+
+type TaskDetailsPatch = {
+  assigneeUserId?: string | null;
+  dueAt?: string | null;
+  notes?: string;
 };
 
 type AddMode = "section" | "task" | null;
@@ -369,6 +393,9 @@ export function ProjectBoard({
   const router = useRouter();
   const [sections, setSections] = useState<BoardSection[]>([]);
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [people, setPeople] = useState<BoardPerson[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const notesWrites = useRef(createNotesWriteGuard());
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -389,16 +416,29 @@ export function ProjectBoard({
         const data = (await res.json().catch(() => ({}))) as {
           error?: string;
           sections?: BoardSection[];
-          tasks?: Array<Omit<BoardTask, "assigneeUserId"> & { assigneeUserId?: string | null }>;
+          tasks?: Array<
+            Omit<BoardTask, "assigneeUserId" | "notes" | "dueAt"> & {
+              assigneeUserId?: string | null;
+              notes?: string | null;
+              dueAt?: string | null;
+            }
+          >;
+          people?: BoardPerson[];
         };
         if (cancelled) return;
         if (!res.ok) throw new Error(data.error || "Could not load sections.");
         const nextTasks = (Array.isArray(data.tasks) ? data.tasks : []).map((task) => ({
           ...task,
           assigneeUserId: task.assigneeUserId ?? null,
+          notes: task.notes ?? "",
+          dueAt: task.dueAt ?? null,
         }));
         setSections(Array.isArray(data.sections) ? data.sections : []);
+        setPeople(Array.isArray(data.people) ? data.people : []);
         setTasks(nextTasks);
+        setExpandedId((current) =>
+          current && nextTasks.some((task) => task.id === current) ? current : null,
+        );
         setCompletingId((current) =>
           current && nextTasks.some((task) => task.id === current) ? current : null,
         );
@@ -443,6 +483,71 @@ export function ProjectBoard({
       setError(err instanceof Error ? err.message : "Could not move the task.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveDetails(task: BoardTask, patch: TaskDetailsPatch) {
+    if (disabled) return;
+    const notesRevision =
+      patch.notes !== undefined ? notesWrites.current.start(task.id) : undefined;
+    setError(null);
+    try {
+      const res = await fetch("/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: project.key,
+          taskId: task.id,
+          ...patch,
+        }),
+      });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        task?: BoardTask;
+      };
+      if (
+        notesRevision !== undefined &&
+        !notesWrites.current.isCurrent(task.id, notesRevision)
+      ) {
+        return;
+      }
+      if (!res.ok || !data.task) {
+        throw new Error(data.error || "Could not update the task.");
+      }
+      const saved = data.task;
+      const applyNotes = shouldApplyServerNotes(
+        notesWrites.current,
+        saved.id,
+        notesRevision,
+      );
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === saved.id
+            ? {
+                ...item,
+                ...saved,
+                assigneeUserId: saved.assigneeUserId ?? null,
+                notes: applyNotes ? (saved.notes ?? "") : item.notes,
+                dueAt: saved.dueAt ?? null,
+              }
+            : item,
+        ),
+      );
+      onChanged?.();
+    } catch (err) {
+      if (
+        notesRevision !== undefined &&
+        !notesWrites.current.isCurrent(task.id, notesRevision)
+      ) {
+        return;
+      }
+      const message = err instanceof Error ? err.message : "Could not update the task.";
+      setError(message);
+      throw err instanceof Error ? err : new Error(message);
     }
   }
 
@@ -500,10 +605,14 @@ export function ProjectBoard({
                 <TaskList
                   tasks={visibleTasks.filter((task) => task.sectionId === section.id)}
                   sections={sections}
+                  people={people}
                   locked={locked}
                   completingId={completingId}
+                  expandedId={expandedId}
+                  onToggle={setExpandedId}
                   onMove={moveTask}
                   onComplete={completeTask}
+                  onSave={saveDetails}
                 />
               </section>
             ))}
@@ -513,10 +622,14 @@ export function ProjectBoard({
                 <TaskList
                   tasks={ungrouped}
                   sections={sections}
+                  people={people}
                   locked={locked}
                   completingId={completingId}
+                  expandedId={expandedId}
+                  onToggle={setExpandedId}
                   onMove={moveTask}
                   onComplete={completeTask}
+                  onSave={saveDetails}
                 />
               </section>
             )}
@@ -531,69 +644,318 @@ export function ProjectBoard({
   );
 }
 
+function stopRowToggle(event: { stopPropagation: () => void }) {
+  event.stopPropagation();
+}
+
+function rowToggleTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  return !target.closest("input, select, textarea, button, a, label");
+}
+
 function TaskList({
   tasks,
   sections,
+  people,
   locked,
   completingId,
+  expandedId,
+  onToggle,
   onMove,
   onComplete,
+  onSave,
 }: {
   tasks: BoardTask[];
   sections: BoardSection[];
+  people: BoardPerson[];
   locked: boolean;
   completingId: string | null;
+  expandedId: string | null;
+  onToggle: (taskId: string | null) => void;
   onMove: (task: BoardTask, sectionId: string) => void;
   onComplete: (task: BoardTask) => void;
+  onSave: (task: BoardTask, patch: TaskDetailsPatch) => Promise<void>;
 }) {
   if (!tasks.length) {
     return <p className="whiteboard-muted">(none yet)</p>;
   }
   return (
-    <ul>
+    <ul className="whiteboard-tasks">
       {tasks.map((task) => (
-        <li
+        <TaskRow
           key={task.id}
-          className="flex items-center justify-between gap-2 px-3 py-1.5"
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className={`whiteboard-check${completingId === task.id ? " is-checked" : ""}`}>
-              <input
-                type="checkbox"
-                checked={completingId === task.id}
-                disabled={locked}
-                aria-label={`Mark done: ${task.title}`}
-                data-testid={`task-done-${task.number}`}
-                onChange={() => onComplete(task)}
-              />
-            </span>
-            <span className={`whiteboard-task${completingId === task.id ? " is-done" : ""}`}>
-              {task.number}. {task.title}
-            </span>
-          </span>
-          {sections.length > 0 && (
-            <select
-              aria-label={`Section for ${task.title}`}
-              data-testid={`task-section-${task.number}`}
-              value={
-                task.sectionId && sections.some((section) => section.id === task.sectionId)
-                  ? task.sectionId
-                  : ""
-              }
-              disabled={locked}
-              onChange={(event) => onMove(task, event.target.value)}
-              className="whiteboard-select"
-            >
-              <option value="">Ungrouped</option>
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </li>
+          task={task}
+          sections={sections}
+          people={people}
+          locked={locked}
+          done={completingId === task.id}
+          open={expandedId === task.id}
+          onToggle={() => onToggle(expandedId === task.id ? null : task.id)}
+          onMove={onMove}
+          onComplete={onComplete}
+          onSave={onSave}
+        />
       ))}
     </ul>
+  );
+}
+
+function TaskRow({
+  task,
+  sections,
+  people,
+  locked,
+  done,
+  open,
+  onToggle,
+  onMove,
+  onComplete,
+  onSave,
+}: {
+  task: BoardTask;
+  sections: BoardSection[];
+  people: BoardPerson[];
+  locked: boolean;
+  done: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onMove: (task: BoardTask, sectionId: string) => void;
+  onComplete: (task: BoardTask) => void;
+  onSave: (task: BoardTask, patch: TaskDetailsPatch) => Promise<void>;
+}) {
+  const panelId = useId();
+  const knownOwner = people.some((person) => person.id === task.assigneeUserId);
+
+  return (
+    <li className="whiteboard-task-item" data-testid={`task-row-${task.number}`}>
+      <div
+        className="whiteboard-task-line"
+        onClick={(event) => {
+          if (!rowToggleTarget(event.target)) return;
+          onToggle();
+        }}
+      >
+        <span
+          className={`whiteboard-check${done ? " is-checked" : ""}`}
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          <input
+            type="checkbox"
+            checked={done}
+            disabled={locked}
+            aria-label={`Mark done: ${task.title}`}
+            data-testid={`task-done-${task.number}`}
+            onClick={stopRowToggle}
+            onChange={() => onComplete(task)}
+          />
+        </span>
+        <span
+          className={`whiteboard-task${done ? " is-done" : ""}`}
+          role="button"
+          tabIndex={0}
+          aria-expanded={open}
+          aria-controls={panelId}
+          data-testid={`task-expand-${task.number}`}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            onToggle();
+          }}
+        >
+          {task.number}. {task.title}
+        </span>
+        {sections.length > 0 && (
+          <select
+            aria-label={`Section for ${task.title}`}
+            data-testid={`task-section-${task.number}`}
+            value={
+              task.sectionId && sections.some((section) => section.id === task.sectionId)
+                ? task.sectionId
+                : ""
+            }
+            disabled={locked}
+            onClick={stopRowToggle}
+            onPointerDown={stopRowToggle}
+            onChange={(event) => onMove(task, event.target.value)}
+            className="whiteboard-select"
+          >
+            <option value="">Ungrouped</option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {open ? (
+        <TaskEditor
+          id={panelId}
+          task={task}
+          people={people}
+          knownOwner={knownOwner}
+          locked={locked}
+          onSave={onSave}
+        />
+      ) : null}
+    </li>
+  );
+}
+
+function TaskEditor({
+  id,
+  task,
+  people,
+  knownOwner,
+  locked,
+  onSave,
+}: {
+  id: string;
+  task: BoardTask;
+  people: BoardPerson[];
+  knownOwner: boolean;
+  locked: boolean;
+  onSave: (task: BoardTask, patch: TaskDetailsPatch) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(task.notes);
+  const savedNotes = useRef(task.notes);
+  const draftRef = useRef(task.notes);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSaveRef = useRef(onSave);
+  const taskRef = useRef(task);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+    taskRef.current = task;
+  });
+
+  useEffect(() => {
+    const draftNotes = draftRef.current.trim();
+    if (draftNotes !== savedNotes.current) return;
+    if (task.notes === savedNotes.current) return;
+    savedNotes.current = task.notes;
+    draftRef.current = task.notes;
+    setDraft(task.notes);
+  }, [task.notes]);
+
+  async function commitNotes(value: string) {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const trimmed = value.trim();
+    if (trimmed === savedNotes.current) return;
+    const previous = savedNotes.current;
+    savedNotes.current = trimmed;
+    try {
+      await onSaveRef.current(taskRef.current, { notes: trimmed });
+    } catch {
+      if (savedNotes.current === trimmed) savedNotes.current = previous;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      const trimmed = draftRef.current.trim();
+      if (trimmed === savedNotes.current) return;
+      savedNotes.current = trimmed;
+      void onSaveRef.current(taskRef.current, { notes: trimmed }).catch(() => undefined);
+    };
+  }, []);
+
+  function scheduleNotes(value: string) {
+    draftRef.current = value;
+    setDraft(value);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      void commitNotes(draftRef.current);
+    }, 500);
+  }
+
+  async function saveOwner(assigneeUserId: string | null) {
+    if (assigneeUserId === task.assigneeUserId) return;
+    try {
+      await onSave(task, { assigneeUserId });
+    } catch {
+      // The board surfaces the error under the list.
+    }
+  }
+
+  async function saveDue(dueAt: string | null) {
+    if (dueAt === task.dueAt) return;
+    try {
+      await onSave(task, { dueAt });
+    } catch {
+      // The board surfaces the error under the list.
+    }
+  }
+
+  useEffect(() => {
+    document.getElementById(id)?.scrollIntoView({ block: "nearest" });
+  }, [id]);
+
+  return (
+    <div id={id} className="whiteboard-task-edit" data-testid={`task-edit-${task.number}`}>
+      <div className="whiteboard-task-fields">
+        <label className="whiteboard-field">
+          <span>Owner</span>
+          <select
+            aria-label={`Owner for ${task.title}`}
+            data-testid={`task-owner-${task.number}`}
+            className="whiteboard-select whiteboard-field-control"
+            value={task.assigneeUserId ?? ""}
+            disabled={locked}
+            onChange={(event) => {
+              const value = event.target.value;
+              void saveOwner(value ? value : null);
+            }}
+          >
+            <option value="">Unassigned</option>
+            {task.assigneeUserId && !knownOwner ? (
+              <option value={task.assigneeUserId}>Assigned</option>
+            ) : null}
+            {people.map((person) => (
+              <option key={person.id} value={person.id}>
+                {person.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="whiteboard-field">
+          <span>Due</span>
+          <input
+            type="date"
+            aria-label={`Due date for ${task.title}`}
+            data-testid={`task-due-${task.number}`}
+            className="whiteboard-select whiteboard-field-control"
+            value={task.dueAt ?? ""}
+            disabled={locked}
+            onChange={(event) => {
+              const value = event.target.value;
+              void saveDue(value ? value : null);
+            }}
+          />
+        </label>
+      </div>
+      <label className="whiteboard-field">
+        <span>Notes</span>
+        <textarea
+          aria-label={`Notes for ${task.title}`}
+          data-testid={`task-notes-${task.number}`}
+          className="whiteboard-notes"
+          rows={3}
+          maxLength={4000}
+          value={draft}
+          disabled={locked}
+          placeholder="Notes"
+          onChange={(event) => scheduleNotes(event.target.value)}
+          onBlur={() => {
+            void commitNotes(draftRef.current);
+          }}
+        />
+      </label>
+    </div>
   );
 }

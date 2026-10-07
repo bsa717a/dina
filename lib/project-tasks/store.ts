@@ -25,11 +25,13 @@ function toRecord(row: {
   projectKey: string;
   title: string;
   description: string;
+  notes: string;
   status: string;
   sortOrder: number;
   source: string;
   createdByUserId: string | null;
   assigneeUserId: string | null;
+  dueAt: Date | null;
   sectionId: string | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -40,11 +42,13 @@ function toRecord(row: {
     projectKey: row.projectKey,
     title: row.title,
     description: row.description,
+    notes: row.notes,
     status: asStatus(row.status),
     sortOrder: row.sortOrder,
     source: row.source,
     createdByUserId: row.createdByUserId,
     assigneeUserId: row.assigneeUserId,
+    dueAt: row.dueAt,
     sectionId: row.sectionId,
     sectionName: row.sectionId
       ? (sectionNames?.get(row.sectionId) ?? null)
@@ -191,9 +195,12 @@ export async function updateProjectTask(
   patch: {
     title?: string;
     description?: string;
+    notes?: string;
     status?: ProjectTaskStatus;
     sortOrder?: number;
     sectionId?: string | null;
+    assigneeUserId?: string | null;
+    dueAt?: Date | null;
   },
 ): Promise<ProjectTaskRecord> {
   const existing = await prisma.projectTask.findUnique({ where: { id } });
@@ -203,23 +210,48 @@ export async function updateProjectTask(
   }
 
   const status = patch.status ?? asStatus(existing.status);
-  const row = await prisma.projectTask.update({
-    where: { id },
-    data: {
-      title: patch.title !== undefined ? patch.title.trim() : undefined,
-      description:
-        patch.description !== undefined ? patch.description.trim() : undefined,
-      status: patch.status,
-      sortOrder: patch.sortOrder,
-      sectionId: patch.sectionId,
-      completedAt:
-        status === "done"
-          ? existing.completedAt ?? new Date()
-          : status === "cancelled"
-            ? existing.completedAt
-            : null,
-    },
-  });
+  const nextTitle = patch.title !== undefined ? patch.title.trim() : undefined;
+  let row;
+  try {
+    row = await prisma.projectTask.update({
+      where: { id },
+      data: {
+        title: nextTitle,
+        description:
+          patch.description !== undefined ? patch.description.trim() : undefined,
+        notes: patch.notes !== undefined ? patch.notes.trim() : undefined,
+        status: patch.status,
+        sortOrder: patch.sortOrder,
+        sectionId: patch.sectionId,
+        ...("assigneeUserId" in patch
+          ? { assigneeUserId: patch.assigneeUserId }
+          : {}),
+        ...("dueAt" in patch ? { dueAt: patch.dueAt } : {}),
+        ...(patch.status === undefined
+          ? {}
+          : {
+              completedAt:
+                status === "done"
+                  ? existing.completedAt ?? new Date()
+                  : status === "cancelled"
+                    ? existing.completedAt
+                    : null,
+            }),
+      },
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      throw new Error(
+        `A task titled "${nextTitle || existing.title}" already exists on this project.`,
+      );
+    }
+    throw error;
+  }
   const names = await sectionNameMap(existing.projectKey);
   return toRecord(row, names);
 }

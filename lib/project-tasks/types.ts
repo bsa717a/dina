@@ -14,11 +14,13 @@ export type ProjectTaskRecord = {
   projectKey: string;
   title: string;
   description: string;
+  notes: string;
   status: ProjectTaskStatus;
   sortOrder: number;
   source: string;
   createdByUserId: string | null;
   assigneeUserId: string | null;
+  dueAt: Date | null;
   sectionId: string | null;
   sectionName: string | null;
   completedAt: Date | null;

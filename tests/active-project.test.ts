@@ -62,6 +62,8 @@ describe("remaining task runtime", () => {
     projectKey: "dina",
     title: "Ship the selector",
     description: "",
+    notes: "",
+    dueAt: null,
     status: "open" as const,
     sortOrder: 0,
     source: "test",
