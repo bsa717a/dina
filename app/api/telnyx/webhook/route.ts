@@ -12,7 +12,8 @@
  *    STOP persists opt-out; START clears it. Unsigned requests do neither.
  * 5. Other traffic from an opted-out user is not forwarded or answered
  * 6. "my tasks" / "tasks" sends that user's open tasks (RCS rich cards, or a
- *    numbered SMS list). A Done suggestion or "done N" completes the task.
+ *    numbered SMS list) only when the signature verified. A Done suggestion
+ *    or "done N" completes the task only then. Unsigned requests do neither.
  * 7. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
  * 8. Send a Telnyx reply if Grok Bot returns sync `reply.text`
  *
@@ -41,6 +42,7 @@ import {
   type TelnyxMessagePayload,
   type InboundMessageResult,
 } from "@/lib/telnyx";
+import { classifyInboundTask } from "@/lib/telnyx/task-cards";
 import { maybeDeliverInboundTasks } from "@/lib/telnyx/task-delivery";
 
 export const runtime = "nodejs";
@@ -156,27 +158,47 @@ async function processInboundMessage(
     };
   }
 
-  const taskReply = await maybeDeliverInboundTasks({
-    to: from,
-    text,
-    postback: extractSuggestionPostback(message),
-    preferRcs: isRcsMessageType(message.type),
-    user: {
-      id: roster.user.id,
-      name: roster.user.name,
-      username: roster.user.username,
-    },
-    projectKeys: roster.projectKeys,
-  });
-  if (taskReply) {
-    return {
-      messageId,
-      from,
-      handled: true,
-      handoff: "skipped",
-      roster,
-      reply: taskReply,
-    };
+  const postback = extractSuggestionPostback(message);
+  const taskIntent = classifyInboundTask(text, postback);
+  if (taskIntent) {
+    if (!signatureVerified) {
+      logger.warn("telnyx_task_unverified", {
+        messageId,
+        from,
+        kind: taskIntent.kind,
+      });
+      return {
+        messageId,
+        from,
+        handled: true,
+        handoff: "skipped",
+        roster,
+      };
+    }
+
+    const taskReply = await maybeDeliverInboundTasks({
+      to: from,
+      text,
+      postback,
+      preferRcs: isRcsMessageType(message.type),
+      signatureVerified,
+      user: {
+        id: roster.user.id,
+        name: roster.user.name,
+        username: roster.user.username,
+      },
+      projectKeys: roster.projectKeys,
+    });
+    if (taskReply) {
+      return {
+        messageId,
+        from,
+        handled: true,
+        handoff: "skipped",
+        roster,
+        reply: taskReply,
+      };
+    }
   }
 
   const handoffResult = await handoffToGrokBot(message, roster);

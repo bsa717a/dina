@@ -8,7 +8,7 @@
  * or a PEM / SPKI public key).
  *
  * `verified` is true only after Ed25519 verification succeeds. Callers
- * must not persist STOP/START or send replies unless that is true.
+ * must not persist state or send replies unless that is true.
  *
  * In production, a missing TELNYX_PUBLIC_KEY fails closed (`valid: false`).
  * Outside production, a missing key can accept the POST for local pipe
@@ -29,7 +29,7 @@ export interface WebhookVerificationResult {
   valid: boolean;
   /**
    * True only when the Ed25519 signature checked out.
-   * Never persist opt-out or send a reply unless this is true.
+   * Never persist state or send a reply unless this is true.
    */
   verified: boolean;
   reason?: string;

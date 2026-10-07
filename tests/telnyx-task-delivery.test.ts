@@ -183,6 +183,41 @@ describe("deliverInboundTaskIntent", () => {
     );
   });
 
+  it("does not list, complete, or send when the signature is unverified", async () => {
+    listProjectTasks.mockResolvedValue([task()]);
+    getProjectTask.mockResolvedValue(task());
+    completeProjectTask.mockResolvedValue({ ...task(), status: "done" });
+
+    const { maybeDeliverInboundTasks } = await import("@/lib/telnyx/task-delivery");
+    const base = {
+      to: "+19044030781",
+      preferRcs: true,
+      signatureVerified: false,
+      user,
+      projectKeys: ["4studentlives"],
+    };
+
+    expect(
+      await maybeDeliverInboundTasks({ ...base, text: "my tasks" }),
+    ).toBeNull();
+    expect(
+      await maybeDeliverInboundTasks({ ...base, text: "done 1" }),
+    ).toBeNull();
+    expect(
+      await maybeDeliverInboundTasks({
+        ...base,
+        text: "Done",
+        postback: "piper-task-done:task-1",
+      }),
+    ).toBeNull();
+
+    expect(listProjectTasks).not.toHaveBeenCalled();
+    expect(getProjectTask).not.toHaveBeenCalled();
+    expect(completeProjectTask).not.toHaveBeenCalled();
+    expect(sendRcsContent).not.toHaveBeenCalled();
+    expect(sendReply).not.toHaveBeenCalled();
+  });
+
   it("does not complete a task the user does not own", async () => {
     getProjectTask.mockResolvedValue(
       task({ title: "Survey Lost Deals (owner: Adam)", assigneeUserId: "other" }),
