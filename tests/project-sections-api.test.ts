@@ -148,6 +148,39 @@ const resolveProjectTask = vi.fn(async () => ({
 }));
 
 const remainingTaskNumber = vi.fn(async () => 1);
+const listRecentlyCompletedProjectTasks = vi.fn(async () => [
+  {
+    id: "t-done",
+    number: 1,
+    title: "Send the proposal",
+    status: "done",
+    sectionId: "sec-sales",
+    sectionName: "Sales",
+    assigneeUserId: "user-derek",
+    notes: "",
+    dueAt: null,
+    completedAt: new Date("2026-10-06T12:00:00.000Z"),
+  },
+]);
+const reopenProjectTask = vi.fn(async () => ({
+  id: "t-done",
+  projectKey: "4studentlives",
+  title: "Send the proposal",
+  description: "",
+  notes: "",
+  status: "open",
+  sortOrder: 3,
+  source: "ui",
+  createdByUserId: "user-derek" as string | null,
+  assigneeUserId: "user-derek" as string | null,
+  dueAt: null as Date | null,
+  sectionId: "sec-sales" as string | null,
+  sectionName: "Sales" as string | null,
+  completedAt: null as Date | null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  number: 3,
+}));
 const completeProjectTask = vi.fn(async () => ({
   id: "t1",
   projectKey: "4studentlives",
@@ -170,11 +203,13 @@ const completeProjectTask = vi.fn(async () => ({
 
 vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks,
+  listRecentlyCompletedProjectTasks,
   addProjectTask,
   updateProjectTask,
   resolveProjectTask,
   remainingTaskNumber,
   completeProjectTask,
+  reopenProjectTask,
 }));
 
 describe("project sections API", () => {
@@ -185,6 +220,9 @@ describe("project sections API", () => {
     updateProjectTask.mockClear();
     resolveProjectTask.mockClear();
     completeProjectTask.mockClear();
+    listRecentlyCompletedProjectTasks.mockClear();
+    reopenProjectTask.mockClear();
+    listProjectTasks.mockClear();
   });
 
   it("lists sections and tasks for a project", async () => {
@@ -200,6 +238,8 @@ describe("project sections API", () => {
     ]);
     expect(data.tasks[0].title).toBe("Call the district");
     expect(data.tasks[0].sectionName).toBe("Sales");
+    expect(listProjectTasks).toHaveBeenCalledWith({ project: "4studentlives" });
+    expect(listRecentlyCompletedProjectTasks).not.toHaveBeenCalled();
     expect(data.tasks[0].notes).toBe("");
     expect(data.tasks[0].dueAt).toBeNull();
     expect(data.people).toEqual([
@@ -345,6 +385,68 @@ describe("project sections API", () => {
       }),
     );
     expect(res.status).toBe(400);
+    expect(completeProjectTask).not.toHaveBeenCalled();
+  });
+
+  it("lists tasks completed in the last two weeks when done=1", async () => {
+    const { GET } = await import("@/app/api/project-sections/route");
+    const res = await GET(
+      new Request(
+        "http://localhost:8080/api/project-sections?project=4StudentLives&done=1",
+      ),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(listRecentlyCompletedProjectTasks).toHaveBeenCalledWith({
+      project: "4studentlives",
+    });
+    expect(listProjectTasks).not.toHaveBeenCalled();
+    expect(data.tasks).toEqual([
+      expect.objectContaining({
+        id: "t-done",
+        title: "Send the proposal",
+        status: "done",
+        assigneeUserId: "user-derek",
+      }),
+    ]);
+  });
+
+  it("reopens a finished task with status open, which clears completedAt", async () => {
+    resolveProjectTask.mockResolvedValueOnce({
+      id: "t-done",
+      projectKey: "4studentlives",
+      title: "Send the proposal",
+      description: "",
+      notes: "",
+      status: "done",
+      sortOrder: 3,
+      source: "ui",
+      createdByUserId: "user-derek",
+      assigneeUserId: "user-derek",
+      dueAt: null,
+      sectionId: "sec-sales",
+      sectionName: "Sales",
+      completedAt: new Date("2026-10-06T12:00:00.000Z"),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      number: 1,
+    });
+    const { PATCH } = await import("@/app/api/project-sections/route");
+    const res = await PATCH(
+      new Request("http://localhost:8080/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: "4studentlives",
+          taskId: "t-done",
+          complete: false,
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.task.status).toBe("open");
+    expect(reopenProjectTask).toHaveBeenCalledWith({ taskId: "t-done" });
     expect(completeProjectTask).not.toHaveBeenCalled();
   });
 
