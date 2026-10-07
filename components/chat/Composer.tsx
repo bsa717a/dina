@@ -10,6 +10,12 @@ import {
 import { ProjectAddButton, ProjectBoard } from "@/components/chat/ProjectBoard";
 import { ProjectsPill, type UserProject } from "@/components/chat/ProjectsPill";
 import type { ChatAttachment } from "@/components/chat/types";
+import {
+  parseWhiteboardScope,
+  whiteboardScopeStorageKey,
+  type WhiteboardScope,
+  type WhiteboardViewer,
+} from "@/lib/client/whiteboard";
 
 const TASK_LIST_STORAGE_KEY = "dina.taskListCollapsed";
 
@@ -84,6 +90,7 @@ export const Composer = forwardRef<
     onShowRemaining?: () => void;
     onProjectBoardChange?: () => void;
     ownerName?: string | null;
+    viewer?: WhiteboardViewer | null;
     onSend: (input: { content: string; attachmentIds: string[] }) => Promise<void>;
   }
 >(function Composer(
@@ -96,6 +103,7 @@ export const Composer = forwardRef<
     onShowRemaining,
     onProjectBoardChange,
     ownerName = null,
+    viewer = null,
     onSend,
   },
   ref,
@@ -110,6 +118,9 @@ export const Composer = forwardRef<
     {},
   );
   const [taskListCollapseReady, setTaskListCollapseReady] = useState(false);
+  const [taskScope, setTaskScope] = useState<WhiteboardScope>("all");
+  const [taskScopeReady, setTaskScopeReady] = useState(false);
+  const viewerId = viewer?.id?.trim() ?? "";
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -131,6 +142,27 @@ export const Composer = forwardRef<
     if (!taskListCollapseReady) return;
     writeCollapsedTaskLists(collapsedTaskLists);
   }, [collapsedTaskLists, taskListCollapseReady]);
+
+  useEffect(() => {
+    if (!viewerId) return;
+    try {
+      setTaskScope(
+        parseWhiteboardScope(window.localStorage.getItem(whiteboardScopeStorageKey(viewerId))),
+      );
+    } catch {
+      setTaskScope("all");
+    }
+    setTaskScopeReady(true);
+  }, [viewerId]);
+
+  useEffect(() => {
+    if (!taskScopeReady || !viewerId) return;
+    try {
+      window.localStorage.setItem(whiteboardScopeStorageKey(viewerId), taskScope);
+    } catch {
+      // Private browsing can block localStorage. The choice still lasts this view.
+    }
+  }, [taskScope, taskScopeReady, viewerId]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -357,6 +389,39 @@ export const Composer = forwardRef<
                   }
                 />
               </button>
+              <div
+                role="group"
+                aria-label="Show tasks"
+                data-testid="whiteboard-scope"
+                className="ml-0.5 flex h-7 shrink-0 items-center rounded-full border border-[var(--border)] bg-[var(--surface)] p-0.5 text-[11px] leading-none text-[var(--muted)]"
+              >
+                <button
+                  type="button"
+                  data-testid="whiteboard-scope-all"
+                  aria-pressed={taskScope === "all"}
+                  onClick={() => setTaskScope("all")}
+                  className={`rounded-full px-2 py-0.5 ${
+                    taskScope === "all"
+                      ? "bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                      : "hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  data-testid="whiteboard-scope-mine"
+                  aria-pressed={taskScope === "mine"}
+                  onClick={() => setTaskScope("mine")}
+                  className={`rounded-full px-2 py-0.5 ${
+                    taskScope === "mine"
+                      ? "bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                      : "hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Mine
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -366,6 +431,8 @@ export const Composer = forwardRef<
             key={selectedProject.key}
             project={selectedProject}
             ownerName={ownerName}
+            viewer={viewer}
+            scope={taskScope}
             disabled={disabled}
             refreshKey={sectionsReload}
             onChanged={onProjectBoardChange}

@@ -120,6 +120,23 @@ const resolveProjectTask = vi.fn(async () => ({
 }));
 
 const remainingTaskNumber = vi.fn(async () => 1);
+const completeProjectTask = vi.fn(async () => ({
+  id: "t1",
+  projectKey: "4studentlives",
+  title: "Call the district",
+  description: "",
+  status: "done",
+  sortOrder: 1,
+  source: "ui",
+  createdByUserId: "user-derek",
+  assigneeUserId: null,
+  sectionId: "sec-sales",
+  sectionName: "Sales",
+  completedAt: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  number: 1,
+}));
 
 vi.mock("@/lib/project-tasks/store", () => ({
   listProjectTasks,
@@ -127,6 +144,7 @@ vi.mock("@/lib/project-tasks/store", () => ({
   updateProjectTask,
   resolveProjectTask,
   remainingTaskNumber,
+  completeProjectTask,
 }));
 
 describe("project sections API", () => {
@@ -136,6 +154,7 @@ describe("project sections API", () => {
     addProjectTask.mockClear();
     updateProjectTask.mockClear();
     resolveProjectTask.mockClear();
+    completeProjectTask.mockClear();
   });
 
   it("lists sections and tasks for a project", async () => {
@@ -217,6 +236,78 @@ describe("project sections API", () => {
     expect(updateProjectTask).toHaveBeenCalledWith("t2", {
       sectionId: "sec-sales",
     });
+  });
+
+  it("completes a task through the existing complete path", async () => {
+    resolveProjectTask.mockResolvedValueOnce({
+      id: "t1",
+      projectKey: "4studentlives",
+      title: "Call the district",
+      description: "",
+      status: "open",
+      sortOrder: 1,
+      source: "ui",
+      createdByUserId: "user-derek",
+      assigneeUserId: null,
+      sectionId: "sec-sales",
+      sectionName: "Sales",
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      number: 1,
+    } as never);
+    const { PATCH } = await import("@/app/api/project-sections/route");
+    const res = await PATCH(
+      new Request("http://localhost:8080/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: "4studentlives",
+          taskId: "t1",
+          complete: true,
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.task.status).toBe("done");
+    expect(data.task.assigneeUserId).toBeNull();
+    expect(completeProjectTask).toHaveBeenCalledWith({ taskId: "t1" });
+    expect(updateProjectTask).not.toHaveBeenCalled();
+  });
+
+  it("does not complete a task from another project", async () => {
+    resolveProjectTask.mockResolvedValueOnce({
+      id: "foreign",
+      projectKey: "other",
+      title: "Elsewhere",
+      description: "",
+      status: "open",
+      sortOrder: 1,
+      source: "ui",
+      createdByUserId: null,
+      assigneeUserId: null,
+      sectionId: null,
+      sectionName: null,
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      number: 1,
+    });
+    const { PATCH } = await import("@/app/api/project-sections/route");
+    const res = await PATCH(
+      new Request("http://localhost:8080/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: "4studentlives",
+          taskId: "foreign",
+          complete: true,
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(completeProjectTask).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown project", async () => {
