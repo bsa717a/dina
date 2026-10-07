@@ -314,6 +314,99 @@ describe("project sections API", () => {
     });
   });
 
+  it("moves a finished task by id and does not change the open task with the same number", async () => {
+    resolveProjectTask.mockImplementationOnce(async (input: { taskId?: string; number?: number }) => {
+      if (input.taskId === "t-done") {
+        return {
+          id: "t-done",
+          projectKey: "4studentlives",
+          title: "Send the proposal",
+          description: "",
+          notes: "",
+          status: "done",
+          sortOrder: 3,
+          source: "ui",
+          createdByUserId: "user-derek",
+          assigneeUserId: "user-derek",
+          dueAt: null,
+          sectionId: "sec-sales",
+          sectionName: "Sales",
+          completedAt: new Date("2026-10-06T12:00:00.000Z"),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          number: 1,
+        };
+      }
+      return {
+        id: "t1",
+        projectKey: "4studentlives",
+        title: "Call the district",
+        description: "",
+        notes: "",
+        status: "open",
+        sortOrder: 1,
+        source: "ui",
+        createdByUserId: "user-derek",
+        assigneeUserId: null,
+        dueAt: null,
+        sectionId: null,
+        sectionName: null,
+        completedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        number: 1,
+      };
+    });
+    requireProjectSectionById.mockResolvedValueOnce({
+      id: "sec-ops",
+      projectKey: "4studentlives",
+      name: "Ops",
+      sortOrder: 2,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    updateProjectTask.mockResolvedValueOnce({
+      id: "t-done",
+      projectKey: "4studentlives",
+      title: "Send the proposal",
+      description: "",
+      notes: "",
+      status: "done",
+      sortOrder: 3,
+      source: "ui",
+      createdByUserId: "user-derek",
+      assigneeUserId: "user-derek",
+      dueAt: null,
+      sectionId: "sec-ops",
+      sectionName: "Ops",
+      completedAt: new Date("2026-10-06T12:00:00.000Z"),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const { PATCH } = await import("@/app/api/project-sections/route");
+    const res = await PATCH(
+      new Request("http://localhost:8080/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: "4studentlives",
+          taskId: "t-done",
+          number: 1,
+          sectionId: "sec-ops",
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.task.id).toBe("t-done");
+    expect(data.task.sectionId).toBe("sec-ops");
+    expect(updateProjectTask).toHaveBeenCalledTimes(1);
+    expect(updateProjectTask).toHaveBeenCalledWith("t-done", {
+      sectionId: "sec-ops",
+    });
+    expect(resolveProjectTask).toHaveBeenCalledWith({ taskId: "t-done" });
+  });
+
   it("completes a task through the existing complete path", async () => {
     resolveProjectTask.mockResolvedValueOnce({
       id: "t1",
@@ -448,6 +541,27 @@ describe("project sections API", () => {
     expect(data.task.status).toBe("open");
     expect(reopenProjectTask).toHaveBeenCalledWith({ taskId: "t-done" });
     expect(completeProjectTask).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reopen by open-list number", async () => {
+    const { PATCH } = await import("@/app/api/project-sections/route");
+    const res = await PATCH(
+      new Request("http://localhost:8080/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: "4studentlives",
+          number: 1,
+          complete: false,
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/task id/i);
+    expect(reopenProjectTask).not.toHaveBeenCalled();
+    expect(resolveProjectTask).not.toHaveBeenCalled();
+    expect(updateProjectTask).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown project", async () => {

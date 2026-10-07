@@ -469,7 +469,7 @@ export function ProjectBoard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project: project.key,
-          number: task.number,
+          taskId: task.id,
           sectionId: next,
         }),
       });
@@ -737,6 +737,7 @@ function TaskList({
           people={people}
           locked={locked}
           done={showCompleted || completingId === task.id}
+          showCompleted={showCompleted}
           open={expandedId === task.id}
           onToggle={() => onToggle(expandedId === task.id ? null : task.id)}
           onMove={onMove}
@@ -754,6 +755,7 @@ function TaskRow({
   people,
   locked,
   done,
+  showCompleted,
   open,
   onToggle,
   onMove,
@@ -765,6 +767,7 @@ function TaskRow({
   people: BoardPerson[];
   locked: boolean;
   done: boolean;
+  showCompleted: boolean;
   open: boolean;
   onToggle: () => void;
   onMove: (task: BoardTask, sectionId: string) => void;
@@ -811,9 +814,9 @@ function TaskRow({
             onToggle();
           }}
         >
-          {task.number}. {task.title}
+          {showCompleted ? task.title : `${task.number}. ${task.title}`}
         </span>
-        {sections.length > 0 && (
+        {!showCompleted && sections.length > 0 && (
           <select
             aria-label={`Section for ${task.title}`}
             data-testid={`task-section-${task.number}`}

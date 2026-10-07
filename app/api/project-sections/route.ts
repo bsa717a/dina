@@ -77,6 +77,9 @@ const completeSchema = z
   })
   .refine((value) => Boolean(value.number || value.taskId), {
     message: "Task number is required.",
+  })
+  .refine((value) => value.complete !== false || Boolean(value.taskId), {
+    message: "Task id is required.",
   });
 
 const detailsSchema = z
@@ -303,12 +306,17 @@ export async function PATCH(request: Request) {
     const key = await userCanAccessProject(user, parsed.data.project);
     if (!key) return jsonError("Unknown project or no access.", 400);
     const reopening = parsed.data.complete === false;
+    if (reopening && !parsed.data.taskId) {
+      return jsonError("Task id is required.");
+    }
     try {
-      const existing = await resolveProjectTask({
-        taskId: parsed.data.taskId,
-        project: key,
-        number: parsed.data.number,
-      });
+      const existing = reopening
+        ? await resolveProjectTask({ taskId: parsed.data.taskId ?? "" })
+        : await resolveProjectTask({
+            taskId: parsed.data.taskId,
+            project: key,
+            number: parsed.data.number,
+          });
       if (existing.projectKey !== key) {
         return jsonError("That task is not on this project.", 400);
       }
@@ -394,11 +402,11 @@ export async function PATCH(request: Request) {
   if (!key) return jsonError("Unknown project or no access.", 400);
 
   try {
-    const task = await resolveProjectTask({
-      taskId: parsed.data.taskId,
-      project: key,
-      number: parsed.data.number,
-    });
+    const task = await resolveProjectTask(
+      parsed.data.taskId
+        ? { taskId: parsed.data.taskId }
+        : { project: key, number: parsed.data.number },
+    );
     if (task.projectKey !== key) {
       return jsonError("That task is not on this project.", 400);
     }

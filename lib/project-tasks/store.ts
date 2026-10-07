@@ -330,15 +330,14 @@ export async function completeProjectTask(input: {
 }
 
 /**
- * Open a finished task again.
+ * Open a finished task again. Id only: a done-list number is not an open-list number.
  * updateProjectTask sets completedAt to null whenever status is open.
  */
 export async function reopenProjectTask(input: {
-  taskId?: string;
-  project?: string;
-  number?: number;
+  taskId: string;
 }): Promise<NumberedProjectTask> {
-  const match = await resolveProjectTask(input);
+  if (!input.taskId) throw new Error("Task id is required.");
+  const match = await resolveProjectTask({ taskId: input.taskId });
   const updated = await updateProjectTask(match.id, { status: "open" });
   const number =
     (await remainingTaskNumber(match.projectKey, updated.id)) ?? match.number;
