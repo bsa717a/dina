@@ -21,8 +21,8 @@ import {
   formatTaskDoneReply,
   planTaskRcsParts,
   taskBelongsToUser,
+  taskCardDue,
   taskCardTitle,
-  taskDueLabel,
   taskOwnerLabel,
   taskRcsPartToContent,
   type InboundTaskIntent,
@@ -55,6 +55,7 @@ export async function listUserOpenTasks(
     title: string;
     description: string;
     assigneeUserId: string | null;
+    dueAt: Date | null;
   }> = [];
 
   for (const project of projectKeys) {
@@ -66,6 +67,7 @@ export async function listUserOpenTasks(
         title: task.title,
         description: task.description,
         assigneeUserId: task.assigneeUserId,
+        dueAt: task.dueAt,
       });
     }
   }
@@ -95,7 +97,7 @@ export async function listUserOpenTasks(
     rawTitle: task.title,
     title: taskCardTitle(task.title),
     owner: ownerName(task, names),
-    due: taskDueLabel(task.title, task.description),
+    due: taskCardDue(task),
   }));
 }
 

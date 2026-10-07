@@ -5,7 +5,18 @@ import { needsOnboarding } from "@/lib/auth/types";
 import { checkDatabase } from "@/lib/db/client";
 import { forbidden, jsonError, unauthorized } from "@/lib/http";
 import { displayProjectName } from "@/lib/project-tasks/keys";
-import { userCanAccessProject } from "@/lib/project-tasks/membership";
+import {
+  listBoardPeople,
+  userCanAccessProject,
+} from "@/lib/project-tasks/membership";
+import {
+  dueLabelToIso,
+  formatDueOn,
+  isoToDueLabel,
+  parseDueOn,
+  rewriteTaskTitle,
+  taskDueLabel,
+} from "@/lib/client/whiteboard";
 import {
   addProjectSection,
   listProjectSections,
@@ -66,6 +77,47 @@ const completeSchema = z
     message: "Task number is required.",
   });
 
+const detailsSchema = z
+  .object({
+    project: z.string().trim().min(1).max(80),
+    number: z.number().int().positive().optional(),
+    taskId: z.string().trim().min(1).optional(),
+    assigneeUserId: z.string().trim().min(1).max(80).nullable().optional(),
+    dueAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    notes: z.string().max(4000).optional(),
+  })
+  .refine((value) => Boolean(value.number || value.taskId), {
+    message: "Task number is required.",
+  })
+  .refine(
+    (value) =>
+      value.assigneeUserId !== undefined ||
+      value.dueAt !== undefined ||
+      value.notes !== undefined,
+    { message: "Nothing to update." },
+  );
+
+function isDetailsUpdate(json: unknown): boolean {
+  if (!json || typeof json !== "object") return false;
+  const body = json as Record<string, unknown>;
+  return (
+    "assigneeUserId" in body || "dueAt" in body || "notes" in body
+  );
+}
+
+function resolvedDueAt(task: {
+  title: string;
+  description?: string | null;
+  dueAt?: Date | null;
+}): string | null {
+  if (task.dueAt instanceof Date) return formatDueOn(task.dueAt);
+  return dueLabelToIso(taskDueLabel(task.title, task.description ?? ""));
+}
+
 function publicTask(task: {
   number: number;
   id: string;
@@ -74,6 +126,9 @@ function publicTask(task: {
   sectionId: string | null;
   sectionName: string | null;
   assigneeUserId?: string | null;
+  notes?: string | null;
+  description?: string | null;
+  dueAt?: Date | null;
 }) {
   return {
     number: task.number,
@@ -83,6 +138,8 @@ function publicTask(task: {
     sectionId: task.sectionId,
     sectionName: task.sectionName,
     assigneeUserId: task.assigneeUserId ?? null,
+    notes: task.notes ?? "",
+    dueAt: resolvedDueAt(task),
   };
 }
 
@@ -93,6 +150,10 @@ async function boardFor(user: Parameters<typeof userCanAccessProject>[0], rawPro
     listProjectSections(key),
     listProjectTasks({ project: key }),
   ]);
+  const people = await listBoardPeople(
+    key,
+    tasks.map((task) => task.assigneeUserId),
+  );
   return {
     project: { key, name: displayProjectName(key) },
     sections: sections.map((section) => ({
@@ -100,6 +161,7 @@ async function boardFor(user: Parameters<typeof userCanAccessProject>[0], rawPro
       name: section.name,
       sortOrder: section.sortOrder,
     })),
+    people,
     tasks: tasks.map(publicTask),
   };
 }
@@ -242,6 +304,64 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ task: publicTask(task) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not complete the task.";
+      return jsonError(message);
+    }
+  }
+
+  if (isDetailsUpdate(json)) {
+    const parsed = detailsSchema.safeParse(json);
+    if (!parsed.success) {
+      return jsonError(parsed.error.issues[0]?.message || "Could not update the task.");
+    }
+    const key = await userCanAccessProject(user, parsed.data.project);
+    if (!key) return jsonError("Unknown project or no access.", 400);
+    try {
+      const task = await resolveProjectTask({
+        taskId: parsed.data.taskId,
+        project: key,
+        number: parsed.data.number,
+      });
+      if (task.projectKey !== key) {
+        return jsonError("That task is not on this project.", 400);
+      }
+      const patch: {
+        title?: string;
+        notes?: string;
+        assigneeUserId?: string | null;
+        dueAt?: Date | null;
+      } = {};
+      const titlePatch: { owner?: string | null; due?: string | null } = {};
+      if (parsed.data.assigneeUserId !== undefined) {
+        if (parsed.data.assigneeUserId === null) {
+          patch.assigneeUserId = null;
+          titlePatch.owner = null;
+        } else {
+          const people = await listBoardPeople(key, [task.assigneeUserId]);
+          const person = people.find((item) => item.id === parsed.data.assigneeUserId);
+          if (!person) return jsonError("That person is not on this project.", 400);
+          patch.assigneeUserId = person.id;
+          titlePatch.owner = person.name;
+        }
+      }
+      if (parsed.data.dueAt !== undefined) {
+        patch.dueAt = parseDueOn(parsed.data.dueAt);
+        titlePatch.due =
+          parsed.data.dueAt === null ? null : isoToDueLabel(parsed.data.dueAt);
+      }
+      if (parsed.data.notes !== undefined) {
+        patch.notes = parsed.data.notes.trim();
+      }
+      if (titlePatch.owner !== undefined || titlePatch.due !== undefined) {
+        const nextTitle = rewriteTaskTitle(task.title, titlePatch);
+        if (nextTitle !== task.title) patch.title = nextTitle;
+      }
+      const updated = await updateProjectTask(task.id, patch);
+      const number = (await remainingTaskNumber(key, updated.id)) ?? task.number;
+      return NextResponse.json({
+        task: publicTask({ ...updated, number }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update the task.";
       return jsonError(message);
     }
   }

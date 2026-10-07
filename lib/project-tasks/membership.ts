@@ -9,6 +9,68 @@ import {
   type ProjectKey,
 } from "@/lib/project-tasks/keys";
 
+export type AssignableUser = {
+  id: string;
+  name: string;
+};
+
+function personName(user: { name: string; username: string }): string {
+  return user.name.trim() || user.username.trim();
+}
+
+/** People who can own a task on this project: members, plus owners. */
+export async function listAssignableUsers(
+  projectKey: string,
+): Promise<AssignableUser[]> {
+  await ensureProjectCatalog();
+  const key = assertProjectKey(projectKey);
+  const [members, owners] = await Promise.all([
+    prisma.projectMember.findMany({
+      where: { projectKey: key },
+      select: { user: { select: { id: true, name: true, username: true } } },
+    }),
+    prisma.user.findMany({
+      where: { role: "owner" },
+      select: { id: true, name: true, username: true },
+    }),
+  ]);
+  const byId = new Map<string, AssignableUser>();
+  for (const owner of owners) {
+    const name = personName(owner);
+    if (name) byId.set(owner.id, { id: owner.id, name });
+  }
+  for (const member of members) {
+    const name = personName(member.user);
+    if (name) byId.set(member.user.id, { id: member.user.id, name });
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Assignable people, plus anyone already assigned so the picker can show them. */
+export async function listBoardPeople(
+  projectKey: string,
+  extraUserIds: Array<string | null | undefined> = [],
+): Promise<AssignableUser[]> {
+  const people = await listAssignableUsers(projectKey);
+  const known = new Set(people.map((person) => person.id));
+  const missing = [
+    ...new Set(
+      extraUserIds.filter((id): id is string => Boolean(id && !known.has(id))),
+    ),
+  ];
+  if (!missing.length) return people;
+  const extras = await prisma.user.findMany({
+    where: { id: { in: missing } },
+    select: { id: true, name: true, username: true },
+  });
+  for (const extra of extras) {
+    const name = personName(extra);
+    if (name) people.push({ id: extra.id, name });
+  }
+  people.sort((a, b) => a.name.localeCompare(b.name));
+  return people;
+}
+
 export async function listMemberProjectKeys(
   user: AuthUser,
 ): Promise<ProjectKey[]> {

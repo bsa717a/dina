@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  dueLabelToIso,
+  formatDueOn,
+  isoToDueLabel,
+  parseDueOn,
   parseWhiteboardScope,
+  rewriteTaskTitle,
+  taskDueLabel,
   taskOwnedByViewer,
   taskOwnerLabel,
   whiteboardHeading,
@@ -100,6 +106,38 @@ describe("whiteboard mine filter", () => {
     expect(parseWhiteboardScope(null)).toBe("all");
     expect(whiteboardScopeStorageKey("user-derek")).toBe(
       "dina.whiteboardScope.user-derek",
+    );
+  });
+});
+
+describe("task due date and title", () => {
+  it("reads a due date from the title", () => {
+    expect(taskDueLabel("Survey (owner: Adam, due 10/9/2026)")).toBe("10/9/2026");
+    expect(taskDueLabel("Review the proposal")).toBeNull();
+  });
+
+  it("turns calendar labels into a date input value", () => {
+    expect(dueLabelToIso("10/9/2026")).toBe("2026-10-09");
+    expect(dueLabelToIso("2026-10-09")).toBe("2026-10-09");
+    expect(dueLabelToIso("Oct 9, 2026")).toBe("2026-10-09");
+    expect(dueLabelToIso("2026-02-31")).toBeNull();
+    expect(isoToDueLabel("2026-10-09")).toBe("10/9/2026");
+    expect(formatDueOn(new Date("2026-10-09T00:00:00.000Z"))).toBe("2026-10-09");
+    expect(parseDueOn("2026-10-09")?.toISOString()).toBe("2026-10-09T00:00:00.000Z");
+    expect(parseDueOn(null)).toBeNull();
+  });
+
+  it("rewrites only the owner or due parenthetical", () => {
+    const title = "Call the district (owner: Derek, due 10/12/2026)";
+    expect(rewriteTaskTitle(title, { owner: "Adam" })).toBe(
+      "Call the district (owner: Adam, due 10/12/2026)",
+    );
+    expect(rewriteTaskTitle(title, { due: "10/9/2026" })).toBe(
+      "Call the district (owner: Derek, due 10/9/2026)",
+    );
+    expect(rewriteTaskTitle(title, { owner: null, due: null })).toBe("Call the district");
+    expect(rewriteTaskTitle("Review the proposal", { due: "10/12/2026" })).toBe(
+      "Review the proposal (due 10/12/2026)",
     );
   });
 });

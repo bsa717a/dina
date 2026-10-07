@@ -333,6 +333,8 @@ model ProjectTask {
   projectKey      String
   title           String
   description     String    @default("")
+  /// Whiteboard notes. Empty until someone writes them. Not the task description.
+  notes           String    @default("")
   status          String    @default("open")
   sortOrder       Int       @default(0)
   source          String    @default("chat")
@@ -340,6 +342,8 @@ model ProjectTask {
   createdBy       User?     @relation("TaskCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   assigneeUserId  String?
   assignee        User?     @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  /// Calendar due date stored at UTC midnight. Null means no due date.
+  dueAt           DateTime?
   /// ProjectSection.id when this task is grouped. Null means ungrouped.
   /// Deleting a section ungroups its tasks instead of deleting them.
   sectionId       String?
