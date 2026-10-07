@@ -11,6 +11,10 @@ import {
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
 import {
+  createNotesWriteGuard,
+  shouldApplyServerNotes,
+} from "@/lib/client/notes-save";
+import {
   taskOwnedByViewer,
   whiteboardHeading,
   type WhiteboardScope,
@@ -391,6 +395,7 @@ export function ProjectBoard({
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [people, setPeople] = useState<BoardPerson[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const notesWrites = useRef(createNotesWriteGuard());
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -483,6 +488,8 @@ export function ProjectBoard({
 
   async function saveDetails(task: BoardTask, patch: TaskDetailsPatch) {
     if (disabled) return;
+    const notesRevision =
+      patch.notes !== undefined ? notesWrites.current.start(task.id) : undefined;
     setError(null);
     try {
       const res = await fetch("/api/project-sections", {
@@ -502,10 +509,21 @@ export function ProjectBoard({
         error?: string;
         task?: BoardTask;
       };
+      if (
+        notesRevision !== undefined &&
+        !notesWrites.current.isCurrent(task.id, notesRevision)
+      ) {
+        return;
+      }
       if (!res.ok || !data.task) {
         throw new Error(data.error || "Could not update the task.");
       }
       const saved = data.task;
+      const applyNotes = shouldApplyServerNotes(
+        notesWrites.current,
+        saved.id,
+        notesRevision,
+      );
       setTasks((current) =>
         current.map((item) =>
           item.id === saved.id
@@ -513,7 +531,7 @@ export function ProjectBoard({
                 ...item,
                 ...saved,
                 assigneeUserId: saved.assigneeUserId ?? null,
-                notes: saved.notes ?? "",
+                notes: applyNotes ? (saved.notes ?? "") : item.notes,
                 dueAt: saved.dueAt ?? null,
               }
             : item,
@@ -521,6 +539,12 @@ export function ProjectBoard({
       );
       onChanged?.();
     } catch (err) {
+      if (
+        notesRevision !== undefined &&
+        !notesWrites.current.isCurrent(task.id, notesRevision)
+      ) {
+        return;
+      }
       const message = err instanceof Error ? err.message : "Could not update the task.";
       setError(message);
       throw err instanceof Error ? err : new Error(message);
@@ -807,6 +831,8 @@ function TaskEditor({
   });
 
   useEffect(() => {
+    const draftNotes = draftRef.current.trim();
+    if (draftNotes !== savedNotes.current) return;
     if (task.notes === savedNotes.current) return;
     savedNotes.current = task.notes;
     draftRef.current = task.notes;
