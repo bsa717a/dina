@@ -88,8 +88,12 @@ export interface TelnyxSendMessageRequest {
   media_urls?: string[];
 }
 
-/** Telnyx suggested action. Display text max 25; postback max 2048. */
-export interface TelnyxRcsSuggestedAction {
+/**
+ * Telnyx suggested reply. Display text max 25; postback max 2048.
+ * An `action` suggestion requires a concrete action (open URL, dial, …).
+ * Text plus postback alone is rejected with error 10015.
+ */
+export interface TelnyxRcsSuggestedReply {
   text: string;
   postback_data: string;
 }
@@ -97,7 +101,7 @@ export interface TelnyxRcsSuggestedAction {
 export interface TelnyxRcsCardContent {
   title: string;
   description?: string;
-  suggestions?: Array<{ action: TelnyxRcsSuggestedAction }>;
+  suggestions?: Array<{ reply: TelnyxRcsSuggestedReply }>;
 }
 
 export type TelnyxRcsRichCard =

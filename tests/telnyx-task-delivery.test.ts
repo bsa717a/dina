@@ -100,9 +100,12 @@ describe("deliverInboundTaskIntent", () => {
     const first = sendRcsContent.mock.calls[0][0];
     const second = sendRcsContent.mock.calls[1][0];
     expect(first.content.rich_card.carousel_card.card_contents).toHaveLength(10);
-    expect(first.content.rich_card.carousel_card.card_contents[0].suggestions[0].action.text).toBe(
+    expect(first.content.rich_card.carousel_card.card_contents[0].suggestions[0].reply.text).toBe(
       "Done",
     );
+    expect(
+      first.content.rich_card.carousel_card.card_contents[0].suggestions[0].reply.postback_data,
+    ).toBe("piper-task-done:task-1");
     expect(first.smsText).toContain("1. Task 1");
     expect(first.smsText).toContain("Reply done N to complete task N.");
     expect(second.content.rich_card.standalone_card.card_content.title).toBe("Task 11");
@@ -183,10 +186,41 @@ describe("deliverInboundTaskIntent", () => {
     );
   });
 
-  it("does not complete a task the user does not own", async () => {
+  it("completes a Done tap on a task someone else owns and confirms", async () => {
     getProjectTask.mockResolvedValue(
-      task({ title: "Survey Lost Deals (owner: Adam)", assigneeUserId: "other" }),
+      task({
+        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
+        assigneeUserId: "user-adam",
+      }),
     );
+    completeProjectTask.mockResolvedValue({
+      ...task({
+        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
+        assigneeUserId: "user-adam",
+        status: "done",
+      }),
+    });
+
+    const { deliverInboundTaskIntent } = await import("@/lib/telnyx/task-delivery");
+    await deliverInboundTaskIntent({
+      to: "+19044030781",
+      preferRcs: true,
+      user,
+      projectKeys: ["4studentlives"],
+      intent: { kind: "done-id", taskId: "task-1" },
+    });
+
+    expect(completeProjectTask).toHaveBeenCalledWith({ taskId: "task-1" });
+    expect(sendReply).toHaveBeenCalledWith(
+      "+19044030781",
+      "✅ Survey Lost Deals",
+      true,
+      { allowSmsFallback: true },
+    );
+  });
+
+  it("does not complete a task outside the sender's projects", async () => {
+    getProjectTask.mockResolvedValue(task({ projectKey: "other-project" }));
 
     const { deliverInboundTaskIntent } = await import("@/lib/telnyx/task-delivery");
     await deliverInboundTaskIntent({
