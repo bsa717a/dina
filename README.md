@@ -383,11 +383,11 @@ Push only works when the browser/PWA has an active notification subscription. If
 
 ## Production deploy
 
-Production deploys from Cloud Build, not from a Mac mini and not from a personal `gcloud auth login`. A push to `main` builds this repo and deploys Cloud Run service `dina` in `dina-pm` / `us-central1`, then sends 100% of traffic to the new revision.
+Production deploys from Cloud Build, not from a Mac mini and not from a personal `gcloud auth login`. A push to `main` builds this repo and deploys Cloud Run service `dina` in `dina-pm` / `us-central1`. Traffic moves to that revision only when the commit is still the head of `main`.
 
-[`deploy/com.dina.app.plist`](deploy/com.dina.app.plist) is retired. Do not load it to deploy Dina.
+The trigger is regional in `us-central1` on the existing Cloud Build connection `Piper-Dina`. [`deploy/com.dina.app.plist`](deploy/com.dina.app.plist) is retired. Do not load it to deploy Dina.
 
-One-time setup (enable APIs, create `dina-cloudbuild@dina-pm.iam.gserviceaccount.com`, connect GitHub in the browser, create the trigger) is in [`deploy/cloud-build.md`](deploy/cloud-build.md). The build does not run migrations and does not delete or rebind secrets.
+One-time setup (enable APIs, create `dina-cloudbuild@dina-pm.iam.gserviceaccount.com`, finish the `Piper-Dina` GitHub link, create the trigger) is in [`deploy/cloud-build.md`](deploy/cloud-build.md). The build does not run migrations and does not delete or rebind secrets.
 
 ## Manual verification checklist
 

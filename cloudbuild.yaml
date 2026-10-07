@@ -1,23 +1,31 @@
 # Push to main builds Dina from source and deploys Cloud Run service `dina`.
 #
-# This repo has no Dockerfile. Google Cloud Buildpacks build the image, the
-# same path `gcloud run deploy --source` uses. Pack runs in this build so
-# the trigger service account is the build identity. There is no nested
-# build and no JSON key.
+# This repo has no Dockerfile. `gcloud run deploy --source` builds with
+# gcr.io/buildpacks/builder:latest (google-24). This build uses that same
+# builder. The google-22 tag is not used.
 #
-# The trigger must use this same service account. If both are set and they
-# differ, Cloud Build rejects the build.
+# GOOGLE_RUNTIME_VERSION=22 pins Node 22. google-24 supports it. That is
+# the Node major of the Cloud Run image defined for service dina (node:22)
+# and the version this app recommends. Without the pin, latest picks the
+# newest Node on that builder.
 #
+# The trigger in us-central1 on connection Piper-Dina must use
+# dina-cloudbuild@dina-pm.iam.gserviceaccount.com. Pass the linked
+# repository id as _LINKED_REPO (it overrides the placeholder below).
+#
+# Deploy uses --no-traffic. Traffic moves only when this commit is still
+# the head of main, then `update-traffic --to-latest` sends 100% there.
 # This file does not run Prisma migrations and does not set, update, or
-# clear Cloud Run environment variables or Secret Manager bindings. The new
-# revision keeps the service's existing configuration, then receives 100%
-# of traffic.
+# clear Cloud Run env vars or Secret Manager bindings.
 
 serviceAccount: projects/dina-pm/serviceAccounts/dina-cloudbuild@dina-pm.iam.gserviceaccount.com
 
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
+
+substitutions:
+  _LINKED_REPO: SET_LINKED_REPO_ID
 
 timeout: 1800s
 
@@ -28,15 +36,13 @@ steps:
     args:
       - build
       - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
-      - --builder=gcr.io/buildpacks/builder:google-22
+      - --builder=gcr.io/buildpacks/builder:latest
       - --network=cloudbuild
       - --path=.
-      # Node 22 matches the version this app recommends. Build-time only.
       - --env
       - GOOGLE_RUNTIME_VERSION=22
-      # Placeholder so `prisma generate` can read the schema. Not a
-      # credential, and not the runtime DATABASE_URL (that stays the
-      # Secret Manager binding already on the Cloud Run service).
+      # Build-time only, so `prisma generate` can read the schema. Not a
+      # credential, and not the runtime DATABASE_URL.
       - --env
       - DATABASE_URL=postgresql://prisma:prisma@127.0.0.1:5432/dina
       - --env
@@ -59,17 +65,36 @@ steps:
       - --region=us-central1
       - --platform=managed
       - --image=us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+      - --no-traffic
       - --quiet
 
   - id: traffic
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update-traffic
-      - dina
-      - --project=dina-pm
-      - --region=us-central1
-      - --to-latest
-      - --quiet
+      - -ceu
+      - |
+        set -o pipefail
+        REPO="projects/dina-pm/locations/us-central1/connections/Piper-Dina/repositories/${_LINKED_REPO}"
+        TOKEN="$$(curl -fsS -X POST \
+          -H "Authorization: Bearer $$(gcloud auth print-access-token)" \
+          -H "Content-Type: application/json" \
+          "https://cloudbuild.googleapis.com/v2/$${REPO}:accessReadToken" \
+          | python3 -c 'import json,sys; data=json.load(sys.stdin); token=data.get("token") or "";
+        sys.exit("read token request failed") if not token else print(token)')"
+        HEAD="$$(curl -fsS \
+          -H "Authorization: Bearer $${TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/repos/bsa717a/dina/commits/main \
+          | python3 -c 'import json,sys; data=json.load(sys.stdin); sha=data.get("sha") or "";
+        sys.exit("main sha missing") if not sha else print(sha)')"
+        unset TOKEN
+        if [ "$$HEAD" != "$COMMIT_SHA" ]; then
+          echo "Refusing to move traffic. main is $$HEAD; this build is $COMMIT_SHA."
+          exit 1
+        fi
+        gcloud run services update-traffic dina \
+          --project=dina-pm \
+          --region=us-central1 \
+          --to-latest \
+          --quiet
