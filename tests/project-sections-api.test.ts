@@ -127,7 +127,11 @@ const updateProjectTask = vi.fn(async () => ({
   createdAt: new Date(),
   updatedAt: new Date(),
 }));
-const resolveProjectTask = vi.fn(async () => ({
+const resolveProjectTask = vi.fn(async (_input?: {
+  taskId?: string;
+  project?: string;
+  number?: number;
+}) => ({
   id: "t2",
   projectKey: "4studentlives",
   title: "Update the site",
@@ -315,8 +319,12 @@ describe("project sections API", () => {
   });
 
   it("moves a finished task by id and does not change the open task with the same number", async () => {
-    resolveProjectTask.mockImplementationOnce(async (input: { taskId?: string; number?: number }) => {
-      if (input.taskId === "t-done") {
+    resolveProjectTask.mockImplementationOnce(async (input?: {
+      taskId?: string;
+      project?: string;
+      number?: number;
+    }) => {
+      if (input?.taskId === "t-done") {
         return {
           id: "t-done",
           projectKey: "4studentlives",
