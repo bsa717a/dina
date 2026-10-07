@@ -488,6 +488,7 @@ describe("POST /api/telnyx/webhook", () => {
         to: "+19044030781",
         text: "my tasks",
         preferRcs: true,
+        signatureVerified: true,
         projectKeys: ["4studentlives"],
       }),
     );
@@ -520,6 +521,7 @@ describe("POST /api/telnyx/webhook", () => {
         text: "Done",
         postback: "piper-task-done:task-1",
         preferRcs: true,
+        signatureVerified: true,
       }),
     );
   });
@@ -556,7 +558,66 @@ describe("POST /api/telnyx/webhook", () => {
       expect.objectContaining({
         text: "done 2",
         preferRcs: false,
+        signatureVerified: true,
       }),
     );
+  });
+
+  it("does not list, complete, or reply to task commands when the signature is unverified", async () => {
+    mockVerify.mockReturnValue({
+      valid: true,
+      verified: false,
+      reason: "no_public_key_configured",
+    });
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "RCS",
+      messageId: "should-not-send",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+
+    const list = await POST(
+      post(rcsHelpPayload({ body: { text: "my tasks" } })),
+    );
+    const doneNumber = await POST(
+      post({
+        data: {
+          event_type: "message.received",
+          id: "evt-done-unverified",
+          occurred_at: "2026-09-12T02:35:50Z",
+          payload: {
+            direction: "inbound",
+            from: { phone_number: "+19044030781", carrier: "", line_type: "" },
+            id: "sms-done-unverified",
+            text: "done 2",
+            to: [{ phone_number: "+18005551234", carrier: "", line_type: "" }],
+            type: "SMS",
+          },
+          record_type: "event",
+        },
+      }),
+    );
+    const doneTap = await POST(
+      post(
+        rcsHelpPayload({
+          body: {
+            suggestion_response: {
+              text: "Done",
+              postback_data: "piper-task-done:task-1",
+            },
+          },
+        }),
+      ),
+    );
+
+    for (const res of [list, doneNumber, doneTap]) {
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.handoff).toBe("skipped");
+      expect(body.reply).toBeUndefined();
+    }
+    expect(mockDeliverTasks).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+    expect(mockHandoff).not.toHaveBeenCalled();
   });
 });

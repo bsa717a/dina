@@ -235,9 +235,15 @@ export async function maybeDeliverInboundTasks(input: {
   text: string;
   postback?: string | null;
   preferRcs: boolean;
+  /**
+   * Ed25519 webhook verification. False outside production when the public
+   * key is unset. Do not list, complete, or reply unless this is true.
+   */
+  signatureVerified: boolean;
   user: TaskCardViewer;
   projectKeys: string[];
 }): Promise<SendMessageResult | null> {
+  if (!input.signatureVerified) return null;
   const intent = classifyInboundTask(input.text, input.postback);
   if (!intent) return null;
   return deliverInboundTaskIntent({
