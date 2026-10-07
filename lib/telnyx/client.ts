@@ -18,6 +18,7 @@ import { TelnyxApiError } from "./errors";
 import { isRcsMessageType } from "./inbound";
 import type {
   TelnyxMessageType,
+  TelnyxRcsContentMessage,
   TelnyxRcsSendMessageRequest,
   TelnyxSendMessageRequest,
   TelnyxSendMessageResponse,
@@ -82,7 +83,7 @@ async function telnyxRequest<T>(
 
 async function sendRcsMessage(
   to: string,
-  text: string,
+  contentMessage: TelnyxRcsContentMessage,
   agentId: string,
 ): Promise<TelnyxSendMessageResponse> {
   const config = getTelnyxConfig();
@@ -99,7 +100,7 @@ async function sendRcsMessage(
     messaging_profile_id: config.messagingProfileId,
     type: "RCS",
     agent_message: {
-      content_message: { text },
+      content_message: contentMessage,
     },
   };
 
@@ -173,7 +174,7 @@ export async function sendMessage(
 
   if (preferRcs && rcsAgentId) {
     try {
-      const response = await sendRcsMessage(to, text, rcsAgentId);
+      const response = await sendRcsMessage(to, { text }, rcsAgentId);
       const sentType = response.data?.type;
       const messageId = response.data?.id;
       const from = response.data?.from;
@@ -259,6 +260,115 @@ export async function sendMessage(
       sent: false,
       error: errorMsg,
     };
+  }
+}
+
+/**
+ * Send an RCS rich card or carousel. On failure, send smsText as a separate
+ * SMS. Never attach Telnyx sms_fallback — that returns HTTP 200 as SMS and
+ * hides the failure.
+ */
+export async function sendRcsContent(options: {
+  to: string;
+  content: TelnyxRcsContentMessage;
+  smsText?: string;
+}): Promise<SendMessageResult> {
+  const config = getTelnyxConfig();
+  if (!config) {
+    return { sent: false, error: "Telnyx is not configured" };
+  }
+
+  const { to, content } = options;
+  const smsText = options.smsText?.trim() || undefined;
+  const rcsAgentId = config.rcsAgentId;
+
+  if (!rcsAgentId) {
+    if (!smsText) return { sent: false, error: "RCS agent is not configured" };
+    return sendPlainSms(to, smsText);
+  }
+
+  try {
+    const response = await sendRcsMessage(to, content, rcsAgentId);
+    const sentType = response.data?.type;
+    const messageId = response.data?.id;
+    const from = response.data?.from;
+
+    if (isRcsMessageType(sentType)) {
+      logger.info("telnyx_rcs_sent", {
+        messageId,
+        to,
+        type: sentType,
+        agentId: rcsAgentId,
+        fromAgentId: from?.agent_id ?? null,
+      });
+      return { sent: true, messageId, type: sentType };
+    }
+
+    const fallbackError =
+      `Telnyx POST /v2/messages/rcs returned type ${String(sentType ?? "unknown")} ` +
+      `(message ${messageId ?? "unknown"}) instead of RCS` +
+      (from?.phone_number ? ` from ${from.phone_number}` : "");
+
+    if (sentType === "SMS" || sentType === "MMS") {
+      logger.warn("telnyx_rcs_returned_sms", {
+        to,
+        messageId,
+        type: sentType,
+        from: from?.phone_number ?? null,
+      });
+      return { sent: true, messageId, type: sentType };
+    }
+
+    if (!smsText) {
+      return {
+        ...rcsFailure(to, fallbackError, {
+          messageId,
+          type: sentType,
+          fromPhone: from?.phone_number ?? null,
+          fromAgentId: from?.agent_id ?? null,
+        }),
+        messageId,
+        type: sentType,
+      };
+    }
+    logger.warn("telnyx_rcs_failed_trying_sms", { to, error: fallbackError });
+  } catch (rcsError) {
+    const errorMsg =
+      rcsError instanceof Error ? rcsError.message : "RCS send failed";
+    if (!smsText) {
+      return rcsFailure(to, errorMsg, { detail: errorDetail(rcsError) });
+    }
+    logger.warn("telnyx_rcs_failed_trying_sms", { to, error: errorMsg });
+  }
+
+  return sendPlainSms(to, smsText);
+}
+
+async function sendPlainSms(
+  to: string,
+  text: string,
+): Promise<SendMessageResult> {
+  try {
+    const response = await sendSmsMessage(to, text);
+    logger.info("telnyx_sms_sent", {
+      messageId: response.data.id,
+      to,
+      type: response.data.type,
+    });
+    return {
+      sent: true,
+      messageId: response.data.id,
+      type: response.data.type,
+    };
+  } catch (smsError) {
+    const errorMsg =
+      smsError instanceof Error ? smsError.message : "SMS send failed";
+    logger.error("telnyx_send_failed", {
+      to,
+      error: errorMsg,
+      detail: errorDetail(smsError),
+    });
+    return { sent: false, error: errorMsg };
   }
 }
 

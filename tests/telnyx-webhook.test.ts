@@ -9,6 +9,11 @@ const mockHandoff = vi.fn();
 const mockReply = vi.fn();
 const mockApplyKeyword = vi.fn();
 const mockOptedOut = vi.fn();
+const mockDeliverTasks = vi.fn();
+
+vi.mock("@/lib/telnyx/task-delivery", () => ({
+  maybeDeliverInboundTasks: (...args: unknown[]) => mockDeliverTasks(...args),
+}));
 
 vi.mock("@/lib/telnyx", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/telnyx")>();
@@ -115,8 +120,10 @@ describe("POST /api/telnyx/webhook", () => {
     mockReply.mockReset();
     mockApplyKeyword.mockReset();
     mockOptedOut.mockReset();
+    mockDeliverTasks.mockReset();
     mockApplyKeyword.mockResolvedValue(undefined);
     mockOptedOut.mockResolvedValue(false);
+    mockDeliverTasks.mockResolvedValue(null);
     mockConfigured.mockReturnValue(true);
     mockVerify.mockReturnValue({ valid: true, verified: true });
     mockLookup.mockResolvedValue(knownRoster);
@@ -458,5 +465,98 @@ describe("POST /api/telnyx/webhook", () => {
     );
     expect(finalized.status).toBe(200);
     expect(await finalized.json()).toMatchObject({ ok: true, ignored: true });
+  });
+
+  it("sends open-task cards and skips Grok when the user asks for their tasks", async () => {
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "RCS",
+      messageId: "cards-1",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(rcsHelpPayload({ body: { text: "my tasks" } })),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(body.reply).toEqual({ sent: true, type: "RCS" });
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "+19044030781",
+        text: "my tasks",
+        preferRcs: true,
+        projectKeys: ["4studentlives"],
+      }),
+    );
+  });
+
+  it("passes a Done suggestion postback through before Grok", async () => {
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "RCS",
+      messageId: "done-1",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: {
+            suggestion_response: {
+              text: "Done",
+              postback_data: "piper-task-done:task-1",
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Done",
+        postback: "piper-task-done:task-1",
+        preferRcs: true,
+      }),
+    );
+  });
+
+  it("passes SMS done N through as a plain-text completion", async () => {
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "SMS",
+      messageId: "sms-done",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post({
+        data: {
+          event_type: "message.received",
+          id: "evt-done",
+          occurred_at: "2026-09-12T02:35:50Z",
+          payload: {
+            direction: "inbound",
+            from: { phone_number: "+19044030781", carrier: "", line_type: "" },
+            id: "sms-done-in",
+            text: "done 2",
+            to: [{ phone_number: "+18005551234", carrier: "", line_type: "" }],
+            type: "SMS",
+          },
+          record_type: "event",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "done 2",
+        preferRcs: false,
+      }),
+    );
   });
 });

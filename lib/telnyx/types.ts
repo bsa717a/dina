@@ -88,10 +88,38 @@ export interface TelnyxSendMessageRequest {
   media_urls?: string[];
 }
 
+/** Telnyx suggested action. Display text max 25; postback max 2048. */
+export interface TelnyxRcsSuggestedAction {
+  text: string;
+  postback_data: string;
+}
+
+export interface TelnyxRcsCardContent {
+  title: string;
+  description?: string;
+  suggestions?: Array<{ action: TelnyxRcsSuggestedAction }>;
+}
+
+export type TelnyxRcsRichCard =
+  | {
+      standalone_card: {
+        card_orientation: "VERTICAL";
+        card_content: TelnyxRcsCardContent;
+      };
+    }
+  | {
+      carousel_card: {
+        card_width: "MEDIUM";
+        card_contents: TelnyxRcsCardContent[];
+      };
+    };
+
+export type TelnyxRcsContentMessage =
+  | { text: string }
+  | { rich_card: TelnyxRcsRichCard };
+
 export interface TelnyxRcsAgentMessage {
-  content_message: {
-    text: string;
-  };
+  content_message: TelnyxRcsContentMessage;
 }
 
 export interface TelnyxRcsSendMessageRequest {

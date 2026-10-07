@@ -11,8 +11,10 @@
  *    (RCS agent when inbound type is RCS) when the signature verified.
  *    STOP persists opt-out; START clears it. Unsigned requests do neither.
  * 5. Other traffic from an opted-out user is not forwarded or answered
- * 6. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
- * 7. Send a Telnyx reply if Grok Bot returns sync `reply.text`
+ * 6. "my tasks" / "tasks" sends that user's open tasks (RCS rich cards, or a
+ *    numbered SMS list). A Done suggestion or "done N" completes the task.
+ * 7. Other traffic hands off to Grok Bot Dina (or logs if the URL is unset)
+ * 8. Send a Telnyx reply if Grok Bot returns sync `reply.text`
  *
  * Unknown numbers are safely rejected (logged, not auto-provisioned).
  */
@@ -34,10 +36,12 @@ import {
   applyInboundKeyword,
   isSmsOptedOut,
   normalizeInboundMessage,
+  extractSuggestionPostback,
   type TelnyxWebhookPayload,
   type TelnyxMessagePayload,
   type InboundMessageResult,
 } from "@/lib/telnyx";
+import { maybeDeliverInboundTasks } from "@/lib/telnyx/task-delivery";
 
 export const runtime = "nodejs";
 
@@ -149,6 +153,29 @@ async function processInboundMessage(
       handled: true,
       handoff: "skipped",
       roster,
+    };
+  }
+
+  const taskReply = await maybeDeliverInboundTasks({
+    to: from,
+    text,
+    postback: extractSuggestionPostback(message),
+    preferRcs: isRcsMessageType(message.type),
+    user: {
+      id: roster.user.id,
+      name: roster.user.name,
+      username: roster.user.username,
+    },
+    projectKeys: roster.projectKeys,
+  });
+  if (taskReply) {
+    return {
+      messageId,
+      from,
+      handled: true,
+      handoff: "skipped",
+      roster,
+      reply: taskReply,
     };
   }
 
