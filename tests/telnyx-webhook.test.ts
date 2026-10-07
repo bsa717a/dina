@@ -667,6 +667,51 @@ describe("POST /api/telnyx/webhook", () => {
     );
   });
 
+  it("passes the 7:39 PM Survey Lost Deals Done tap to task completion", async () => {
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "RCS",
+      messageId: "done-survey",
+    });
+    const doneTap = {
+      event_type: "message.received",
+      payload: {
+        body: {
+          suggestion_response: {
+            postback_data: "piper-task-done:cmux0glpu0047s6012ggb6wyu",
+            text: "Done",
+          },
+        },
+        direction: "inbound",
+        from: { phone_number: "+19044030781" },
+        id: "fd471662-3f58-44ed-8339-f7489e6cff4b",
+        type: "RCS",
+      },
+    };
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(post({ data: doneTap }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(body.messageId).toBe("fd471662-3f58-44ed-8339-f7489e6cff4b");
+    expect(body.reply).toEqual({ sent: true, type: "RCS" });
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockLogInfo).not.toHaveBeenCalledWith(
+      "telnyx_inbound_unparsed",
+      expect.anything(),
+    );
+    expect(mockDeliverTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "+19044030781",
+        text: "Done",
+        postback: "piper-task-done:cmux0glpu0047s6012ggb6wyu",
+        preferRcs: true,
+        projectKeys: ["4studentlives"],
+      }),
+    );
+  });
+
   it("does not hand off a Done reply tap that only has postback_data", async () => {
     mockDeliverTasks.mockResolvedValue({
       sent: true,

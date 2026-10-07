@@ -186,31 +186,54 @@ describe("deliverInboundTaskIntent", () => {
     );
   });
 
-  it("completes a Done tap on a task someone else owns and confirms", async () => {
-    getProjectTask.mockResolvedValue(
-      task({
-        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
-        assigneeUserId: "user-adam",
-      }),
+  it("marks Survey Lost Deals done from the 7:39 PM Done tap even though Adam owns it", async () => {
+    const doneTap = {
+      event_type: "message.received",
+      payload: {
+        body: {
+          suggestion_response: {
+            postback_data: "piper-task-done:cmux0glpu0047s6012ggb6wyu",
+            text: "Done",
+          },
+        },
+        direction: "inbound",
+        from: { phone_number: "+19044030781" },
+        id: "fd471662-3f58-44ed-8339-f7489e6cff4b",
+        type: "RCS",
+      },
+    };
+    const { extractSuggestionPostback, normalizeInboundMessage } = await import(
+      "@/lib/telnyx/inbound"
     );
-    completeProjectTask.mockResolvedValue({
-      ...task({
-        title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
-        assigneeUserId: "user-adam",
-        status: "done",
-      }),
-    });
+    const normalized = normalizeInboundMessage(doneTap.payload, "2026-10-07T19:39:54Z");
+    const postback = extractSuggestionPostback(normalized);
+    expect(normalized?.text).toBe("Done");
+    expect(postback).toBe("piper-task-done:cmux0glpu0047s6012ggb6wyu");
 
-    const { deliverInboundTaskIntent } = await import("@/lib/telnyx/task-delivery");
-    await deliverInboundTaskIntent({
+    const survey = task({
+      id: "cmux0glpu0047s6012ggb6wyu",
+      projectKey: "4studentlives",
+      title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
+      status: "open",
+      assigneeUserId: "user-adam",
+    });
+    getProjectTask.mockResolvedValue(survey);
+    completeProjectTask.mockResolvedValue({ ...survey, status: "done" });
+    sendReply.mockResolvedValue({ sent: true, type: "RCS", messageId: "done-out" });
+
+    const { maybeDeliverInboundTasks } = await import("@/lib/telnyx/task-delivery");
+    await maybeDeliverInboundTasks({
       to: "+19044030781",
+      text: normalized?.text ?? "",
+      postback,
       preferRcs: true,
       user,
       projectKeys: ["4studentlives"],
-      intent: { kind: "done-id", taskId: "task-1" },
     });
 
-    expect(completeProjectTask).toHaveBeenCalledWith({ taskId: "task-1" });
+    expect(completeProjectTask).toHaveBeenCalledWith({
+      taskId: "cmux0glpu0047s6012ggb6wyu",
+    });
     expect(sendReply).toHaveBeenCalledWith(
       "+19044030781",
       "✅ Survey Lost Deals",
