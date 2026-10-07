@@ -1,8 +1,8 @@
 # Push to main builds Dina from source and deploys Cloud Run service `dina`.
 #
 # This repo has no Dockerfile. `gcloud run deploy --source` builds with
-# gcr.io/buildpacks/builder:latest (google-24). This build uses that same
-# builder. The google-22 tag is not used.
+# the google-24 builder. This build pins gcr.io/buildpacks/builder:google-24
+# instead of the floating :latest tag. The google-22 tag is not used.
 #
 # GOOGLE_RUNTIME_VERSION=22 pins Node 22. google-24 supports it. That is
 # the Node major of the Cloud Run image defined for service dina (node:22)
@@ -13,8 +13,10 @@
 # dina-cloudbuild@dina-pm.iam.gserviceaccount.com. Pass the linked
 # repository id as _LINKED_REPO (it overrides the placeholder below).
 #
-# Deploy uses --no-traffic. Traffic moves only when this commit is still
-# the head of main, then `update-traffic --to-latest` sends 100% there.
+# Deploy uses --no-traffic and a revision name unique to this build.
+# Immediately before cutover, the build checks that $COMMIT_SHA is still
+# the head of main. Only then does it send 100% to that revision. If main
+# has moved, it exits and leaves traffic where it is.
 # This file does not run Prisma migrations and does not set, update, or
 # clear Cloud Run env vars or Secret Manager bindings.
 
@@ -36,7 +38,7 @@ steps:
     args:
       - build
       - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
-      - --builder=gcr.io/buildpacks/builder:latest
+      - --builder=gcr.io/buildpacks/builder:google-24
       - --network=cloudbuild
       - --path=.
       - --env
@@ -65,6 +67,7 @@ steps:
       - --region=us-central1
       - --platform=managed
       - --image=us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+      - --revision-suffix=${SHORT_SHA}-${BUILD_ID}
       - --no-traffic
       - --quiet
 
@@ -96,5 +99,5 @@ steps:
         gcloud run services update-traffic dina \
           --project=dina-pm \
           --region=us-central1 \
-          --to-latest \
+          --to-revisions=dina-${SHORT_SHA}-${BUILD_ID}=100 \
           --quiet
