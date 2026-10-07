@@ -35,7 +35,7 @@ function card(id: string, title = `Task ${id}`) {
 }
 
 describe("task card limits", () => {
-  it("puts title, owner, and due on the card with one Done action", () => {
+  it("puts title, owner, and due on the card with one Done reply", () => {
     const built = buildTaskRcsCard({
       id: "task-1",
       title: "Survey Lost Deals (owner: Adam, due 10/9/2026)",
@@ -49,16 +49,17 @@ describe("task card limits", () => {
     expect(built.description!.length).toBeLessThanOrEqual(RCS_CARD_DESCRIPTION_MAX);
     expect(built.suggestions).toHaveLength(1);
     expect(built.suggestions!.length).toBeLessThanOrEqual(RCS_CARD_SUGGESTIONS_MAX);
-    expect(built.suggestions![0]?.action.text).toBe("Done");
-    expect(built.suggestions![0]?.action.text.length).toBeLessThanOrEqual(
+    expect(built.suggestions![0]?.reply.text).toBe("Done");
+    expect(built.suggestions![0]?.reply.text.length).toBeLessThanOrEqual(
       RCS_SUGGESTION_TEXT_MAX,
     );
-    expect(built.suggestions![0]?.action.postback_data).toBe(
+    expect(built.suggestions![0]?.reply.postback_data).toBe(
       "piper-task-done:task-1",
     );
-    expect(built.suggestions![0]?.action.postback_data.length).toBeLessThanOrEqual(
+    expect(built.suggestions![0]?.reply.postback_data.length).toBeLessThanOrEqual(
       RCS_POSTBACK_MAX,
     );
+    expect(built.suggestions![0]).not.toHaveProperty("action");
   });
 
   it("truncates a long title to 200 characters", () => {

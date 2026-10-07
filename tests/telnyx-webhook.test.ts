@@ -10,6 +10,7 @@ const mockReply = vi.fn();
 const mockApplyKeyword = vi.fn();
 const mockOptedOut = vi.fn();
 const mockDeliverTasks = vi.fn();
+const mockLogInfo = vi.fn();
 
 vi.mock("@/lib/telnyx/task-delivery", () => ({
   maybeDeliverInboundTasks: (...args: unknown[]) => mockDeliverTasks(...args),
@@ -35,7 +36,7 @@ vi.mock("@/lib/telnyx", async (importOriginal) => {
 
 vi.mock("@/lib/logger", () => ({
   logger: {
-    info: vi.fn(),
+    info: (...args: unknown[]) => mockLogInfo(...args),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
@@ -121,6 +122,7 @@ describe("POST /api/telnyx/webhook", () => {
     mockApplyKeyword.mockReset();
     mockOptedOut.mockReset();
     mockDeliverTasks.mockReset();
+    mockLogInfo.mockReset();
     mockApplyKeyword.mockResolvedValue(undefined);
     mockOptedOut.mockResolvedValue(false);
     mockDeliverTasks.mockResolvedValue(null);
@@ -493,7 +495,7 @@ describe("POST /api/telnyx/webhook", () => {
     );
   });
 
-  it("passes a Done suggestion postback through before Grok", async () => {
+  it("passes a Done reply-suggestion postback through before Grok", async () => {
     mockDeliverTasks.mockResolvedValue({
       sent: true,
       type: "RCS",
@@ -556,6 +558,140 @@ describe("POST /api/telnyx/webhook", () => {
       expect.objectContaining({
         text: "done 2",
         preferRcs: false,
+      }),
+    );
+  });
+
+  it("logs the 1:49 PM is_typing inbound and does not hand it off or mark a task done", async () => {
+    const typingDelivery = {
+      event_type: "message.received",
+      id: "5a1c559e-cda4-406f-9955-82c808c4eb8e",
+      occurred_at: "2026-10-07T19:49:56.983+00:00",
+      payload: {
+        autoresponse_type: null,
+        body: { event_type: "is_typing" },
+        direction: "inbound",
+        errors: [],
+        from: { phone_number: "+19044030781" },
+        id: "1b5735ab-33ba-4921-b96b-c76d958b02a0",
+        record_type: "message",
+        to: [
+          {
+            agent_id: "42257dc9-586a-4f72-bba3-6b816d1ec6ed",
+            agent_name: "Dina",
+          },
+        ],
+        type: "RCS",
+      },
+    };
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(post({ data: typingDelivery }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.handoff).toBe("skipped");
+    expect(body.messageId).toBe("1b5735ab-33ba-4921-b96b-c76d958b02a0");
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).not.toHaveBeenCalled();
+    expect(mockReply).not.toHaveBeenCalled();
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "telnyx_inbound_unparsed",
+      expect.objectContaining({ kind: "is_typing" }),
+    );
+  });
+
+  it("does not hand off a blank inbound with no text, postback, or media", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: {},
+          text: undefined,
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).not.toHaveBeenCalled();
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "telnyx_inbound_unparsed",
+      expect.objectContaining({ kind: "blank" }),
+    );
+  });
+
+  it("logs an unparsed RCS file and does not hand it off", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: {
+            user_file: {
+              payload: {
+                file_name: "photo.jpg",
+                mime_type: "image/jpeg",
+                file_uri: "https://rcs-inbound.example/photo.jpg",
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).not.toHaveBeenCalled();
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "telnyx_inbound_unparsed",
+      expect.objectContaining({ kind: "media" }),
+    );
+  });
+
+  it("logs an unparsed reaction and does not hand it off", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: {
+            reaction: { emoji: "👍" },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "telnyx_inbound_unparsed",
+      expect.objectContaining({ kind: "reaction" }),
+    );
+  });
+
+  it("does not hand off a Done reply tap that only has postback_data", async () => {
+    mockDeliverTasks.mockResolvedValue({
+      sent: true,
+      type: "RCS",
+      messageId: "done-postback",
+    });
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: {
+            suggestion_response: {
+              postback_data: "piper-task-done:task-1",
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockDeliverTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postback: "piper-task-done:task-1",
+        preferRcs: true,
       }),
     );
   });

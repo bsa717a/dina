@@ -106,6 +106,56 @@ export function extractInboundTo(payload: unknown): string {
   return "";
 }
 
+/**
+ * Inbound with no user text and no suggestion postback.
+ * Logged by the webhook and never forwarded as a blank handoff.
+ */
+export type NonTextInboundKind = "is_typing" | "reaction" | "media" | "blank";
+
+function bodyEventType(body: Record<string, unknown> | null): string {
+  const value = body?.event_type;
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isReactionBody(
+  body: Record<string, unknown> | null,
+  eventType: string,
+): boolean {
+  if (!body) return false;
+  if (eventType === "reaction" || eventType.endsWith("_reaction")) return true;
+  const reaction = body.reaction;
+  return Boolean(reaction && typeof reaction === "object");
+}
+
+function hasInboundMedia(
+  obj: Record<string, unknown> | null,
+  body: Record<string, unknown> | null,
+): boolean {
+  if (Array.isArray(obj?.media) && obj.media.length > 0) return true;
+  const file = body?.user_file;
+  return Boolean(file && typeof file === "object");
+}
+
+/**
+ * `is_typing` is `body.event_type` on a message.received payload.
+ * RCS files are `body.user_file`; MMS files are `media[]`.
+ * A reaction object on `body` (or an event_type ending in reaction) is logged
+ * the same way. Text or a suggestion postback returns null so Done still runs.
+ */
+export function classifyNonTextInbound(raw: unknown): NonTextInboundKind | null {
+  if (extractInboundText(raw).trim() || extractSuggestionPostback(raw).trim()) {
+    return null;
+  }
+
+  const obj = asRecord(raw);
+  const body = obj ? asRecord(obj.body) : null;
+  const eventType = bodyEventType(body);
+  if (eventType === "is_typing") return "is_typing";
+  if (isReactionBody(body, eventType)) return "reaction";
+  if (hasInboundMedia(obj, body)) return "media";
+  return "blank";
+}
+
 /** Postback from a tapped RCS suggestion (`body.suggestion_response.postback_data`). */
 export function extractSuggestionPostback(raw: unknown): string {
   const obj = asRecord(raw);
