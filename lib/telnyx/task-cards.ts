@@ -6,7 +6,7 @@
  * - Card title: 200 characters
  * - Card description: 2000 characters
  * - Suggestions on a card: 10
- * - Suggested-action label: 25 characters
+ * - Suggested-reply label: 25 characters
  * - postback_data: 2048 characters
  *
  * More than 10 open tasks are sent as further carousels. A single leftover
@@ -29,7 +29,7 @@ export const RCS_CARD_SUGGESTIONS_MAX = 10;
 export const RCS_SUGGESTION_TEXT_MAX = 25;
 export const RCS_POSTBACK_MAX = 2048;
 
-export const TASK_DONE_ACTION_TEXT = "Done";
+export const TASK_DONE_REPLY_TEXT = "Done";
 export const TASK_DONE_POSTBACK_PREFIX = "piper-task-done:";
 
 export type TaskCardViewer = {
@@ -113,14 +113,16 @@ export function buildTaskRcsCard(input: OpenTaskCardInput): TaskRcsCard {
     `Owner: ${owner}\nDue: ${due}`,
     RCS_CARD_DESCRIPTION_MAX,
   );
-  const actionText = truncateRcsText(TASK_DONE_ACTION_TEXT, RCS_SUGGESTION_TEXT_MAX);
+  const replyText = truncateRcsText(TASK_DONE_REPLY_TEXT, RCS_SUGGESTION_TEXT_MAX);
   return {
     title: taskCardTitle(input.title),
     description,
     suggestions: [
       {
-        action: {
-          text: actionText,
+        // Telnyx error 10015 rejects an action suggestion that has no
+        // concrete action field. A reply with this postback is accepted.
+        reply: {
+          text: replyText,
           postback_data: taskDonePostback(input.id),
         },
       },

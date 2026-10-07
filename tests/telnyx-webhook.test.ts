@@ -493,7 +493,7 @@ describe("POST /api/telnyx/webhook", () => {
     );
   });
 
-  it("passes a Done suggestion postback through before Grok", async () => {
+  it("passes a Done reply-suggestion postback through before Grok", async () => {
     mockDeliverTasks.mockResolvedValue({
       sent: true,
       type: "RCS",

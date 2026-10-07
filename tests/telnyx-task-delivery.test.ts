@@ -100,9 +100,12 @@ describe("deliverInboundTaskIntent", () => {
     const first = sendRcsContent.mock.calls[0][0];
     const second = sendRcsContent.mock.calls[1][0];
     expect(first.content.rich_card.carousel_card.card_contents).toHaveLength(10);
-    expect(first.content.rich_card.carousel_card.card_contents[0].suggestions[0].action.text).toBe(
+    expect(first.content.rich_card.carousel_card.card_contents[0].suggestions[0].reply.text).toBe(
       "Done",
     );
+    expect(
+      first.content.rich_card.carousel_card.card_contents[0].suggestions[0].reply.postback_data,
+    ).toBe("piper-task-done:task-1");
     expect(first.smsText).toContain("1. Task 1");
     expect(first.smsText).toContain("Reply done N to complete task N.");
     expect(second.content.rich_card.standalone_card.card_content.title).toBe("Task 11");

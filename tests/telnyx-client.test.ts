@@ -440,7 +440,7 @@ describe("sendRcsContent", () => {
                 description: "Owner: Derek\nDue: 10/9/2026",
                 suggestions: [
                   {
-                    action: {
+                    reply: {
                       text: "Done",
                       postback_data: "piper-task-done:task-1",
                     },
@@ -452,7 +452,7 @@ describe("sendRcsContent", () => {
                 description: "Owner: Derek\nDue: No due date",
                 suggestions: [
                   {
-                    action: {
+                    reply: {
                       text: "Done",
                       postback_data: "piper-task-done:task-2",
                     },
@@ -474,6 +474,13 @@ describe("sendRcsContent", () => {
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.sms_fallback).toBeUndefined();
     expect(body.agent_message.content_message.rich_card.carousel_card.card_contents).toHaveLength(2);
+    expect(
+      body.agent_message.content_message.rich_card.carousel_card.card_contents[0].suggestions[0]
+        .reply,
+    ).toEqual({
+      text: "Done",
+      postback_data: "piper-task-done:task-1",
+    });
     expect(mockFetch.mock.calls[0][0]).toBe("https://api.telnyx.com/v2/messages/rcs");
   });
 

@@ -152,7 +152,7 @@ describe("normalizeInboundMessage", () => {
     expect(normalized?.text).toBe("Help");
   });
 
-  it("reads suggestion postback data from an RCS Done tap", () => {
+  it("reads a Done reply-suggestion tap from suggestion_response", () => {
     const normalized = normalizeInboundMessage({
       id: "rcs-done",
       direction: "inbound",
