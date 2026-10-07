@@ -120,6 +120,7 @@ export const Composer = forwardRef<
   const [taskListCollapseReady, setTaskListCollapseReady] = useState(false);
   const [taskScope, setTaskScope] = useState<WhiteboardScope>("all");
   const [taskScopeReady, setTaskScopeReady] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   const viewerId = viewer?.id?.trim() ?? "";
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -350,7 +351,7 @@ export const Composer = forwardRef<
             onShowRemaining={onShowRemaining}
           />
           {selectedProject && (
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1">
               <ProjectAddButton
                 key={selectedProject.key}
                 project={selectedProject}
@@ -422,17 +423,32 @@ export const Composer = forwardRef<
                   Mine
                 </button>
               </div>
+              <button
+                type="button"
+                data-testid="whiteboard-done-toggle"
+                aria-pressed={showDone}
+                aria-label={
+                  showDone
+                    ? "Hide tasks finished in the last two weeks"
+                    : "Show tasks finished in the last two weeks"
+                }
+                onClick={() => setShowDone((current) => !current)}
+                className={`whiteboard-done-toggle${showDone ? " is-on" : ""}`}
+              >
+                <span className="whiteboard-done-mark" aria-hidden="true" />
+              </button>
             </div>
           )}
         </div>
 
         {selectedProject && !collapsedTaskLists[selectedProject.key] && (
           <ProjectBoard
-            key={selectedProject.key}
+            key={`${selectedProject.key}:${showDone ? "done" : "open"}`}
             project={selectedProject}
             ownerName={ownerName}
             viewer={viewer}
             scope={taskScope}
+            showCompleted={showDone}
             disabled={disabled}
             refreshKey={sectionsReload}
             onChanged={onProjectBoardChange}

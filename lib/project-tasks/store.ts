@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/client";
+import { recentlyCompletedSince } from "@/lib/project-tasks/completed-window";
 import { assertProjectKey, type ProjectKey } from "@/lib/project-tasks/keys";
 import {
   listProjectSections,
@@ -109,6 +110,31 @@ export async function listProjectTasks(options: {
   const records = rows.map((row) => toRecord(row, names));
   records.sort((a, b) => compareSectioned(a, b, order));
 
+  return withNumbers(records);
+}
+
+/** Done tasks whose completedAt is within the last two weeks. No schema change. */
+export async function listRecentlyCompletedProjectTasks(options: {
+  project: string;
+  now?: Date;
+}): Promise<NumberedProjectTask[]> {
+  const projectKey = assertProjectKey(options.project);
+  const since = recentlyCompletedSince(options.now);
+  const [rows, sections] = await Promise.all([
+    prisma.projectTask.findMany({
+      where: {
+        projectKey,
+        status: "done",
+        completedAt: { gte: since },
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    listProjectSections(projectKey),
+  ]);
+  const names = new Map(sections.map((section) => [section.id, section.name]));
+  const order = new Map(sections.map((section, index) => [section.id, index]));
+  const records = rows.map((row) => toRecord(row, names));
+  records.sort((a, b) => compareSectioned(a, b, order));
   return withNumbers(records);
 }
 
@@ -301,6 +327,21 @@ export async function completeProjectTask(input: {
   const match = await resolveProjectTask(input);
   const updated = await updateProjectTask(match.id, { status: "done" });
   return { ...updated, number: match.number };
+}
+
+/**
+ * Open a finished task again. Id only: a done-list number is not an open-list number.
+ * updateProjectTask sets completedAt to null whenever status is open.
+ */
+export async function reopenProjectTask(input: {
+  taskId: string;
+}): Promise<NumberedProjectTask> {
+  if (!input.taskId) throw new Error("Task id is required.");
+  const match = await resolveProjectTask({ taskId: input.taskId });
+  const updated = await updateProjectTask(match.id, { status: "open" });
+  const number =
+    (await remainingTaskNumber(match.projectKey, updated.id)) ?? match.number;
+  return { ...updated, number };
 }
 
 /**

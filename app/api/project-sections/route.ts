@@ -27,7 +27,9 @@ import {
   addProjectTask,
   completeProjectTask,
   listProjectTasks,
+  listRecentlyCompletedProjectTasks,
   remainingTaskNumber,
+  reopenProjectTask,
   resolveProjectTask,
   updateProjectTask,
 } from "@/lib/project-tasks/store";
@@ -71,10 +73,13 @@ const completeSchema = z
     project: z.string().trim().min(1).max(80),
     number: z.number().int().positive().optional(),
     taskId: z.string().trim().min(1).optional(),
-    complete: z.literal(true),
+    complete: z.boolean(),
   })
   .refine((value) => Boolean(value.number || value.taskId), {
     message: "Task number is required.",
+  })
+  .refine((value) => value.complete !== false || Boolean(value.taskId), {
+    message: "Task id is required.",
   });
 
 const detailsSchema = z
@@ -143,12 +148,18 @@ function publicTask(task: {
   };
 }
 
-async function boardFor(user: Parameters<typeof userCanAccessProject>[0], rawProject: string) {
+async function boardFor(
+  user: Parameters<typeof userCanAccessProject>[0],
+  rawProject: string,
+  options?: { recentlyCompleted?: boolean },
+) {
   const key = await userCanAccessProject(user, rawProject);
   if (!key) return null;
   const [sections, tasks] = await Promise.all([
     listProjectSections(key),
-    listProjectTasks({ project: key }),
+    options?.recentlyCompleted
+      ? listRecentlyCompletedProjectTasks({ project: key })
+      : listProjectTasks({ project: key }),
   ]);
   const people = await listBoardPeople(
     key,
@@ -192,12 +203,15 @@ export async function GET(request: Request) {
   const db = await checkDatabase();
   if (!db.ok) return jsonError("Database is unavailable.", 503);
 
+  const url = new URL(request.url);
   const parsed = projectSchema.safeParse({
-    project: new URL(request.url).searchParams.get("project") ?? "",
+    project: url.searchParams.get("project") ?? "",
   });
   if (!parsed.success) return jsonError("Project is required.");
 
-  const data = await boardFor(user, parsed.data.project);
+  const data = await boardFor(user, parsed.data.project, {
+    recentlyCompleted: url.searchParams.get("done") === "1",
+  });
   if (!data) return jsonError("Unknown project or no access.", 400);
   return NextResponse.json(data);
 }
@@ -264,7 +278,7 @@ export async function POST(request: Request) {
   }
 }
 
-/** Move a remaining task into a section, or mark it done. No model. */
+/** Move a task, mark it done, or reopen it. No model. */
 export async function PATCH(request: Request) {
   const user = await requireSession();
   if (!user) return unauthorized();
@@ -283,27 +297,40 @@ export async function PATCH(request: Request) {
   if (
     json &&
     typeof json === "object" &&
-    (json as { complete?: unknown }).complete === true
+    typeof (json as { complete?: unknown }).complete === "boolean"
   ) {
     const parsed = completeSchema.safeParse(json);
     if (!parsed.success) {
-      return jsonError(parsed.error.issues[0]?.message || "Could not complete the task.");
+      return jsonError(parsed.error.issues[0]?.message || "Could not update the task.");
     }
     const key = await userCanAccessProject(user, parsed.data.project);
     if (!key) return jsonError("Unknown project or no access.", 400);
+    const reopening = parsed.data.complete === false;
+    if (reopening && !parsed.data.taskId) {
+      return jsonError("Task id is required.");
+    }
     try {
-      const existing = await resolveProjectTask({
-        taskId: parsed.data.taskId,
-        project: key,
-        number: parsed.data.number,
-      });
+      const existing = reopening
+        ? await resolveProjectTask({ taskId: parsed.data.taskId ?? "" })
+        : await resolveProjectTask({
+            taskId: parsed.data.taskId,
+            project: key,
+            number: parsed.data.number,
+          });
       if (existing.projectKey !== key) {
         return jsonError("That task is not on this project.", 400);
       }
-      const task = await completeProjectTask({ taskId: existing.id });
+      const task = reopening
+        ? await reopenProjectTask({ taskId: existing.id })
+        : await completeProjectTask({ taskId: existing.id });
       return NextResponse.json({ task: publicTask(task) });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not complete the task.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : reopening
+            ? "Could not reopen the task."
+            : "Could not complete the task.";
       return jsonError(message);
     }
   }
@@ -375,11 +402,11 @@ export async function PATCH(request: Request) {
   if (!key) return jsonError("Unknown project or no access.", 400);
 
   try {
-    const task = await resolveProjectTask({
-      taskId: parsed.data.taskId,
-      project: key,
-      number: parsed.data.number,
-    });
+    const task = await resolveProjectTask(
+      parsed.data.taskId
+        ? { taskId: parsed.data.taskId }
+        : { project: key, number: parsed.data.number },
+    );
     if (task.projectKey !== key) {
       return jsonError("That task is not on this project.", 400);
     }

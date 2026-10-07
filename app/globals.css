@@ -255,6 +255,45 @@ input {
   transform: rotate(45deg);
 }
 
+.whiteboard-done-toggle {
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.125rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.whiteboard-done-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  color: var(--accent);
+}
+
+.whiteboard-done-toggle.is-on {
+  border-color: #1b6b42;
+  background: #1b6b42;
+  color: #f7f4ea;
+}
+
+.whiteboard-done-toggle.is-on:hover {
+  color: #f7f4ea;
+}
+
+.whiteboard-done-mark {
+  width: 0.3rem;
+  height: 0.5rem;
+  margin-top: -0.12rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 .whiteboard-muted {
   margin: 0;
   padding: 0.35rem 0.85rem 0.55rem;

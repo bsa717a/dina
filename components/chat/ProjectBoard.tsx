@@ -378,6 +378,7 @@ export function ProjectBoard({
   ownerName,
   viewer = null,
   scope = "all",
+  showCompleted = false,
   disabled,
   refreshKey = 0,
   onChanged,
@@ -386,6 +387,7 @@ export function ProjectBoard({
   ownerName?: string | null;
   viewer?: WhiteboardViewer | null;
   scope?: WhiteboardScope;
+  showCompleted?: boolean;
   disabled?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
@@ -406,9 +408,9 @@ export function ProjectBoard({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(
-          `/api/project-sections?project=${encodeURIComponent(project.key)}`,
-        );
+        const params = new URLSearchParams({ project: project.key });
+        if (showCompleted) params.set("done", "1");
+        const res = await fetch(`/api/project-sections?${params.toString()}`);
         if (res.status === 401) {
           router.replace("/login");
           return;
@@ -454,7 +456,7 @@ export function ProjectBoard({
     return () => {
       cancelled = true;
     };
-  }, [project.key, refreshKey, router, version]);
+  }, [project.key, refreshKey, router, showCompleted, version]);
 
   async function moveTask(task: BoardTask, sectionId: string) {
     const next = sectionId || null;
@@ -467,7 +469,7 @@ export function ProjectBoard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project: project.key,
-          number: task.number,
+          taskId: task.id,
           sectionId: next,
         }),
       });
@@ -582,6 +584,35 @@ export function ProjectBoard({
     }
   }
 
+  async function reopenTask(task: BoardTask) {
+    if (busy || disabled) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: project.key,
+          taskId: task.id,
+          complete: false,
+        }),
+      });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Could not reopen the task.");
+      setVersion((value) => value + 1);
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reopen the task.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const sectionIds = new Set(sections.map((section) => section.id));
   const visibleTasks =
     scope === "mine" ? tasks.filter((task) => taskOwnedByViewer(task, viewer)) : tasks;
@@ -590,6 +621,7 @@ export function ProjectBoard({
   );
   const locked = Boolean(disabled || busy);
   const heading = whiteboardHeading(ownerName);
+  const emptyLabel = showCompleted ? "(none in the last two weeks)" : "(none yet)";
 
   return (
     <div id="project-task-list" data-testid="project-board" className="whiteboard">
@@ -607,11 +639,14 @@ export function ProjectBoard({
                   sections={sections}
                   people={people}
                   locked={locked}
+                  showCompleted={showCompleted}
                   completingId={completingId}
                   expandedId={expandedId}
+                  emptyLabel={emptyLabel}
                   onToggle={setExpandedId}
                   onMove={moveTask}
                   onComplete={completeTask}
+                  onReopen={reopenTask}
                   onSave={saveDetails}
                 />
               </section>
@@ -624,17 +659,24 @@ export function ProjectBoard({
                   sections={sections}
                   people={people}
                   locked={locked}
+                  showCompleted={showCompleted}
                   completingId={completingId}
                   expandedId={expandedId}
+                  emptyLabel={emptyLabel}
                   onToggle={setExpandedId}
                   onMove={moveTask}
                   onComplete={completeTask}
+                  onReopen={reopenTask}
                   onSave={saveDetails}
                 />
               </section>
             )}
             {!sections.length && !visibleTasks.length && !error && (
-              <p className="whiteboard-muted">Nothing on the board yet.</p>
+              <p className="whiteboard-muted">
+                {showCompleted
+                  ? "Nothing finished in the last two weeks."
+                  : "Nothing on the board yet."}
+              </p>
             )}
           </div>
         )}
@@ -658,26 +700,32 @@ function TaskList({
   sections,
   people,
   locked,
+  showCompleted,
   completingId,
   expandedId,
+  emptyLabel,
   onToggle,
   onMove,
   onComplete,
+  onReopen,
   onSave,
 }: {
   tasks: BoardTask[];
   sections: BoardSection[];
   people: BoardPerson[];
   locked: boolean;
+  showCompleted: boolean;
   completingId: string | null;
   expandedId: string | null;
+  emptyLabel: string;
   onToggle: (taskId: string | null) => void;
   onMove: (task: BoardTask, sectionId: string) => void;
   onComplete: (task: BoardTask) => void;
+  onReopen: (task: BoardTask) => void;
   onSave: (task: BoardTask, patch: TaskDetailsPatch) => Promise<void>;
 }) {
   if (!tasks.length) {
-    return <p className="whiteboard-muted">(none yet)</p>;
+    return <p className="whiteboard-muted">{emptyLabel}</p>;
   }
   return (
     <ul className="whiteboard-tasks">
@@ -688,11 +736,12 @@ function TaskList({
           sections={sections}
           people={people}
           locked={locked}
-          done={completingId === task.id}
+          done={showCompleted || completingId === task.id}
+          showCompleted={showCompleted}
           open={expandedId === task.id}
           onToggle={() => onToggle(expandedId === task.id ? null : task.id)}
           onMove={onMove}
-          onComplete={onComplete}
+          onComplete={showCompleted ? onReopen : onComplete}
           onSave={onSave}
         />
       ))}
@@ -706,6 +755,7 @@ function TaskRow({
   people,
   locked,
   done,
+  showCompleted,
   open,
   onToggle,
   onMove,
@@ -717,6 +767,7 @@ function TaskRow({
   people: BoardPerson[];
   locked: boolean;
   done: boolean;
+  showCompleted: boolean;
   open: boolean;
   onToggle: () => void;
   onMove: (task: BoardTask, sectionId: string) => void;
@@ -744,7 +795,7 @@ function TaskRow({
             type="checkbox"
             checked={done}
             disabled={locked}
-            aria-label={`Mark done: ${task.title}`}
+            aria-label={done ? `Reopen: ${task.title}` : `Mark done: ${task.title}`}
             data-testid={`task-done-${task.number}`}
             onClick={stopRowToggle}
             onChange={() => onComplete(task)}
@@ -763,9 +814,9 @@ function TaskRow({
             onToggle();
           }}
         >
-          {task.number}. {task.title}
+          {showCompleted ? task.title : `${task.number}. ${task.title}`}
         </span>
-        {sections.length > 0 && (
+        {!showCompleted && sections.length > 0 && (
           <select
             aria-label={`Section for ${task.title}`}
             data-testid={`task-section-${task.number}`}
