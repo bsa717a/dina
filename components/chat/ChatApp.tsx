@@ -133,6 +133,11 @@ export function ChatApp() {
   const [projects, setProjects] = useState<UserProject[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [boardOwnerName, setBoardOwnerName] = useState("");
+  const [boardViewer, setBoardViewer] = useState<{
+    id: string;
+    name: string;
+    username: string;
+  } | null>(null);
   const [selectedProject, setSelectedProject] = useState<UserProject | null>(
     null,
   );
@@ -331,12 +336,21 @@ export function ChatApp() {
         const data = await cfg.json();
         setVapidPublicKey(data.vapidPublicKey);
         setMicrosoftEnabled(Boolean(data.microsoftEnabled));
-        if (typeof data.user?.id === "string") setUserId(data.user.id);
+        const viewerName = typeof data.user?.name === "string" ? data.user.name : "";
+        const viewerUsername =
+          typeof data.user?.username === "string" ? data.user.username : "";
+        if (typeof data.user?.id === "string") {
+          setUserId(data.user.id);
+          setBoardViewer({
+            id: data.user.id,
+            name: viewerName,
+            username: viewerUsername,
+          });
+        }
         setBoardOwnerName(
           whiteboardOwnerName({
-            name: typeof data.user?.name === "string" ? data.user.name : "",
-            username:
-              typeof data.user?.username === "string" ? data.user.username : "",
+            name: viewerName,
+            username: viewerUsername,
           }),
         );
         if (data.user?.assistantName) setAssistantName(data.user.assistantName);
@@ -758,6 +772,7 @@ export function ChatApp() {
           void showRemainingTasks(project);
         }}
         ownerName={boardOwnerName}
+        viewer={boardViewer}
         onSend={handleSend}
       />
     </div>

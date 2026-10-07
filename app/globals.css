@@ -199,6 +199,52 @@ input {
   color: var(--marker-blue);
 }
 
+.whiteboard-task.is-done {
+  color: var(--marker-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.whiteboard-check {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.whiteboard-check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  appearance: none;
+  border: 2px solid var(--marker-blue);
+  border-radius: 0.2rem;
+  background: #fffdf8;
+  cursor: pointer;
+}
+
+.whiteboard-check input:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.whiteboard-check.is-checked input {
+  border-color: var(--marker-green);
+  background: var(--marker-green);
+}
+
+.whiteboard-check.is-checked::after {
+  content: "";
+  position: absolute;
+  left: 0.34rem;
+  top: 0.12rem;
+  width: 0.28rem;
+  height: 0.5rem;
+  border: solid #f7f4ea;
+  border-width: 0 2px 2px 0;
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+
 .whiteboard-muted {
   margin: 0;
   padding: 0.35rem 0.85rem 0.55rem;

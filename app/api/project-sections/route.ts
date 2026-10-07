@@ -14,6 +14,7 @@ import {
 } from "@/lib/project-tasks/sections";
 import {
   addProjectTask,
+  completeProjectTask,
   listProjectTasks,
   remainingTaskNumber,
   resolveProjectTask,
@@ -54,6 +55,17 @@ const assignSchema = z
     { message: "Section is required." },
   );
 
+const completeSchema = z
+  .object({
+    project: z.string().trim().min(1).max(80),
+    number: z.number().int().positive().optional(),
+    taskId: z.string().trim().min(1).optional(),
+    complete: z.literal(true),
+  })
+  .refine((value) => Boolean(value.number || value.taskId), {
+    message: "Task number is required.",
+  });
+
 function publicTask(task: {
   number: number;
   id: string;
@@ -61,6 +73,7 @@ function publicTask(task: {
   status: string;
   sectionId: string | null;
   sectionName: string | null;
+  assigneeUserId?: string | null;
 }) {
   return {
     number: task.number,
@@ -69,6 +82,7 @@ function publicTask(task: {
     status: task.status,
     sectionId: task.sectionId,
     sectionName: task.sectionName,
+    assigneeUserId: task.assigneeUserId ?? null,
   };
 }
 
@@ -188,7 +202,7 @@ export async function POST(request: Request) {
   }
 }
 
-/** Move a remaining task into a section, or back to ungrouped. No model. */
+/** Move a remaining task into a section, or mark it done. No model. */
 export async function PATCH(request: Request) {
   const user = await requireSession();
   if (!user) return unauthorized();
@@ -202,6 +216,34 @@ export async function PATCH(request: Request) {
     json = await request.json();
   } catch {
     return jsonError("Invalid JSON body.");
+  }
+
+  if (
+    json &&
+    typeof json === "object" &&
+    (json as { complete?: unknown }).complete === true
+  ) {
+    const parsed = completeSchema.safeParse(json);
+    if (!parsed.success) {
+      return jsonError(parsed.error.issues[0]?.message || "Could not complete the task.");
+    }
+    const key = await userCanAccessProject(user, parsed.data.project);
+    if (!key) return jsonError("Unknown project or no access.", 400);
+    try {
+      const existing = await resolveProjectTask({
+        taskId: parsed.data.taskId,
+        project: key,
+        number: parsed.data.number,
+      });
+      if (existing.projectKey !== key) {
+        return jsonError("That task is not on this project.", 400);
+      }
+      const task = await completeProjectTask({ taskId: existing.id });
+      return NextResponse.json({ task: publicTask(task) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not complete the task.";
+      return jsonError(message);
+    }
   }
 
   const parsed = assignSchema.safeParse(json);

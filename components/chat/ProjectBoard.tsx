@@ -3,7 +3,12 @@
 import { FormEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserProject } from "@/components/chat/ProjectsPill";
-import { whiteboardHeading } from "@/lib/client/whiteboard";
+import {
+  taskOwnedByViewer,
+  whiteboardHeading,
+  type WhiteboardScope,
+  type WhiteboardViewer,
+} from "@/lib/client/whiteboard";
 
 type BoardSection = {
   id: string;
@@ -18,6 +23,7 @@ type BoardTask = {
   status: string;
   sectionId: string | null;
   sectionName: string | null;
+  assigneeUserId: string | null;
 };
 
 type AddMode = "section" | "task" | null;
@@ -346,12 +352,16 @@ export function ProjectAddButton({
 export function ProjectBoard({
   project,
   ownerName,
+  viewer = null,
+  scope = "all",
   disabled,
   refreshKey = 0,
   onChanged,
 }: {
   project: UserProject;
   ownerName?: string | null;
+  viewer?: WhiteboardViewer | null;
+  scope?: WhiteboardScope;
   disabled?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
@@ -361,6 +371,7 @@ export function ProjectBoard({
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
 
@@ -378,12 +389,19 @@ export function ProjectBoard({
         const data = (await res.json().catch(() => ({}))) as {
           error?: string;
           sections?: BoardSection[];
-          tasks?: BoardTask[];
+          tasks?: Array<Omit<BoardTask, "assigneeUserId"> & { assigneeUserId?: string | null }>;
         };
         if (cancelled) return;
         if (!res.ok) throw new Error(data.error || "Could not load sections.");
+        const nextTasks = (Array.isArray(data.tasks) ? data.tasks : []).map((task) => ({
+          ...task,
+          assigneeUserId: task.assigneeUserId ?? null,
+        }));
         setSections(Array.isArray(data.sections) ? data.sections : []);
-        setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        setTasks(nextTasks);
+        setCompletingId((current) =>
+          current && nextTasks.some((task) => task.id === current) ? current : null,
+        );
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -428,8 +446,41 @@ export function ProjectBoard({
     }
   }
 
+  async function completeTask(task: BoardTask) {
+    if (busy || disabled || completingId === task.id) return;
+    setCompletingId(task.id);
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/project-sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: project.key,
+          taskId: task.id,
+          complete: true,
+        }),
+      });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Could not complete the task.");
+      setVersion((value) => value + 1);
+      onChanged?.();
+    } catch (err) {
+      setCompletingId(null);
+      setError(err instanceof Error ? err.message : "Could not complete the task.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const sectionIds = new Set(sections.map((section) => section.id));
-  const ungrouped = tasks.filter(
+  const visibleTasks =
+    scope === "mine" ? tasks.filter((task) => taskOwnedByViewer(task, viewer)) : tasks;
+  const ungrouped = visibleTasks.filter(
     (task) => !task.sectionId || !sectionIds.has(task.sectionId),
   );
   const locked = Boolean(disabled || busy);
@@ -447,10 +498,12 @@ export function ProjectBoard({
               <section key={section.id} data-testid={`section-${section.name}`}>
                 <h3 className="whiteboard-section">{section.name}</h3>
                 <TaskList
-                  tasks={tasks.filter((task) => task.sectionId === section.id)}
+                  tasks={visibleTasks.filter((task) => task.sectionId === section.id)}
                   sections={sections}
                   locked={locked}
+                  completingId={completingId}
                   onMove={moveTask}
+                  onComplete={completeTask}
                 />
               </section>
             ))}
@@ -461,11 +514,13 @@ export function ProjectBoard({
                   tasks={ungrouped}
                   sections={sections}
                   locked={locked}
+                  completingId={completingId}
                   onMove={moveTask}
+                  onComplete={completeTask}
                 />
               </section>
             )}
-            {!sections.length && !tasks.length && !error && (
+            {!sections.length && !visibleTasks.length && !error && (
               <p className="whiteboard-muted">Nothing on the board yet.</p>
             )}
           </div>
@@ -480,12 +535,16 @@ function TaskList({
   tasks,
   sections,
   locked,
+  completingId,
   onMove,
+  onComplete,
 }: {
   tasks: BoardTask[];
   sections: BoardSection[];
   locked: boolean;
+  completingId: string | null;
   onMove: (task: BoardTask, sectionId: string) => void;
+  onComplete: (task: BoardTask) => void;
 }) {
   if (!tasks.length) {
     return <p className="whiteboard-muted">(none yet)</p>;
@@ -497,8 +556,20 @@ function TaskList({
           key={task.id}
           className="flex items-center justify-between gap-2 px-3 py-1.5"
         >
-          <span className="whiteboard-task">
-            {task.number}. {task.title}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className={`whiteboard-check${completingId === task.id ? " is-checked" : ""}`}>
+              <input
+                type="checkbox"
+                checked={completingId === task.id}
+                disabled={locked}
+                aria-label={`Mark done: ${task.title}`}
+                data-testid={`task-done-${task.number}`}
+                onChange={() => onComplete(task)}
+              />
+            </span>
+            <span className={`whiteboard-task${completingId === task.id ? " is-done" : ""}`}>
+              {task.number}. {task.title}
+            </span>
           </span>
           {sections.length > 0 && (
             <select
