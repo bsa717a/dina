@@ -1,0 +1,75 @@
+# Push to main builds Dina from source and deploys Cloud Run service `dina`.
+#
+# This repo has no Dockerfile. Google Cloud Buildpacks build the image, the
+# same path `gcloud run deploy --source` uses. Pack runs in this build so
+# the trigger service account is the build identity. There is no nested
+# build and no JSON key.
+#
+# The trigger must use this same service account. If both are set and they
+# differ, Cloud Build rejects the build.
+#
+# This file does not run Prisma migrations and does not set, update, or
+# clear Cloud Run environment variables or Secret Manager bindings. The new
+# revision keeps the service's existing configuration, then receives 100%
+# of traffic.
+
+serviceAccount: projects/dina-pm/serviceAccounts/dina-cloudbuild@dina-pm.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1800s
+
+steps:
+  - id: build
+    name: gcr.io/k8s-skaffold/pack
+    entrypoint: pack
+    args:
+      - build
+      - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+      - --builder=gcr.io/buildpacks/builder:google-22
+      - --network=cloudbuild
+      - --path=.
+      # Node 22 matches the version this app recommends. Build-time only.
+      - --env
+      - GOOGLE_RUNTIME_VERSION=22
+      # Placeholder so `prisma generate` can read the schema. Not a
+      # credential, and not the runtime DATABASE_URL (that stays the
+      # Secret Manager binding already on the Cloud Run service).
+      - --env
+      - DATABASE_URL=postgresql://prisma:prisma@127.0.0.1:5432/dina
+      - --env
+      - NEXT_TELEMETRY_DISABLED=1
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - dina
+      - --project=dina-pm
+      - --region=us-central1
+      - --platform=managed
+      - --image=us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+      - --quiet
+
+  - id: traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - dina
+      - --project=dina-pm
+      - --region=us-central1
+      - --to-latest
+      - --quiet
