@@ -1,0 +1,24 @@
+# Derek's rule as of Oct 8, 2026: no Bugbot reviews on this repo.
+#
+# A repo file can't switch Bugbot off. That's done per repository in the
+# Cursor dashboard (Automations > Bugbot). Until it's off there, this file
+# keeps any run that still happens as small as possible: no autofix agents,
+# no PR summaries, no draft reviews, one low-effort review per PR at most.
+# Bugbot reads this file from the base branch (main), so it only takes
+# effect once merged. Don't raise these settings.
+version: 1
+
+triggers:
+  drafts: false
+  frequency: oncePerPr
+
+review:
+  effort: low
+  incremental: true
+
+prSummary:
+  mode: disabled
+  riskScore: false
+
+autofix:
+  mode: disabled

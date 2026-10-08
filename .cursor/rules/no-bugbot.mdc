@@ -1,0 +1,14 @@
+---
+description: Bugbot is off for this repo; never trigger it
+alwaysApply: true
+---
+
+# No Bugbot
+
+As of Oct 8, 2026, Derek's rule is **no Bugbot reviews on any repo**. One day of Bugbot used about 5M tokens of his Cursor usage.
+
+- Don't comment `bugbot run`, `cursor review`, or `@cursor review` on any PR, and don't ask Bugbot to run in any other way.
+- Don't run the `/review-bugbot` or `/review` agent skills. They bill Bugbot usage too.
+- Don't turn on Bugbot Autofix or apply Bugbot "Fix in Cursor" or "Fix in Web" links, and don't raise the settings in `.cursor/config/bugbot.yaml`.
+- Merges are gated on CI and the `Cursor Security Agent: Security Reviewer` check, not on Bugbot. A `Cursor Bugbot` check that shows skipping, neutral, or a usage-limit comment is expected; ignore it.
+- If you want a code review, ask for a normal review from the person or agent handling the PR.
