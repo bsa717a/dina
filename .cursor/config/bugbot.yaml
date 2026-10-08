@@ -1,4 +1,5 @@
-# Derek's rule as of Oct 8, 2026: no Bugbot reviews on this repo.
+# Derek's rule as of Oct 8, 2026: no GitHub Bugbot reviews on this repo.
+# Running /review-bugbot inside Cursor is fine; see .cursor/rules/review-rules.mdc.
 #
 # A repo file can't switch Bugbot off. That's done per repository in the
 # Cursor dashboard (Automations > Bugbot). Until it's off there, this file

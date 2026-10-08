@@ -1,0 +1,22 @@
+---
+description: Code review rules. Review inside Cursor; never trigger GitHub Bugbot
+alwaysApply: true
+---
+
+# Code review rules
+
+Derek's rule as of Oct 8, 2026: review code inside Cursor, and never trigger GitHub Bugbot. GitHub Bugbot and `/agent-review` bill the Other Models pool, which one day of Bugbot used heavily. The Cursor review skills bill the Cursor Models pool.
+
+## Do: review inside Cursor (preferred)
+
+- Before you push or ask for a merge, run `/review-bugbot`, and fix its findings. If a finding is a false positive, say so briefly instead of fixing it.
+- `/review` and `/review-security` are allowed too. Use them when they fit the change.
+
+## Don't: trigger GitHub Bugbot or Find Issues
+
+- Don't comment `bugbot run`, `@cursor review` or `cursor review` on any PR.
+- Don't request a GitHub Bugbot review in any other way, and don't re-enable it or its Autofix.
+- Don't wait on the `Cursor Bugbot` GitHub check. If it shows skipping, neutral or a usage-limit comment, ignore it. It isn't a merge gate.
+- Don't run `/agent-review` (Find Issues).
+
+Merges are gated on CI and the `Cursor Security Agent: Security Reviewer` check.
