@@ -1,5 +1,5 @@
 /**
- * Carrier / RCS keyword auto-replies (HELP, STOP, START, and aliases).
+ * Carrier / RCS keyword auto-replies (HELP, STOP, STOPALL, START, and aliases).
  *
  * These must send an immediate Telnyx outbound. Grok Bot handoff is async
  * and often returns `{ ok: true }` with no `reply.text`, which previously
@@ -13,16 +13,23 @@ export interface TelnyxKeywordReply {
   text: string;
 }
 
-/** Registered 4StudentLives campaign wording. Do not paraphrase. */
+/** HELP and START use registered 4StudentLives campaign wording. Do not paraphrase. STOP and STOPALL share the opt-out reply. */
 export const TELNYX_KEYWORD_REPLIES: Record<TelnyxKeywordKind, string> = {
   help: "4StudentLives: For help, reply HELP or contact us at +14352382071. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
-  stop: "4StudentLives: You have been unsubscribed and will no longer receive messages from us. Reply HELP for assistance.",
+  stop: "You have successfully been unsubscribed, you will not receive any more messages from this number. Reply START to re-subscribe.",
   start:
     "You have agreed to receive SMS updates from 4StudentLives. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
 };
 
 const HELP_ALIASES = new Set(["help", "info"]);
-const STOP_ALIASES = new Set(["stop", "unsubscribe", "cancel", "end", "quit"]);
+const STOP_ALIASES = new Set([
+  "stop",
+  "stopall",
+  "unsubscribe",
+  "cancel",
+  "end",
+  "quit",
+]);
 const START_ALIASES = new Set(["start", "unstop"]);
 
 /** Strip trailing punctuation so "HELP!" still matches. */
