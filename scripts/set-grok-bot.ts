@@ -3,6 +3,8 @@
  *
  * The token is printed once. Only its SHA-256 hash is stored.
  * The webhook secret is stored as AES-256-GCM ciphertext keyed by SESSION_SECRET.
+ * Use the same SESSION_SECRET the server uses. A different secret cannot be
+ * decrypted, and those deliveries fall back to Dina.
  *
  *   USERNAME="adam" \
  *   GROK_WEBHOOK_URL="https://adam-bot.example/webhook" \
