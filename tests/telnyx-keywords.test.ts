@@ -7,12 +7,12 @@ import {
 import { isRcsMessageType } from "@/lib/telnyx/inbound";
 
 describe("TELNYX_KEYWORD_REPLIES", () => {
-  it("uses the registered 4StudentLives campaign wording", () => {
+  it("keeps the registered HELP and START wording and the required STOP reply", () => {
     expect(TELNYX_KEYWORD_REPLIES.help).toBe(
       "4StudentLives: For help, reply HELP or contact us at +14352382071. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
     );
     expect(TELNYX_KEYWORD_REPLIES.stop).toBe(
-      "4StudentLives: You have been unsubscribed and will no longer receive messages from us. Reply HELP for assistance.",
+      "You have successfully been unsubscribed, you will not receive any more messages from this number. Reply START to re-subscribe.",
     );
     expect(TELNYX_KEYWORD_REPLIES.start).toBe(
       "You have agreed to receive SMS updates from 4StudentLives. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
@@ -30,9 +30,31 @@ describe("matchTelnyxKeyword", () => {
     }
   });
 
-  it("matches STOP aliases", () => {
-    for (const text of ["STOP", "unsubscribe", "Cancel", "END", "quit"]) {
-      expect(matchTelnyxKeyword(text)?.kind).toBe("stop");
+  it("matches STOP and STOPALL regardless of case or surrounding punctuation", () => {
+    for (const text of [
+      "STOP",
+      "stop!",
+      "Stop.",
+      "  STOP?  ",
+      "STOPALL",
+      "stopall",
+      "StopAll!",
+      "stopall.",
+      "  STOPALL?  ",
+    ]) {
+      expect(matchTelnyxKeyword(text)).toEqual({
+        kind: "stop",
+        text: TELNYX_KEYWORD_REPLIES.stop,
+      });
+    }
+  });
+
+  it("matches other STOP aliases with the same opt-out reply", () => {
+    for (const text of ["unsubscribe", "Cancel", "END", "quit"]) {
+      expect(matchTelnyxKeyword(text)).toEqual({
+        kind: "stop",
+        text: TELNYX_KEYWORD_REPLIES.stop,
+      });
     }
   });
 
