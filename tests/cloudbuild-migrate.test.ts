@@ -84,7 +84,7 @@ describe("Cloud Build prod migrate", () => {
   });
 
   it("passes _LINKED_REPO into every step that reads main", () => {
-    const mapping = /env:\s*\n\s+- "_LINKED_REPO=\$_LINKED_REPO"/;
+    const mapping = /env:\s*\n(?:\s+- "[^"]+"\n)*\s+- "_LINKED_REPO=\$_LINKED_REPO"/;
     const migrateStep = stepBody(config, "migrate", "deploy");
     const trafficStep = stepBody(config, "traffic");
     expect(migrateStep).toContain("deploy/run-prod-migrate.sh");
@@ -92,6 +92,22 @@ describe("Cloud Build prod migrate", () => {
     expect(trafficStep).toContain("deploy/github-main-sha.sh");
     expect(migrateStep).toMatch(mapping);
     expect(trafficStep).toMatch(mapping);
+  });
+
+  it("exports COMMIT_SHA and BUILD_ID into the scripts that read them", () => {
+    expect(config).not.toMatch(/automapSubstitutions:\s*true/);
+    const imageStep = stepBody(config, "migrate-image", "build");
+    const migrateStep = stepBody(config, "migrate", "deploy");
+    const trafficStep = stepBody(config, "traffic");
+    expect(imageStep).toContain("deploy/build-migrate-image.sh");
+    expect(imageStep).toContain('"COMMIT_SHA=$COMMIT_SHA"');
+    expect(migrateStep).toContain('"COMMIT_SHA=$COMMIT_SHA"');
+    expect(migrateStep).toContain('"BUILD_ID=$BUILD_ID"');
+    expect(migrateStep).toContain('"_LINKED_REPO=$_LINKED_REPO"');
+    expect(trafficStep).toContain('"_LINKED_REPO=$_LINKED_REPO"');
+    expect(trafficStep).toContain('"$COMMIT_SHA"');
+    expect(trafficStep).not.toContain('"COMMIT_SHA=$COMMIT_SHA"');
+    expect(trafficStep).not.toContain('"BUILD_ID=$BUILD_ID"');
   });
 
   it("treats a blank failedCount as success when the job succeeded", () => {

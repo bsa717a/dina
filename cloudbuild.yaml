@@ -12,9 +12,13 @@
 # The trigger in us-central1 on connection Piper-Dina must use
 # dina-cloudbuild@dina-pm.iam.gserviceaccount.com. Pass the linked
 # repository id as _LINKED_REPO (it overrides the placeholder below).
-# automapSubstitutions is off, so that value is not an environment
-# variable unless a step sets _LINKED_REPO=$_LINKED_REPO. The migrate
-# and traffic steps do, because both run deploy/github-main-sha.sh.
+# automapSubstitutions is off. Cloud Build substitutes $COMMIT_SHA,
+# $BUILD_ID, and $_LINKED_REPO in YAML fields, but does not export them
+# into a step's environment. Scripts that read those names need an env
+# entry. migrate-image sets COMMIT_SHA. The migrate step sets
+# COMMIT_SHA, BUILD_ID, and _LINKED_REPO. The traffic step sets
+# _LINKED_REPO; its $COMMIT_SHA stays in the YAML script, which Cloud
+# Build substitutes before the step runs.
 #
 # Before the new revision is created, Cloud Run job `dina-migrate` runs
 # `prisma migrate deploy` against Cloud SQL `dina-pm:us-central1:dina-pg`.
@@ -49,6 +53,8 @@ steps:
     entrypoint: bash
     args:
       - deploy/build-migrate-image.sh
+    env:
+      - "COMMIT_SHA=$COMMIT_SHA"
     waitFor: ["-"]
 
   - id: build
@@ -83,6 +89,8 @@ steps:
     args:
       - deploy/run-prod-migrate.sh
     env:
+      - "COMMIT_SHA=$COMMIT_SHA"
+      - "BUILD_ID=$BUILD_ID"
       - "_LINKED_REPO=$_LINKED_REPO"
     waitFor: ["migrate-image"]
 
