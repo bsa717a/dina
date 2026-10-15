@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireServiceToken } from "@/lib/grok-api/auth";
-import { reachUserResponse, visibleProjectKeys } from "@/lib/grok-api/scope";
+import { actorCanReachUser, visibleProjectKeys } from "@/lib/grok-api/scope";
 import { lookupByPhoneNumber } from "@/lib/telnyx/roster";
 import { jsonError } from "@/lib/http";
 
@@ -24,17 +24,20 @@ export async function GET(request: NextRequest) {
 
   const result = await lookupByPhoneNumber(phone);
 
-  if (!result.found) {
-    return NextResponse.json({
+  const miss = (phoneNumber: string) =>
+    NextResponse.json({
       ok: true,
       found: false,
-      phoneNumber: result.phoneNumber,
-      reason: result.reason,
+      phoneNumber,
+      reason: "unknown_number",
     });
-  }
 
-  const denied = await reachUserResponse(auth.actor, result.user.id);
-  if (denied) return denied;
+  if (!result.found) return miss(result.phoneNumber);
+
+  if (auth.actor.kind === "user") {
+    const reach = await actorCanReachUser(auth.actor, result.user.id);
+    if (reach !== "ok") return miss(result.user.phoneNumber);
+  }
 
   return NextResponse.json({
     ok: true,

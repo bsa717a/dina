@@ -34,6 +34,22 @@ export function isBlockedProjectKey(key: string): boolean {
   return (SLACK_BLOCKED_PROJECT_KEYS as readonly string[]).includes(key);
 }
 
+/**
+ * Channels a per-user token may post into.
+ * The env Dina token is not limited by this list.
+ * An empty allowlist authorizes no channel, so a member token cannot
+ * inherit the bot's ability to write everywhere it is installed.
+ * DMs still require SLACK_REGI_ALLOW_IMS even when the id is listed.
+ */
+export function isProjectSlackChannel(channelId: string): boolean {
+  const config = getSlackConfig();
+  const id = channelId.trim();
+  const allowlist = config?.channelIds ?? [];
+  if (!id || !allowlist.includes(id)) return false;
+  if (id.startsWith("D") && !config?.allowIms) return false;
+  return true;
+}
+
 export function isChannelAllowed(
   channelId: string,
   channelType?: string,
