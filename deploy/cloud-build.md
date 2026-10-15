@@ -1,6 +1,6 @@
 # Production deploy (Cloud Build → Cloud Run)
 
-A push to `main` builds and deploys Cloud Run service `dina` in project `dina-pm`, region `us-central1`. The trigger runs as `dina-cloudbuild@dina-pm.iam.gserviceaccount.com`. There is no downloadable key and no personal `gcloud auth login`.
+A push to `main` migrates production Cloud SQL, then builds and deploys Cloud Run service `dina` in project `dina-pm`, region `us-central1`. The trigger runs as `dina-cloudbuild@dina-pm.iam.gserviceaccount.com`. There is no downloadable key and no personal `gcloud auth login`.
 
 Config: [`cloudbuild.yaml`](../cloudbuild.yaml).
 
@@ -8,14 +8,17 @@ The trigger is regional, in `us-central1`, on the existing Cloud Build connectio
 
 What a push does:
 
-1. Google Cloud Buildpacks build the image with `gcr.io/buildpacks/builder:google-24`, the google-24 builder `gcloud run deploy --source` uses (`:latest` currently points at that line). This repo has no Dockerfile. The build pins Node 22 (`GOOGLE_RUNTIME_VERSION=22`). google-24 supports Node 22, which is the Node major of the Cloud Run image defined for service `dina` (`node:22`) and the version this app recommends.
-2. The image is pushed to the existing Artifact Registry repository `us-central1-docker.pkg.dev/dina-pm/dina/dina`.
-3. `gcloud run deploy --no-traffic --revision-suffix=${SHORT_SHA}-${BUILD_ID}` ships that image as revision `dina-${SHORT_SHA}-${BUILD_ID}` and does not move traffic.
-4. Immediately before cutover, the build reads the head of `main` through connection `Piper-Dina`. Only if `$COMMIT_SHA` is still that head does it run `gcloud run services update-traffic --to-revisions=dina-${SHORT_SHA}-${BUILD_ID}=100`. That sends 100% to the revision this build deployed, not to whatever revision is newest. If `main` has moved, the build exits and leaves traffic where it is.
+1. Two steps run in parallel. Google Cloud Buildpacks build the service image with `gcr.io/buildpacks/builder:google-24`, the google-24 builder `gcloud run deploy --source` uses (`:latest` currently points at that line). This repo has no root Dockerfile. The build pins Node 22 (`GOOGLE_RUNTIME_VERSION=22`). google-24 supports Node 22, which is the Node major of the Cloud Run image defined for service `dina` (`node:22`) and the version this app recommends. The other step builds [`deploy/migrate.Dockerfile`](migrate.Dockerfile), which contains only the Prisma CLI, schema, and migrations, and pushes it to `us-central1-docker.pkg.dev/dina-pm/dina/dina-migrate:$COMMIT_SHA`. pack does not use that Dockerfile.
+2. The service image is pushed to the existing Artifact Registry repository `us-central1-docker.pkg.dev/dina-pm/dina/dina`.
+3. Cloud Run job `dina-migrate` runs `prisma migrate deploy` against Cloud SQL `dina-pm:us-central1:dina-pg`. The job mounts Secret Manager secret `dina-database-url` as `DATABASE_URL` and attaches the instance, so Prisma uses the same Unix socket the service uses (`host=/cloudsql/dina-pm:us-central1:dina-pg`). The job runs as `585818436276-compute@developer.gserviceaccount.com`. It runs only when `$COMMIT_SHA` is still the head of `main`. If migrate fails, the build stops.
+4. Only after that job succeeds, `gcloud run deploy --no-traffic --revision-suffix=${SHORT_SHA}-${BUILD_ID}` ships the service image as revision `dina-${SHORT_SHA}-${BUILD_ID}` and does not move traffic.
+5. Immediately before cutover, the build reads the head of `main` through connection `Piper-Dina` again. Only if `$COMMIT_SHA` is still that head does it run `gcloud run services update-traffic --to-revisions=dina-${SHORT_SHA}-${BUILD_ID}=100`. That sends 100% to the revision this build deployed, not to whatever revision is newest. If `main` has moved, the build exits and leaves traffic where it is.
 
-The deploy command does not pass `--set-env-vars`, `--clear-env-vars`, `--set-secrets`, `--update-secrets`, `--remove-secrets`, or `--clear-secrets`. Existing Cloud Run environment variables, Secret Manager mounts, and Cloud SQL settings stay as they are. Do not delete secrets.
+The service deploy command does not pass `--set-env-vars`, `--clear-env-vars`, `--set-secrets`, `--update-secrets`, `--remove-secrets`, `--clear-secrets`, or `--set-cloudsql-instances`. Existing Cloud Run environment variables, Secret Manager mounts, and Cloud SQL settings on service `dina` stay as they are. Do not delete secrets. The migrate job is a separate Cloud Run job. Its secret and Cloud SQL flags do not change service `dina`.
 
-The build does not run `prisma migrate`. `npm start` is unchanged (`next start` on port 8080). The Cloud Run container port for `dina` needs to stay 8080.
+`npm start` is unchanged (`next start` on port 8080). The Cloud Run container port for `dina` needs to stay 8080. Production migrations are this Cloud Build job. Do not run them from a Mac mini or a personal `gcloud auth login`.
+
+Migrations need to stay compatible with the revision that is still serving. The job applies them before the new revision exists, and the previous revision keeps 100% of traffic until the head check passes.
 
 `deploy/com.dina.app.plist` is not the production deploy. Do not load it to ship Dina.
 
@@ -171,3 +174,42 @@ Creating the trigger does not deploy. The next push to `main` after the trigger 
 If a new revision fails to start because Cloud Run cannot pull the image, grant the Cloud Run service agent `roles/artifactregistry.reader` on repository `dina`. Do that only in that case. Do not delete or rebind secrets to fix a pull error.
 
 **Must click:** step 3 (finish GitHub authorization on `Piper-Dina` and link `bsa717a/dina`). Steps 1, 2, and 4 are gcloud. Step 4 is clicks only if you use the console instead of the command above.
+
+Trigger `dina-main` already exists. Do not create a second trigger. The next push to `main` uses the `cloudbuild.yaml` on that commit.
+
+## 5. Let the deploy service account run job `dina-migrate`
+
+No browser click. Run this once, with an account that can grant IAM on `dina-pm`, before the first `main` build that contains the migrate step. Do not create a service account. Do not create a key. Do not grant `roles/owner`, `roles/editor`, `roles/run.admin`, or `roles/secretmanager.admin`. Do not delete secrets. Do not replace the existing `roles/run.developer` binding for service `dina`. This is a second binding of the same role, limited to one job.
+
+```bash
+gcloud projects add-iam-policy-binding dina-pm \
+  --member="serviceAccount:dina-cloudbuild@dina-pm.iam.gserviceaccount.com" \
+  --role="roles/run.developer" \
+  --condition="expression=resource.name == 'projects/dina-pm/locations/us-central1/jobs/dina-migrate' || resource.name.startsWith('projects/dina-pm/locations/us-central1/jobs/dina-migrate/') || resource.name == 'namespaces/dina-pm/jobs/dina-migrate' || resource.name.startsWith('namespaces/dina-pm/jobs/dina-migrate/'),title=dina-migrate-job,description=Deploy and execute only Cloud Run job dina-migrate"
+```
+
+The job connects as the Cloud Run runtime service account, `585818436276-compute@developer.gserviceaccount.com`, which is the identity service `dina` already runs as. That identity already needs `roles/cloudsql.client` and `roles/secretmanager.secretAccessor` on secret `dina-database-url` only. Do not grant those to `dina-cloudbuild`. Do not grant `roles/secretmanager.admin`. `roles/iam.serviceAccountUser` for `dina-cloudbuild` on that runtime account is already required to deploy service `dina`. Do not grant it on the whole project.
+
+Confirm the runtime account can see the instance and the secret name. These commands print roles and resource names. They do not print secret values.
+
+```bash
+gcloud run services describe dina \
+  --project=dina-pm \
+  --region=us-central1 \
+  --format='yaml(spec.template.metadata.annotations["run.googleapis.com/cloudsql-instances"], spec.template.spec.serviceAccountName)'
+
+gcloud secrets get-iam-policy dina-database-url \
+  --project=dina-pm \
+  --format='yaml(bindings)'
+
+gcloud projects get-iam-policy dina-pm \
+  --flatten='bindings[].members' \
+  --filter='bindings.members:serviceAccount:585818436276-compute@developer.gserviceaccount.com AND bindings.role:(roles/cloudsql.client OR roles/secretmanager.secretAccessor)' \
+  --format='table(bindings.role)'
+```
+
+The service annotation should be `dina-pm:us-central1:dina-pg`. The secret policy or the project policy should show `roles/secretmanager.secretAccessor` for `585818436276-compute@developer.gserviceaccount.com` on `dina-database-url` (a project-level binding is enough if it is already there; do not widen it). `roles/cloudsql.client` for that same runtime account should show in the project policy. If either confirmation is empty, stop and fix that before merging. Do not point the job at a different instance or secret.
+
+If `gcloud run jobs execute` later returns `PERMISSION_DENIED` for a resource name that is not in the condition above, add that exact name to the condition. Keep the binding off `roles/run.admin`.
+
+A failed migration fails the build before `gcloud run deploy`. Traffic stays on the current revision. PostgreSQL migrations run in a transaction and roll back on failure. Re-run the `dina-main` build after the migration SQL is fixed. If Prisma reports that the migration must be marked rolled back before it will retry, resolve that migration before the next build. This pipeline does not run `prisma migrate resolve` and does not run `prisma migrate dev`.
