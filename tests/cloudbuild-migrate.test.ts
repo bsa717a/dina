@@ -10,6 +10,20 @@ function read(relative: string): string {
   return readFileSync(path.join(root, relative), "utf8");
 }
 
+function migrateResult(status: string, line: string): number {
+  try {
+    execFileSync("bash", ["deploy/migrate-result.sh", status, line], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: "ignore",
+    });
+    return 0;
+  } catch (error) {
+    const failed = error as { status?: number };
+    return failed.status ?? 1;
+  }
+}
+
 function stepBody(config: string, id: string, nextId?: string): string {
   const start = config.indexOf(`id: ${id}`);
   if (start < 0) {
@@ -78,6 +92,16 @@ describe("Cloud Build prod migrate", () => {
     expect(trafficStep).toContain("deploy/github-main-sha.sh");
     expect(migrateStep).toMatch(mapping);
     expect(trafficStep).toMatch(mapping);
+  });
+
+  it("treats a blank failedCount as success when the job succeeded", () => {
+    expect(migrate).toContain("deploy/migrate-result.sh");
+    const line = "dina-migrate-abc\t1";
+    expect(migrateResult("0", line)).toBe(0);
+    expect(migrateResult("0", "dina-migrate-abc\t1\t0")).toBe(0);
+    expect(migrateResult("1", line)).not.toBe(0);
+    expect(migrateResult("0", "dina-migrate-abc\t0")).not.toBe(0);
+    expect(migrateResult("0", "dina-migrate-abc\t1\t1")).not.toBe(0);
   });
 
   it("refuses to migrate outside Cloud Build", () => {

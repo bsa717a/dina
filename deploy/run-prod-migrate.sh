@@ -59,9 +59,8 @@ RESULT="$(
 status=$?
 set -e
 echo "Migration execution result: ${RESULT:-<none>} (exit ${status})"
-FAILED="$(printf '%s' "${RESULT}" | awk '{print $3}')"
-SUCCEEDED="$(printf '%s' "${RESULT}" | awk '{print $2}')"
-if [ "${status}" -ne 0 ] || [ "${SUCCEEDED}" != "1" ] || [ "${FAILED}" != "0" ]; then
+# A blank failedCount is 0. gcloud's value() format omits that field when it is zero.
+if ! bash "${ROOT}/deploy/migrate-result.sh" "${status}" "${RESULT}"; then
   echo "prisma migrate deploy failed. Cloud Run service dina was not updated. Traffic was not moved."
   exit 1
 fi
