@@ -10,6 +10,20 @@ function read(relative: string): string {
   return readFileSync(path.join(root, relative), "utf8");
 }
 
+function stepBody(config: string, id: string, nextId?: string): string {
+  const start = config.indexOf(`id: ${id}`);
+  if (start < 0) {
+    throw new Error(`missing step ${id}`);
+  }
+  const rest = config.slice(start);
+  if (!nextId) return rest;
+  const end = rest.indexOf(`id: ${nextId}`);
+  if (end < 0) {
+    throw new Error(`missing step ${nextId} after ${id}`);
+  }
+  return rest.slice(0, end);
+}
+
 describe("Cloud Build prod migrate", () => {
   const config = read("cloudbuild.yaml");
   const migrate = read("deploy/run-prod-migrate.sh");
@@ -53,6 +67,17 @@ describe("Cloud Build prod migrate", () => {
     const prismaVersion = packageJson.match(/"prisma": "([^"]+)"/)?.[1];
     expect(prismaVersion).toBeTruthy();
     expect(dockerfile).toContain(`ARG PRISMA_VERSION=${prismaVersion}`);
+  });
+
+  it("passes _LINKED_REPO into every step that reads main", () => {
+    const mapping = /env:\s*\n\s+- "_LINKED_REPO=\$_LINKED_REPO"/;
+    const migrateStep = stepBody(config, "migrate", "deploy");
+    const trafficStep = stepBody(config, "traffic");
+    expect(migrateStep).toContain("deploy/run-prod-migrate.sh");
+    expect(migrate).toContain("github-main-sha.sh");
+    expect(trafficStep).toContain("deploy/github-main-sha.sh");
+    expect(migrateStep).toMatch(mapping);
+    expect(trafficStep).toMatch(mapping);
   });
 
   it("refuses to migrate outside Cloud Build", () => {

@@ -12,6 +12,9 @@
 # The trigger in us-central1 on connection Piper-Dina must use
 # dina-cloudbuild@dina-pm.iam.gserviceaccount.com. Pass the linked
 # repository id as _LINKED_REPO (it overrides the placeholder below).
+# automapSubstitutions is off, so that value is not an environment
+# variable unless a step sets _LINKED_REPO=$_LINKED_REPO. The migrate
+# and traffic steps do, because both run deploy/github-main-sha.sh.
 #
 # Before the new revision is created, Cloud Run job `dina-migrate` runs
 # `prisma migrate deploy` against Cloud SQL `dina-pm:us-central1:dina-pg`.
@@ -79,6 +82,8 @@ steps:
     entrypoint: bash
     args:
       - deploy/run-prod-migrate.sh
+    env:
+      - "_LINKED_REPO=$_LINKED_REPO"
     waitFor: ["migrate-image"]
 
   - id: deploy
@@ -114,4 +119,6 @@ steps:
           --region=us-central1 \
           --to-revisions=dina-${SHORT_SHA}-${BUILD_ID}=100 \
           --quiet
+    env:
+      - "_LINKED_REPO=$_LINKED_REPO"
     waitFor: ["deploy"]
