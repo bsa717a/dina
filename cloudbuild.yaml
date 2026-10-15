@@ -1,6 +1,6 @@
 # Push to main builds Dina from source and deploys Cloud Run service `dina`.
 #
-# This repo has no Dockerfile. `gcloud run deploy --source` builds with
+# This repo has no root Dockerfile. `gcloud run deploy --source` builds with
 # the google-24 builder. This build pins gcr.io/buildpacks/builder:google-24
 # instead of the floating :latest tag. The google-22 tag is not used.
 #
@@ -13,12 +13,21 @@
 # dina-cloudbuild@dina-pm.iam.gserviceaccount.com. Pass the linked
 # repository id as _LINKED_REPO (it overrides the placeholder below).
 #
+# Before the new revision is created, Cloud Run job `dina-migrate` runs
+# `prisma migrate deploy` against Cloud SQL `dina-pm:us-central1:dina-pg`.
+# The job uses the same Unix socket and Secret Manager secret the service
+# already uses (`dina-database-url` mounted as DATABASE_URL). If the job
+# fails, the build stops. The service deploy below does not run, and
+# traffic stays where it is.
+#
+# deploy/migrate.Dockerfile builds only that job image. pack does not use it.
+#
 # Deploy uses --no-traffic and a revision name unique to this build.
 # Immediately before cutover, the build checks that $COMMIT_SHA is still
 # the head of main. Only then does it send 100% to that revision. If main
 # has moved, it exits and leaves traffic where it is.
-# This file does not run Prisma migrations and does not set, update, or
-# clear Cloud Run env vars or Secret Manager bindings.
+# The service deploy does not set, update, or clear Cloud Run env vars,
+# Secret Manager bindings, or Cloud SQL settings on service dina.
 
 serviceAccount: projects/dina-pm/serviceAccounts/dina-cloudbuild@dina-pm.iam.gserviceaccount.com
 
@@ -32,9 +41,17 @@ substitutions:
 timeout: 1800s
 
 steps:
+  - id: migrate-image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - deploy/build-migrate-image.sh
+    waitFor: ["-"]
+
   - id: build
     name: gcr.io/k8s-skaffold/pack
     entrypoint: pack
+    waitFor: ["-"]
     args:
       - build
       - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
@@ -55,6 +72,14 @@ steps:
     args:
       - push
       - us-central1-docker.pkg.dev/dina-pm/dina/dina:$COMMIT_SHA
+    waitFor: ["build"]
+
+  - id: migrate
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - deploy/run-prod-migrate.sh
+    waitFor: ["migrate-image"]
 
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -70,6 +95,7 @@ steps:
       - --revision-suffix=${SHORT_SHA}-${BUILD_ID}
       - --no-traffic
       - --quiet
+    waitFor: ["push", "migrate"]
 
   - id: traffic
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -78,20 +104,7 @@ steps:
       - -ceu
       - |
         set -o pipefail
-        REPO="projects/dina-pm/locations/us-central1/connections/Piper-Dina/repositories/${_LINKED_REPO}"
-        TOKEN="$$(curl -fsS -X POST \
-          -H "Authorization: Bearer $$(gcloud auth print-access-token)" \
-          -H "Content-Type: application/json" \
-          "https://cloudbuild.googleapis.com/v2/$${REPO}:accessReadToken" \
-          | python3 -c 'import json,sys; data=json.load(sys.stdin); token=data.get("token") or "";
-        sys.exit("read token request failed") if not token else print(token)')"
-        HEAD="$$(curl -fsS \
-          -H "Authorization: Bearer $${TOKEN}" \
-          -H "Accept: application/vnd.github+json" \
-          https://api.github.com/repos/bsa717a/dina/commits/main \
-          | python3 -c 'import json,sys; data=json.load(sys.stdin); sha=data.get("sha") or "";
-        sys.exit("main sha missing") if not sha else print(sha)')"
-        unset TOKEN
+        HEAD="$$(bash deploy/github-main-sha.sh)"
         if [ "$$HEAD" != "$COMMIT_SHA" ]; then
           echo "Refusing to move traffic. main is $$HEAD; this build is $COMMIT_SHA."
           exit 1
@@ -101,3 +114,4 @@ steps:
           --region=us-central1 \
           --to-revisions=dina-${SHORT_SHA}-${BUILD_ID}=100 \
           --quiet
+    waitFor: ["deploy"]
