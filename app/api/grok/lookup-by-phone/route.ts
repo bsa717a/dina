@@ -7,13 +7,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { reachUserResponse, visibleProjectKeys } from "@/lib/grok-api/scope";
 import { lookupByPhoneNumber } from "@/lib/telnyx/roster";
 import { jsonError } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   const phone = request.nextUrl.searchParams.get("phone");
@@ -32,6 +33,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const denied = await reachUserResponse(auth.actor, result.user.id);
+  if (denied) return denied;
+
   return NextResponse.json({
     ok: true,
     found: true,
@@ -41,6 +45,6 @@ export async function GET(request: NextRequest) {
       username: result.user.username,
       phoneNumber: result.user.phoneNumber,
     },
-    projectKeys: result.projectKeys,
+    projectKeys: await visibleProjectKeys(auth.actor, result.projectKeys),
   });
 }

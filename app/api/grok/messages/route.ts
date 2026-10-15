@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { reachUserResponse } from "@/lib/grok-api/scope";
 import { jsonError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 import { sendToPiperUser } from "@/lib/telnyx/messaging";
@@ -27,7 +28,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   let json: unknown;
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest) {
   }
 
   const { userId, text, channel } = parsed.data;
+  const denied = await reachUserResponse(auth.actor, userId);
+  if (denied) return denied;
+
   logger.info("grok_api_user_message_request", {
     userId,
     textLength: text.length,

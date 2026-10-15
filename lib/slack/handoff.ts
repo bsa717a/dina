@@ -1,17 +1,17 @@
 /**
- * Grok Bot Dina handoff helper for Slack-shaped payloads.
+ * Grok Bot handoff helper for Slack-shaped payloads.
  *
  * Slack inbound process must NOT call this — Piper answers via the
  * same chat turn as the web text box (lib/slack/chat.ts → runChatTurn).
  * Telnyx RCS still uses lib/telnyx/handoff.ts.
  *
- * Same webhook URL / Bearer + X-Automation-Key auth as Telnyx if invoked.
+ * If invoked, the sender's own bot is used, then the env Dina bot.
  * Payload is tagged channel:"slack" and projectKeys is forced to Regi.
  */
 
 import { logger } from "@/lib/logger";
+import { resolveInboundGrokBot } from "@/lib/grok-api/bots";
 import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
-import { getGrokBotConfig, isGrokBotConfigured } from "@/lib/telnyx/config";
 import type { GrokBotHandoffResponse } from "@/lib/telnyx/types";
 import type { SlackHandoffPayload, SlackInboundEvent, SlackRosterLookupResult } from "./types";
 import { resolveRegiProjectKey } from "./scope";
@@ -58,22 +58,19 @@ export async function handoffSlackToGrokBot(
   roster: SlackRosterLookupResult,
 ): Promise<SlackHandoffResult> {
   const payload = buildSlackHandoffPayload(event, roster);
+  const userId = roster.found ? roster.user.id : null;
+  const config = await resolveInboundGrokBot(userId);
 
-  if (!isGrokBotConfigured()) {
+  if (!config) {
     logger.info("grok_bot_slack_handoff_logged", {
       messageId: payload.messageId,
       from: payload.from,
       text: payload.text.slice(0, 100),
       userFound: roster.found,
-      userId: roster.found ? roster.user.id : null,
+      userId,
       projectKeys: payload.projectKeys,
       reason: "grok_bot_not_configured",
     });
-    return { status: "logged" };
-  }
-
-  const config = getGrokBotConfig();
-  if (!config) {
     return { status: "logged" };
   }
 

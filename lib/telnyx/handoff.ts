@@ -1,13 +1,15 @@
 /**
- * Grok Bot Dina handoff: forward inbound messages to Grok Bot for processing.
+ * Grok Bot handoff: forward inbound messages to the sender's Grok Bot.
  *
- * When GROK_BOT_DINA_WEBHOOK_URL is set, messages are forwarded.
- * When unset, messages are logged so the pipe can be tested without Grok Bot.
+ * A sender with grokWebhookUrl is delivered to that bot. Everyone else,
+ * including unknown numbers, falls back to GROK_BOT_DINA_WEBHOOK_URL.
+ * When neither is set, messages are logged so the pipe can be tested.
  */
 
 import { logger } from "@/lib/logger";
+import { resolveInboundGrokBot } from "@/lib/grok-api/bots";
 import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
-import { getGrokBotConfig, isGrokBotConfigured } from "./config";
+import { isGrokBotConfigured } from "./config";
 import {
   extractInboundFromPhone,
   extractInboundText,
@@ -54,21 +56,18 @@ export async function handoffToGrokBot(
   roster: RosterLookupResult,
 ): Promise<HandoffResult> {
   const payload = buildHandoffPayload(message, roster);
+  const userId = roster.found ? roster.user.id : null;
+  const config = await resolveInboundGrokBot(userId);
 
-  if (!isGrokBotConfigured()) {
+  if (!config) {
     logger.info("grok_bot_handoff_logged", {
       messageId: message.id,
       from: extractInboundFromPhone(message) || message.from?.phone_number || "",
       text: extractInboundText(message).slice(0, 100),
       userFound: roster.found,
-      userId: roster.found ? roster.user.id : null,
+      userId,
       reason: "grok_bot_not_configured",
     });
-    return { status: "logged" };
-  }
-
-  const config = getGrokBotConfig();
-  if (!config) {
     return { status: "logged" };
   }
 

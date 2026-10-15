@@ -12,6 +12,19 @@ vi.mock("@/lib/slack/roster", () => ({
   lookupBySlackUserId: (...args: unknown[]) => mockLookupBySlackUserId(...args),
 }));
 
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+  },
+}));
+
+vi.mock("@/lib/telnyx/roster", () => ({
+  normalizePhoneNumber: (phone: string) => phone,
+  isValidE164: () => true,
+}));
+
 describe("GET /api/grok/lookup-by-slack", () => {
   beforeEach(() => {
     vi.resetModules();

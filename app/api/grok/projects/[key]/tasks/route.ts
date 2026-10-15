@@ -15,15 +15,13 @@
  *   Body: { id?: string, number?: number, status?: ProjectTaskStatus, title?: string, description?: string }
  *   At least one of id or number is required to identify the task.
  *
- * All endpoints require Bearer token authentication via GROK_BOT_DINA_API_TOKEN.
+ * All endpoints require a Bearer token. The env Dina token sees every project.
+ * A per-user token only sees projects that user belongs to.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireServiceToken } from "@/lib/grok-api/auth";
-import {
-  ensureProjectCatalog,
-  resolveProjectKey,
-} from "@/lib/projects/catalog";
+import { authorizeProject } from "@/lib/grok-api/scope";
 import { ensureProjectSection } from "@/lib/project-tasks/sections";
 import {
   listProjectTasks,
@@ -93,17 +91,21 @@ async function sectionIdFromName(
   return row.id;
 }
 
-export async function GET(request: NextRequest, context: RouteParams) {
-  const auth = requireServiceToken(request);
-  if (!auth.ok) return auth.response;
-
-  const { key: rawKey } = await context.params;
-
-  await ensureProjectCatalog();
-  const projectKey = resolveProjectKey(rawKey);
-  if (!projectKey) {
-    return jsonError(`Unknown project: "${rawKey}"`, 404);
+async function openProject(request: NextRequest, rawKey: string) {
+  const auth = await requireServiceToken(request);
+  if (!auth.ok) return auth;
+  const project = await authorizeProject(auth.actor, rawKey);
+  if (!project.ok) {
+    return { ok: false as const, response: jsonError(project.error, project.status) };
   }
+  return { ok: true as const, projectKey: project.projectKey };
+}
+
+export async function GET(request: NextRequest, context: RouteParams) {
+  const { key: rawKey } = await context.params;
+  const opened = await openProject(request, rawKey);
+  if (!opened.ok) return opened.response;
+  const { projectKey } = opened;
 
   const statusParam = request.nextUrl.searchParams.get("status");
   let statuses: ProjectTaskStatus[] = ["open", "in_progress"];
@@ -131,16 +133,10 @@ export async function GET(request: NextRequest, context: RouteParams) {
 }
 
 export async function POST(request: NextRequest, context: RouteParams) {
-  const auth = requireServiceToken(request);
-  if (!auth.ok) return auth.response;
-
   const { key: rawKey } = await context.params;
-
-  await ensureProjectCatalog();
-  const projectKey = resolveProjectKey(rawKey);
-  if (!projectKey) {
-    return jsonError(`Unknown project: "${rawKey}"`, 404);
-  }
+  const opened = await openProject(request, rawKey);
+  if (!opened.ok) return opened.response;
+  const { projectKey } = opened;
 
   let body: unknown;
   try {
@@ -238,16 +234,10 @@ export async function POST(request: NextRequest, context: RouteParams) {
 }
 
 export async function PATCH(request: NextRequest, context: RouteParams) {
-  const auth = requireServiceToken(request);
-  if (!auth.ok) return auth.response;
-
   const { key: rawKey } = await context.params;
-
-  await ensureProjectCatalog();
-  const projectKey = resolveProjectKey(rawKey);
-  if (!projectKey) {
-    return jsonError(`Unknown project: "${rawKey}"`, 404);
-  }
+  const opened = await openProject(request, rawKey);
+  if (!opened.ok) return opened.response;
+  const { projectKey } = opened;
 
   let body: unknown;
   try {

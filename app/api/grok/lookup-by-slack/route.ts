@@ -7,13 +7,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { reachUserResponse, visibleProjectKeys } from "@/lib/grok-api/scope";
 import { lookupBySlackUserId } from "@/lib/slack/roster";
 import { jsonError } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   const slackUserId = request.nextUrl.searchParams.get("slackUserId");
@@ -32,6 +33,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const denied = await reachUserResponse(auth.actor, result.user.id);
+  if (denied) return denied;
+
   return NextResponse.json({
     ok: true,
     found: true,
@@ -41,7 +45,7 @@ export async function GET(request: NextRequest) {
       username: result.user.username,
       slackUserId: result.user.slackUserId,
     },
-    projectKeys: result.projectKeys,
+    projectKeys: await visibleProjectKeys(auth.actor, result.projectKeys),
     onRegiProject: result.onRegiProject,
   });
 }
