@@ -9,10 +9,19 @@ global.fetch = mockFetch;
 
 const getGrokBotConfig = vi.fn();
 const isGrokBotConfigured = vi.fn();
+const findUnique = vi.fn();
 
 vi.mock("@/lib/telnyx/config", () => ({
   getGrokBotConfig: () => getGrokBotConfig(),
   isGrokBotConfigured: () => isGrokBotConfigured(),
+}));
+
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    user: {
+      findUnique: (...args: unknown[]) => findUnique(...args),
+    },
+  },
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -80,6 +89,8 @@ describe("handoffToGrokBot", () => {
     mockFetch.mockReset();
     getGrokBotConfig.mockReset();
     isGrokBotConfigured.mockReset();
+    findUnique.mockReset();
+    findUnique.mockResolvedValue(null);
   });
 
   it("logs when Grok Bot is not configured", async () => {
@@ -316,5 +327,60 @@ describe("handoffToGrokBot", () => {
     expect(body.to).toBeDefined();
     expect(body.messageType).toBeDefined();
     expect(body.receivedAt).toBeDefined();
+  });
+
+  it("routes a sender to their own bot", async () => {
+    const previous = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = "test-session-secret-test-session-secret";
+    try {
+      getGrokBotConfig.mockReturnValue({
+        webhookUrl: "https://dina.example/webhook",
+        webhookSecret: "dina-secret",
+      });
+      const { encryptField } = await import("@/lib/crypto/field-cipher");
+      findUnique.mockResolvedValue({
+        id: "user-1",
+        grokWebhookUrl: "https://adam.example/webhook",
+        grokWebhookSecret: encryptField("crsr_adam"),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true }),
+      });
+
+      const { handoffToGrokBot } = await import("@/lib/telnyx/handoff");
+      const result = await handoffToGrokBot(createTestMessage(), createFoundRoster());
+
+      expect(result.status).toBe("sent");
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][0]).toBe("https://adam.example/webhook");
+      expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer crsr_adam");
+    } finally {
+      if (previous === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = previous;
+    }
+  });
+
+  it("falls back to the env bot when the sender has no bot", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: "dina-secret",
+    });
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      grokWebhookUrl: null,
+      grokWebhookSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const { handoffToGrokBot } = await import("@/lib/telnyx/handoff");
+    await handoffToGrokBot(createTestMessage(), createFoundRoster());
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://dina.example/webhook");
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer dina-secret");
   });
 });

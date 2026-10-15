@@ -5,10 +5,19 @@ global.fetch = mockFetch;
 
 const getGrokBotConfig = vi.fn();
 const isGrokBotConfigured = vi.fn();
+const findMany = vi.fn();
 
 vi.mock("@/lib/telnyx/config", () => ({
   getGrokBotConfig: () => getGrokBotConfig(),
   isGrokBotConfigured: () => isGrokBotConfigured(),
+}));
+
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    projectMember: {
+      findMany: (...args: unknown[]) => findMany(...args),
+    },
+  },
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -41,6 +50,8 @@ describe("notifyTaskChange", () => {
     mockFetch.mockReset();
     getGrokBotConfig.mockReset();
     isGrokBotConfigured.mockReset();
+    findMany.mockReset();
+    findMany.mockResolvedValue([]);
   });
 
   it("logs when Grok Bot is not configured", async () => {
@@ -181,5 +192,136 @@ describe("notifyTaskChange", () => {
     expect(body.type).toBe("task.created");
     expect(body.projectKey).toBe("dina");
     expect(body.task.title).toBe("New task");
+  });
+
+  it("sends each member bot once and skips the env bot when everyone has one", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: "dina-secret",
+    });
+    findMany.mockResolvedValue([
+      {
+        userId: "adam",
+        user: { grokWebhookUrl: "https://adam.example/webhook", grokWebhookSecret: null },
+      },
+      {
+        userId: "alex",
+        user: { grokWebhookUrl: "https://alex.example/webhook", grokWebhookSecret: null },
+      },
+      {
+        userId: "adam-again",
+        user: { grokWebhookUrl: "https://adam.example/webhook", grokWebhookSecret: null },
+      },
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+    const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+    const result = await notifyTaskChange(createTaskChangePayload());
+
+    expect(result.status).toBe("sent");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls.map((call) => call[0])).toEqual([
+      "https://adam.example/webhook",
+      "https://alex.example/webhook",
+    ]);
+  });
+
+  it("sends the env bot once when every member lacks a bot", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: "dina-secret",
+    });
+    findMany.mockResolvedValue([
+      { userId: "pat", user: { grokWebhookUrl: null, grokWebhookSecret: null } },
+      { userId: "sam", user: { grokWebhookUrl: "", grokWebhookSecret: null } },
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+    const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+    const result = await notifyTaskChange(createTaskChangePayload());
+
+    expect(result.status).toBe("sent");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://dina.example/webhook");
+  });
+
+  it("falls back to Dina once when several members have no bot", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: "dina-secret",
+    });
+    findMany.mockResolvedValue([
+      {
+        userId: "adam",
+        user: { grokWebhookUrl: "https://adam.example/webhook", grokWebhookSecret: null },
+      },
+      { userId: "pat", user: { grokWebhookUrl: null, grokWebhookSecret: null } },
+      { userId: "sam", user: { grokWebhookUrl: "  ", grokWebhookSecret: null } },
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+    const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+    await notifyTaskChange(createTaskChangePayload());
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls.map((call) => call[0])).toEqual([
+      "https://adam.example/webhook",
+      "https://dina.example/webhook",
+    ]);
+    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe("Bearer dina-secret");
+  });
+
+  it("does not send the env bot twice when a member already uses that URL", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: "dina-secret",
+    });
+    findMany.mockResolvedValue([
+      {
+        userId: "adam",
+        user: {
+          grokWebhookUrl: "https://dina.example/webhook",
+          grokWebhookSecret: null,
+        },
+      },
+      { userId: "pat", user: { grokWebhookUrl: null, grokWebhookSecret: null } },
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+    const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+    await notifyTaskChange(createTaskChangePayload());
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://dina.example/webhook");
+  });
+
+  it("decrypts a member webhook secret before sending", async () => {
+    const previous = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = "test-session-secret-test-session-secret";
+    try {
+      getGrokBotConfig.mockReturnValue(null);
+      const { encryptField } = await import("@/lib/crypto/field-cipher");
+      findMany.mockResolvedValue([
+        {
+          userId: "adam",
+          user: {
+            grokWebhookUrl: "https://adam.example/webhook",
+            grokWebhookSecret: encryptField("crsr_adam"),
+          },
+        },
+      ]);
+      mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+
+      const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+      const result = await notifyTaskChange(createTaskChangePayload());
+
+      expect(result.status).toBe("sent");
+      expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer crsr_adam");
+      expect(mockFetch.mock.calls[0][1].headers["X-Automation-Key"]).toBe("crsr_adam");
+      expect(JSON.stringify(mockFetch.mock.calls[0][1].headers)).not.toContain("aes-256-gcm");
+    } finally {
+      if (previous === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = previous;
+    }
   });
 });

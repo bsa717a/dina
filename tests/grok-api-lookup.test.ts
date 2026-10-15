@@ -10,6 +10,16 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@/lib/telnyx/roster", () => ({
   lookupByPhoneNumber: (...args: unknown[]) => mockLookupByPhoneNumber(...args),
+  normalizePhoneNumber: (phone: string) => phone,
+  isValidE164: () => true,
+}));
+
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+  },
 }));
 
 describe("GET /api/grok/lookup-by-phone", () => {

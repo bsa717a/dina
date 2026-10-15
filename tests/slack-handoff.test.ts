@@ -6,10 +6,19 @@ global.fetch = mockFetch;
 
 const getGrokBotConfig = vi.fn();
 const isGrokBotConfigured = vi.fn();
+const findUnique = vi.fn();
 
 vi.mock("@/lib/telnyx/config", () => ({
   getGrokBotConfig: () => getGrokBotConfig(),
   isGrokBotConfigured: () => isGrokBotConfigured(),
+}));
+
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    user: {
+      findUnique: (...args: unknown[]) => findUnique(...args),
+    },
+  },
 }));
 
 vi.mock("@/lib/slack/scope", () => ({
@@ -65,6 +74,8 @@ describe("handoffSlackToGrokBot", () => {
     mockFetch.mockReset();
     getGrokBotConfig.mockReset();
     isGrokBotConfigured.mockReset();
+    findUnique.mockReset();
+    findUnique.mockResolvedValue(null);
   });
 
   it("logs when Grok Bot is not configured", async () => {
@@ -132,5 +143,35 @@ describe("handoffSlackToGrokBot", () => {
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.user).toBeNull();
     expect(body.projectKeys).toEqual([]);
+  });
+
+  it("routes a mapped sender to their own bot and falls back otherwise", async () => {
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://dina.example/webhook",
+      webhookSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      grokWebhookUrl: "https://alex.example/webhook",
+      grokWebhookSecret: null,
+    });
+    const { handoffSlackToGrokBot } = await import("@/lib/slack/handoff");
+    await handoffSlackToGrokBot(event, foundRoster);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://alex.example/webhook");
+
+    mockFetch.mockClear();
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      grokWebhookUrl: "  ",
+      grokWebhookSecret: null,
+    });
+    await handoffSlackToGrokBot(event, foundRoster);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://dina.example/webhook");
   });
 });

@@ -13,9 +13,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { authorizeProject } from "@/lib/grok-api/scope";
 import { isSlackConfigured } from "@/lib/slack/config";
+import { isProjectSlackChannel, resolveRegiProjectKey } from "@/lib/slack/scope";
 import { postSlackMessage } from "@/lib/slack/client";
-import { jsonError } from "@/lib/http";
+import { forbidden, jsonError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -27,7 +29,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   if (!isSlackConfigured()) {
@@ -47,6 +49,14 @@ export async function POST(request: NextRequest) {
   }
 
   const { channelId, text, threadTs } = parsed.data;
+
+  if (auth.actor.kind === "user") {
+    const project = await authorizeProject(auth.actor, resolveRegiProjectKey());
+    if (!project.ok) return jsonError(project.error, project.status);
+    if (!isProjectSlackChannel(channelId)) {
+      return forbidden("Not allowed to post to this channel");
+    }
+  }
 
   logger.info("grok_api_outbound_slack_request", {
     channelId,

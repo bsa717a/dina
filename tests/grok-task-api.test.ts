@@ -14,6 +14,17 @@ vi.mock("@/lib/telnyx/config", () => ({
   getGrokBotConfig: () => null,
 }));
 
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    projectMember: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+  },
+}));
+
 vi.mock("@/lib/logger", () => ({
   logger: {
     info: vi.fn(),

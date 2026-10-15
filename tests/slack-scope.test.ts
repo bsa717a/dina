@@ -45,6 +45,34 @@ describe("Slack Regi scope", () => {
     expect(isChannelAllowed("C123", "channel")).toBe(true);
   });
 
+  it("does not let a per-user token post when the allowlist is empty", async () => {
+    mockGetSlackConfig.mockReturnValue({ channelIds: [], allowIms: false });
+    const { isProjectSlackChannel } = await import("@/lib/slack/scope");
+    expect(isProjectSlackChannel("C123")).toBe(false);
+    expect(isProjectSlackChannel("")).toBe(false);
+  });
+
+  it("lets a per-user token post only to listed channels", async () => {
+    mockGetSlackConfig.mockReturnValue({
+      channelIds: ["CALLOWED", "D123"],
+      allowIms: false,
+    });
+    const { isProjectSlackChannel } = await import("@/lib/slack/scope");
+    expect(isProjectSlackChannel("CALLOWED")).toBe(true);
+    expect(isProjectSlackChannel("  CALLOWED  ")).toBe(true);
+    expect(isProjectSlackChannel("CBLOCKED")).toBe(false);
+    expect(isProjectSlackChannel("D123")).toBe(false);
+  });
+
+  it("lets a per-user token post to a listed DM only when IMs are allowed", async () => {
+    mockGetSlackConfig.mockReturnValue({
+      channelIds: ["D123"],
+      allowIms: true,
+    });
+    const { isProjectSlackChannel } = await import("@/lib/slack/scope");
+    expect(isProjectSlackChannel("D123")).toBe(true);
+  });
+
   it("enforces the channel allowlist", async () => {
     mockGetSlackConfig.mockReturnValue({
       channelIds: ["CALLOWED"],

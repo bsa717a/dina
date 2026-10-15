@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { reachPhoneResponse } from "@/lib/grok-api/scope";
 import { isCarrierRegistrationPending } from "@/lib/telnyx/errors";
 import { sendToPhoneOrUser } from "@/lib/telnyx/messaging";
 import { jsonError } from "@/lib/http";
@@ -27,7 +28,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   let json: unknown;
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
   }
 
   const { to, text, preferRcs } = parsed.data;
+  const denied = await reachPhoneResponse(auth.actor, to);
+  if (denied) return denied;
   const channel = preferRcs ? "rcs_first" : "sms_only";
 
   logger.info("grok_api_outbound_request", {

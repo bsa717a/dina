@@ -7,13 +7,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireServiceToken } from "@/lib/grok-api/auth";
+import { actorCanReachUser, visibleProjectKeys } from "@/lib/grok-api/scope";
 import { lookupBySlackUserId } from "@/lib/slack/roster";
+import { userCanAccessProject } from "@/lib/project-tasks/membership";
+import { resolveRegiProjectKey } from "@/lib/slack/scope";
 import { jsonError } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = requireServiceToken(request);
+  const auth = await requireServiceToken(request);
   if (!auth.ok) return auth.response;
 
   const slackUserId = request.nextUrl.searchParams.get("slackUserId");
@@ -23,14 +26,24 @@ export async function GET(request: NextRequest) {
 
   const result = await lookupBySlackUserId(slackUserId);
 
-  if (!result.found) {
-    return NextResponse.json({
+  const miss = (id: string) =>
+    NextResponse.json({
       ok: true,
       found: false,
-      slackUserId: result.slackUserId,
-      reason: result.reason,
+      slackUserId: id,
+      reason: "unknown_user",
     });
+
+  if (!result.found) return miss(result.slackUserId);
+
+  if (auth.actor.kind === "user") {
+    const reach = await actorCanReachUser(auth.actor, result.user.id);
+    if (reach !== "ok") return miss(result.user.slackUserId);
   }
+
+  const canSeeRegi =
+    auth.actor.kind === "service" ||
+    Boolean(await userCanAccessProject(auth.actor.user, resolveRegiProjectKey()));
 
   return NextResponse.json({
     ok: true,
@@ -41,7 +54,7 @@ export async function GET(request: NextRequest) {
       username: result.user.username,
       slackUserId: result.user.slackUserId,
     },
-    projectKeys: result.projectKeys,
-    onRegiProject: result.onRegiProject,
+    projectKeys: await visibleProjectKeys(auth.actor, result.projectKeys),
+    onRegiProject: canSeeRegi ? result.onRegiProject : false,
   });
 }

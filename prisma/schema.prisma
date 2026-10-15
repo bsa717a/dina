@@ -37,6 +37,13 @@ model User {
   smsOptedOutPhone   String?
   /// Slack user id for Regi-project roster lookup (e.g. U012ABCDEF)
   slackUserId        String?  @unique
+  /// Personal Grok Bot webhook. Null falls back to GROK_BOT_DINA_WEBHOOK_URL.
+  grokWebhookUrl     String?
+  /// AES-256-GCM ciphertext (aes-256-gcm:v1:…) of the Routines sender key,
+  /// keyed with SESSION_SECRET. The raw secret is never stored.
+  grokWebhookSecret  String?
+  /// SHA-256 hex of this user's Grok API token. The raw token is shown once.
+  grokApiTokenHash   String?  @unique
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
