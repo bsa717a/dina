@@ -1,21 +1,63 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLIFFS_MAMA_KEYWORD_REPLIES,
+  CLIFFS_MAMA_RCS_AGENT_ID,
+  keywordRepliesForAgent,
   matchTelnyxKeyword,
   normalizeKeywordText,
   TELNYX_KEYWORD_REPLIES,
 } from "@/lib/telnyx/keywords";
 import { isRcsMessageType } from "@/lib/telnyx/inbound";
 
+const FOUR_SL_AGENT_ID = "42257dc9-586a-4f72-bba3-6b816d1ec6ed";
+
 describe("TELNYX_KEYWORD_REPLIES", () => {
-  it("keeps the registered HELP and START wording and the required STOP reply", () => {
+  it("keeps the registered 4StudentLives HELP and START wording", () => {
     expect(TELNYX_KEYWORD_REPLIES.help).toBe(
       "4StudentLives: For help, reply HELP or contact us at +14352382071. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
     );
-    expect(TELNYX_KEYWORD_REPLIES.stop).toBe(
-      "You have successfully been unsubscribed, you will not receive any more messages from this number. Reply START to re-subscribe.",
-    );
     expect(TELNYX_KEYWORD_REPLIES.start).toBe(
       "You have agreed to receive SMS updates from 4StudentLives. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
+    );
+  });
+
+  it("names 4StudentLives in the STOP reply", () => {
+    expect(TELNYX_KEYWORD_REPLIES.stop).toBe(
+      "You have successfully been unsubscribed from texts from 4StudentLives, you will not receive any more messages from this number. Reply START to re-subscribe.",
+    );
+  });
+});
+
+describe("Cliffs Mama keyword replies", () => {
+  it("uses the Cliffs Mama RCS agent id as the brand key", () => {
+    expect(CLIFFS_MAMA_RCS_AGENT_ID).toBe(
+      "1f2bf18b-a131-4429-8171-58e5202d4a39",
+    );
+    expect(keywordRepliesForAgent(CLIFFS_MAMA_RCS_AGENT_ID)).toBe(
+      CLIFFS_MAMA_KEYWORD_REPLIES,
+    );
+  });
+
+  it("names Clif's Mama in STOP and points HELP at the privacy and terms pages", () => {
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.stop).toBe(
+      "You have successfully been unsubscribed from texts from Clif's Mama, you will not receive any more messages from this number. Reply START to re-subscribe.",
+    );
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.help).toBe(
+      "Clif's Mama: For help, reply HELP or see our privacy policy at https://www.clifsmama.com/privacy.html and terms at https://www.clifsmama.com/terms.html. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out.",
+    );
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.help).toContain(
+      "https://www.clifsmama.com/privacy.html",
+    );
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.help).toContain(
+      "https://www.clifsmama.com/terms.html",
+    );
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.help).not.toContain("4StudentLives");
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.help).not.toContain("+14352382071");
+  });
+
+  it("keeps the 4StudentLives START shape with the Clif's Mama program name", () => {
+    expect(CLIFFS_MAMA_KEYWORD_REPLIES.start).toBe(
+      "You have agreed to receive SMS updates from Clif's Mama. Msg freq may vary. Std msg & data rates apply. Reply STOP to opt out, HELP for help.",
     );
   });
 });
@@ -73,6 +115,69 @@ describe("matchTelnyxKeyword", () => {
 
   it("normalizes keyword text by trimming and stripping punctuation", () => {
     expect(normalizeKeywordText("  HELP!!!  ")).toBe("help");
+  });
+
+  it("uses Clif's Mama copy for that RCS agent, including STOPALL and the other opt-out aliases", () => {
+    expect(matchTelnyxKeyword("HELP", CLIFFS_MAMA_RCS_AGENT_ID)).toEqual({
+      kind: "help",
+      text: CLIFFS_MAMA_KEYWORD_REPLIES.help,
+    });
+    expect(matchTelnyxKeyword("info!", CLIFFS_MAMA_RCS_AGENT_ID)).toEqual({
+      kind: "help",
+      text: CLIFFS_MAMA_KEYWORD_REPLIES.help,
+    });
+    expect(matchTelnyxKeyword("START", CLIFFS_MAMA_RCS_AGENT_ID)).toEqual({
+      kind: "start",
+      text: CLIFFS_MAMA_KEYWORD_REPLIES.start,
+    });
+    expect(matchTelnyxKeyword("unstop", CLIFFS_MAMA_RCS_AGENT_ID)?.text).toBe(
+      CLIFFS_MAMA_KEYWORD_REPLIES.start,
+    );
+
+    for (const text of [
+      "STOP",
+      "STOPALL",
+      "stopall!",
+      "unsubscribe",
+      "Cancel",
+      "END",
+      "quit",
+    ]) {
+      expect(matchTelnyxKeyword(text, CLIFFS_MAMA_RCS_AGENT_ID)).toEqual({
+        kind: "stop",
+        text: CLIFFS_MAMA_KEYWORD_REPLIES.stop,
+      });
+    }
+  });
+
+  it("matches the Cliffs Mama agent id regardless of case or surrounding space", () => {
+    const mixedCase = `  ${CLIFFS_MAMA_RCS_AGENT_ID.toUpperCase()}  `;
+    expect(matchTelnyxKeyword("STOP", mixedCase)?.text).toBe(
+      CLIFFS_MAMA_KEYWORD_REPLIES.stop,
+    );
+  });
+
+  it("falls back to 4StudentLives for an unknown agent, the 4SL agent, or no agent", () => {
+    for (const agentId of [
+      undefined,
+      null,
+      "",
+      "   ",
+      FOUR_SL_AGENT_ID,
+      "not-a-known-agent",
+      "4001a055-5081-43e2-8b5e-d41eb0cf866e",
+    ]) {
+      expect(keywordRepliesForAgent(agentId)).toBe(TELNYX_KEYWORD_REPLIES);
+      expect(matchTelnyxKeyword("HELP", agentId)?.text).toBe(
+        TELNYX_KEYWORD_REPLIES.help,
+      );
+      expect(matchTelnyxKeyword("STOPALL", agentId)?.text).toBe(
+        TELNYX_KEYWORD_REPLIES.stop,
+      );
+      expect(matchTelnyxKeyword("START", agentId)?.text).toBe(
+        TELNYX_KEYWORD_REPLIES.start,
+      );
+    }
   });
 });
 
