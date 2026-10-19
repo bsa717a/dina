@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { TELNYX_KEYWORD_REPLIES } from "@/lib/telnyx/keywords";
+import {
+  CLIFFS_MAMA_KEYWORD_REPLIES,
+  CLIFFS_MAMA_RCS_AGENT_ID,
+  TELNYX_KEYWORD_REPLIES,
+} from "@/lib/telnyx/keywords";
 
 const mockConfigured = vi.fn();
 const mockVerify = vi.fn();
@@ -347,6 +351,32 @@ describe("POST /api/telnyx/webhook", () => {
     expect(mockApplyKeyword.mock.invocationCallOrder[0]).toBeLessThan(
       mockReply.mock.invocationCallOrder[0],
     );
+  });
+
+  it("sends Clif's Mama keyword copy when the inbound RCS agent is Cliffs Mama", async () => {
+    const { POST } = await import("@/app/api/telnyx/webhook/route");
+    const res = await POST(
+      post(
+        rcsHelpPayload({
+          body: { text: "STOPALL" },
+          to: [
+            {
+              agent_id: CLIFFS_MAMA_RCS_AGENT_ID,
+              agent_name: "Clif's Mama",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHandoff).not.toHaveBeenCalled();
+    expect(mockReply).toHaveBeenCalledWith(
+      "+19044030781",
+      CLIFFS_MAMA_KEYWORD_REPLIES.stop,
+      true,
+    );
+    expect(mockReply.mock.calls[0]?.[1]).not.toContain("4StudentLives");
   });
 
   it("clears opt-out on START before the campaign reply", async () => {

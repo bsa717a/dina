@@ -49,6 +49,18 @@ import { maybeDeliverInboundTasks } from "@/lib/telnyx/task-delivery";
 
 export const runtime = "nodejs";
 
+/**
+ * Brand key for keyword copy. Inbound RCS puts the agent UUID on
+ * `to[].agent_id`. SMS has no agent id and stays on the 4StudentLives set.
+ */
+function inboundRcsAgentId(message: TelnyxMessagePayload): string | undefined {
+  for (const dest of message.to) {
+    const agentId = dest.agent_id?.trim();
+    if (agentId) return agentId;
+  }
+  return undefined;
+}
+
 async function processInboundMessage(
   message: TelnyxMessagePayload,
   signatureVerified: boolean,
@@ -84,7 +96,8 @@ async function processInboundMessage(
     textLength: text.length,
   });
 
-  const keyword = matchTelnyxKeyword(text);
+  const agentId = inboundRcsAgentId(message);
+  const keyword = matchTelnyxKeyword(text, agentId);
   if (keyword) {
     if (!signatureVerified) {
       logger.warn("telnyx_keyword_unverified", {
@@ -124,6 +137,7 @@ async function processInboundMessage(
         to: from,
         type: replyResult.type,
         keyword: keyword.kind,
+        agentId: agentId ?? null,
         preferRcs,
       });
     } else {
