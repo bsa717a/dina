@@ -12,6 +12,11 @@ import { buildGrokBotWebhookHeaders } from "@/lib/grok-api/webhook-headers";
 import type { GrokBotConfig } from "@/lib/telnyx/config";
 import type { ProjectTaskStatus } from "@/lib/project-tasks/types";
 
+export type TaskAssigneePayload = {
+  email: string;
+  name: string;
+} | null;
+
 export interface TaskChangePayload {
   event: "task.created" | "task.updated";
   projectKey: string;
@@ -22,12 +27,14 @@ export interface TaskChangePayload {
     description: string;
     status: ProjectTaskStatus;
     section?: string | null;
+    assignee?: TaskAssigneePayload;
   };
   changes?: {
     status?: ProjectTaskStatus;
     title?: string;
     description?: string;
     section?: string | null;
+    assignee?: TaskAssigneePayload;
   };
 }
 

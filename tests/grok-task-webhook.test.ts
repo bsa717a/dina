@@ -194,6 +194,43 @@ describe("notifyTaskChange", () => {
     expect(body.task.title).toBe("New task");
   });
 
+  it("includes assignee on the webhook task and on changes", async () => {
+    isGrokBotConfigured.mockReturnValue(true);
+    getGrokBotConfig.mockReturnValue({
+      webhookUrl: "https://grok-bot.example.com/webhook",
+      webhookSecret: null,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+
+    const { notifyTaskChange } = await import("@/lib/grok-api/task-webhook");
+    await notifyTaskChange({
+      event: "task.updated",
+      projectKey: "4sl",
+      task: {
+        id: "task-1",
+        number: 2,
+        title: "Test task",
+        description: "A test task",
+        status: "open",
+        assignee: { email: "adam@example.com", name: "Adam Smith" },
+      },
+      changes: {
+        assignee: null,
+      },
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.task.assignee).toEqual({
+      email: "adam@example.com",
+      name: "Adam Smith",
+    });
+    expect(body.changes.assignee).toBeNull();
+    expect(body.task.status).toBe("open");
+  });
+
   it("sends each member bot once and skips the env bot when everyone has one", async () => {
     getGrokBotConfig.mockReturnValue({
       webhookUrl: "https://dina.example/webhook",
